@@ -1,0 +1,586 @@
+openapi: 3.1.0
+info:
+  title: Beer Menu API
+  version: 0.2.0
+  description: >
+    REST API for the Beer Menu self-hosted tap list. Served under /api on the same
+    origin as the admin app.
+
+
+    Authentication: browser sessions (cookie `bm_session`, set by POST /api/session or
+    POST /api/setup) or API tokens sent as `Authorization: Bearer <token>`. If a bearer
+    header is present it alone decides the request. Each operation's `x-access` states who
+    may call it: `public` (anyone), `read` (session, read token or write token), `write`
+    (session or write token), `admin` (session only). Missing or invalid credentials get
+    401; valid credentials without the needed access get 403.
+
+
+    Cross-site browser writes are refused with 403 (Sec-Fetch-Site / Origin check).
+    Every response under /api except /api/health is sent with `Cache-Control: no-store`.
+  license:
+    name: Unlicensed
+servers:
+  - url: /
+tags:
+  - name: system
+    description: Service status
+  - name: auth
+    description: First-run setup, sign-in and passwords
+  - name: admins
+    description: Admin accounts
+  - name: tokens
+    description: API tokens
+security:
+  - session: []
+  - bearer: []
+paths:
+  /api/health:
+    get:
+      operationId: getHealth
+      summary: Report service and database health
+      description: >
+        Public. Returns 200 when the API is running and the database answers a query,
+        503 otherwise. Never returns sensitive data.
+      tags: [system]
+      security: []
+      x-access: public
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example:
+                status: ok
+                version: 0.2.0
+                database: ok
+        "503":
+          description: Database unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example:
+                status: error
+                version: 0.2.0
+                database: unreachable
+
+  /api/setup:
+    get:
+      operationId: getSetup
+      summary: Report whether first-run setup is needed
+      description: Public. True only while no admin exists. Reveals no usernames.
+      tags: [auth]
+      security: []
+      x-access: public
+      responses:
+        "200":
+          description: Setup state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SetupState"
+              example:
+                needed: true
+    post:
+      operationId: createFirstAdmin
+      summary: Create the first admin and sign them in
+      description: >
+        Public, but only while no admin exists. At most one concurrent call succeeds.
+        On success, sets the session cookie.
+      tags: [auth]
+      security: []
+      x-access: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Credentials"
+      responses:
+        "201":
+          description: First admin created and signed in
+          headers:
+            Set-Cookie:
+              $ref: "#/components/headers/SessionCookie"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Admin"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "409":
+          description: An admin already exists; nothing changed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: setup_done
+                message: Setup is already complete. Sign in instead.
+
+  /api/session:
+    post:
+      operationId: signIn
+      summary: Sign in with username and password
+      description: >
+        Public. Rate limited: 5 failures per username per 15 minutes.
+        Unknown username and wrong password give the same 401. On success, issues a new
+        session ID in the cookie.
+      tags: [auth]
+      security: []
+      x-access: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Credentials"
+      responses:
+        "200":
+          description: Signed in
+          headers:
+            Set-Cookie:
+              $ref: "#/components/headers/SessionCookie"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Admin"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          description: Wrong username or password
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: invalid_credentials
+                message: Wrong username or password.
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Busy"
+    get:
+      operationId: getSession
+      summary: Return the signed-in admin
+      tags: [auth]
+      x-access: admin
+      responses:
+        "200":
+          description: Current admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Admin"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    delete:
+      operationId: signOut
+      summary: Sign out and end this session on the server
+      tags: [auth]
+      x-access: admin
+      responses:
+        "204":
+          description: Signed out; the cookie is cleared
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/password:
+    post:
+      operationId: changePassword
+      summary: Change the signed-in admin's password
+      description: >
+        Needs the current password. Wrong current passwords count toward the sign-in rate
+        limit for this username. Ends the admin's other sessions; this one stays.
+      tags: [auth]
+      x-access: admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordChange"
+      responses:
+        "204":
+          description: Password changed
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: Wrong current password, or a token was used
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: wrong_password
+                message: The current password is wrong.
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Busy"
+
+  /api/admins:
+    get:
+      operationId: listAdmins
+      summary: List admins
+      tags: [admins]
+      x-access: admin
+      responses:
+        "200":
+          description: All admins, oldest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Admin"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: addAdmin
+      summary: Add an admin
+      tags: [admins]
+      x-access: admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Credentials"
+      responses:
+        "201":
+          description: Admin added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Admin"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Username taken (ignoring case)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: username_taken
+                message: That username is already in use.
+        "503":
+          $ref: "#/components/responses/Busy"
+
+  /api/admins/{id}:
+    delete:
+      operationId: removeAdmin
+      summary: Remove an admin and end all their sessions
+      description: Any admin, including the caller, except the last one.
+      tags: [admins]
+      x-access: admin
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: Removed
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: This is the last admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: last_admin
+                message: The last admin cannot be removed.
+
+  /api/tokens:
+    get:
+      operationId: listTokens
+      summary: List API tokens, including revoked ones
+      description: Never returns secrets or hashes.
+      tags: [tokens]
+      x-access: admin
+      responses:
+        "200":
+          description: All tokens, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Token"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: createToken
+      summary: Create an API token
+      description: The response is the only time the secret is shown.
+      tags: [tokens]
+      x-access: admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TokenRequest"
+      responses:
+        "201":
+          description: Token created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewToken"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/tokens/{id}:
+    delete:
+      operationId: revokeToken
+      summary: Revoke an API token
+      description: >
+        Takes effect on the next request. The token stays in the list, marked revoked.
+        Revoking a revoked token succeeds and changes nothing.
+      tags: [tokens]
+      x-access: admin
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: Revoked
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: bm_session
+      description: HttpOnly, SameSite=Strict session cookie; Secure unless disabled by config.
+    bearer:
+      type: http
+      scheme: bearer
+      description: API token (`bmt_...`) with scope `read` or `write`.
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  headers:
+    SessionCookie:
+      description: "`bm_session=<id>; Path=/; HttpOnly; SameSite=Strict; Secure`"
+      schema:
+        type: string
+  responses:
+    Invalid:
+      description: Request body is malformed or breaks a validation rule
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: invalid_request
+            message: Password must be 12 to 256 characters.
+    Unauthenticated:
+      description: No valid session or token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: unauthenticated
+            message: Sign in or send a valid API token.
+    Forbidden:
+      description: Credentials lack the needed access, or a cross-site write was refused
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: forbidden
+            message: This credential cannot do that.
+    NotFound:
+      description: No such item
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: not_found
+            message: Not found.
+    RateLimited:
+      description: Too many failed attempts
+      headers:
+        Retry-After:
+          description: Seconds until another attempt is allowed
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: too_many_attempts
+            message: Too many failed attempts. Try again in 14 minutes.
+    Busy:
+      description: Too many password checks running at once
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: busy
+            message: Server busy. Try again shortly.
+  schemas:
+    Health:
+      type: object
+      additionalProperties: false
+      required: [status, version, database]
+      properties:
+        status:
+          type: string
+          enum: [ok, error]
+        version:
+          type: string
+          description: Release version X.Y.Z, or "dev" for local builds.
+          examples: ["0.2.0", "dev"]
+        database:
+          type: string
+          enum: [ok, unreachable]
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          description: Stable machine-readable code.
+        message:
+          type: string
+          description: Human-readable text for display.
+    SetupState:
+      type: object
+      additionalProperties: false
+      required: [needed]
+      properties:
+        needed:
+          type: boolean
+    Credentials:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          description: Trimmed, then 1 to 64 of A-Z a-z 0-9 . _ - ; unique ignoring case.
+          examples: ["owner"]
+        password:
+          type: string
+          format: password
+          minLength: 12
+          maxLength: 256
+    PasswordChange:
+      type: object
+      additionalProperties: false
+      required: [current_password, new_password]
+      properties:
+        current_password:
+          type: string
+          format: password
+        new_password:
+          type: string
+          format: password
+          minLength: 12
+          maxLength: 256
+    Admin:
+      type: object
+      additionalProperties: false
+      required: [id, username, created_at]
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    TokenRequest:
+      type: object
+      additionalProperties: false
+      required: [name, scope]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          examples: ["home-assistant"]
+        scope:
+          $ref: "#/components/schemas/Scope"
+    Scope:
+      type: string
+      enum: [read, write]
+    Token:
+      type: object
+      additionalProperties: false
+      required: [id, name, scope, created_at, last_used_at, revoked_at]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        scope:
+          $ref: "#/components/schemas/Scope"
+        created_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: [string, "null"]
+          format: date-time
+          description: Accurate to about 1 minute; null if never used.
+        revoked_at:
+          type: [string, "null"]
+          format: date-time
+    NewToken:
+      allOf:
+        - $ref: "#/components/schemas/Token"
+        - type: object
+          required: [secret]
+          properties:
+            secret:
+              type: string
+              description: The token, shown only in this response.
+              examples: ["bmt_<43 base64url characters>"]
