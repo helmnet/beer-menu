@@ -110,12 +110,16 @@ compromised.
 - Images are built by GitHub Actions and pushed to `ghcr.io/helmnet` only when a semver tag
   `vX.Y.Z` is pushed by hand. Images are tagged `X.Y.Z`, `X.Y` and `latest`.
 - Production deployment pins an exact `X.Y.Z` tag in `truenas_apps`. It never runs `latest`.
-- Containers MUST run as non-root user `568:568`. The SQLite file lives on a bind mount.
+- Containers MUST run as a non-root user and group, never UID 0 or GID 0. Images MUST set a
+  non-root default user and MUST work under any non-root UID/GID the deployer assigns (for
+  example `user:` in the deployer's compose file). The repo MUST NOT assume a specific UID/GID,
+  and images MUST NOT make paths world-writable to support an arbitrary UID. The SQLite file
+  lives on a bind mount owned by that user.
 - Before running pending migrations, the API MUST copy the database with `VACUUM INTO` to
   `/data/backups/`, keeping the last 5 copies. If the copy fails, the API MUST NOT migrate and
   MUST exit with an error.
-- Backups MUST have the same permissions as the database, because they hold password hashes,
-  token hashes and encrypted secrets.
+- Backups MUST have the same owner and permissions as the database, because they hold password
+  hashes, token hashes and encrypted secrets.
 - The restore path (stop, replace the file, start, re-run newer migrations) MUST be tested once
   in feature 1, before real data exists.
 
@@ -146,4 +150,4 @@ compromised.
 - Every pull request review MUST check compliance with these principles, including the
   NON-NEGOTIABLE ones (IV and V). `docs/project-brief.md` is the guidance file for product scope.
 
-**Version**: 1.0.0 | **Ratified**: 2026-11-08 | **Last Amended**: 2026-11-08
+**Version**: 1.1.0 | **Ratified**: 2026-11-08 | **Last Amended**: 2026-11-08
