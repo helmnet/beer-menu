@@ -1,50 +1,149 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+# Beer Menu Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. API-First
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+The Go REST API is the product. The admin app, the TV display, and future clients (Android APK,
+Home Assistant, scripts) are all clients of the same API.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+- Every feature MUST be reachable through the REST API. No capability may exist only in a UI.
+- The API MUST be JSON over HTTP and described by an OpenAPI document kept in the repo from
+  feature 1 onward.
+- Every change to an endpoint MUST update the OpenAPI document in the same change.
+- Clients MUST NOT read or write the database directly. Only the API container touches SQLite.
+- Endpoints that later clients depend on (menu reads, keg level updates) MUST stay backward
+  compatible within a major version.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+**Rationale**: one documented contract lets the APK, Home Assistant and keg scales plug in later
+without API rework.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### II. Go + SQLite Backend
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+- The API MUST be written in Go, using the standard `net/http` router or a light router such as
+  chi. Heavy frameworks are not allowed.
+- The API MUST build as a single static binary.
+- Storage MUST be SQLite through a pure-Go driver (such as `modernc.org/sqlite`) in WAL mode.
+  No separate database service.
+- Schema changes MUST go through versioned migrations run at API startup.
+- Volumes MUST be stored in litres. Display units are a setting, not a storage format.
+- Integrations MUST sit behind a provider interface. The core MUST NOT see provider-specific
+  fields.
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+**Rationale**: a small image and low memory fit the NAS; one database file keeps backup simple.
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+### III. React Clients
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+- The admin app and the `/display` route MUST be React + TypeScript, built with Vite.
+- The build MUST be served as static files by an nginx container that proxies `/api`, so the
+  browser sees one origin.
+- The display MUST be readable at 3 m or more on a 1080p landscape TV, use a dark theme by
+  default, and update without a manual reload.
+- The display MUST run unattended for days and recover from network drops and server restarts
+  without anyone touching the TV.
+
+**Rationale**: one origin avoids CORS and cookie problems; the display has no operator.
+
+### IV. Tests Required (NON-NEGOTIABLE)
+
+- Every feature MUST ship with automated tests for its behavior. A feature is not done until its
+  tests pass in CI.
+- API handlers MUST have tests that run against a real SQLite database, not mocks of it.
+- Authentication and authorization MUST have tests for each rule: unauthenticated access, `read`
+  versus `write` scope, revoked tokens, CSRF on session writes, and login rate limiting.
+- Every migration MUST be tested by applying it to a database at the previous version.
+- React components with logic MUST have component tests (for example Vitest and Testing Library).
+- A bug fix MUST include a test that fails without the fix.
+
+**Rationale**: the app runs unattended on a home server; regressions are found by tests, not
+guests.
+
+### V. LAN Security Baseline (NON-NEGOTIABLE)
+
+Security is a top priority, and the repo may go public.
+
+- No secrets, credentials, private hostnames or IP addresses may be committed. Configuration
+  comes from environment variables or Docker secrets; deployment secrets use repo secrets named
+  `BEER_MENU_<VAR>`.
+- There are no default credentials. The first admin is created on first run.
+- Passwords MUST be hashed with argon2id or bcrypt.
+- Admin sessions MUST use HttpOnly, SameSite cookies, with CSRF protection on every write.
+- API tokens MUST be shown once, stored hashed, sent as `Authorization: Bearer <token>`,
+  revocable, and record a last-used time. Each token MUST have a `read` or `write` scope.
+- Only menu reads are public. Every other endpoint MUST require a session or a token with the
+  right scope.
+- Login MUST be rate limited.
+- Third-party secrets (such as the Brewfather API key) MUST be encrypted at rest, with the key
+  held outside the database, and MUST never be returned by the API.
+- Input at every trust boundary (request bodies, uploads, imported data) MUST be validated.
+- TLS is out of scope for the app. It runs behind the NPM reverse proxy on the LAN.
+
+**Rationale**: a home network is not a trust boundary once the code is public or a device is
+compromised.
+
+### VI. Documented, Not Verbose
+
+- Every exported Go symbol, every API handler and every React component MUST have a doc comment
+  that says what it does and any contract it holds.
+- Inline comments MUST explain why: a constraint, trade-off or non-obvious reason. They MUST NOT
+  restate what the code does.
+- Code MUST be readable without comments where possible: clear names over explanations.
+
+**Rationale**: future clients and a possible public repo need clear contracts; noise comments rot.
+
+### VII. Simplicity and Scope
+
+- Build the smallest thing that meets the current feature's spec. No speculative options,
+  abstractions or configuration.
+- New dependencies MUST be justified in the feature plan. Prefer the standard library and
+  dependencies already in use.
+- Never in scope: prices, ratings, ordering, payments, multi-tenant or public cloud hosting.
+- Deferred until after the MVP: the Android APK, Home Assistant integration, and data sources
+  beyond Brewfather. Specs MUST NOT build these early, but MUST NOT block them.
+
+**Rationale**: a home project stays maintainable only if it stays small.
+
+## Deployment and Data Constraints
+
+- The app runs as two containers, `beer-menu-api` and `beer-menu-web`, started with a single
+  `docker compose up`.
+- Images are built by GitHub Actions and pushed to `ghcr.io/helmnet` only when a semver tag
+  `vX.Y.Z` is pushed by hand. Images are tagged `X.Y.Z`, `X.Y` and `latest`.
+- Production deployment pins an exact `X.Y.Z` tag in `truenas_apps`. It never runs `latest`.
+- Containers MUST run as non-root user `568:568`. The SQLite file lives on a bind mount.
+- Before running pending migrations, the API MUST copy the database with `VACUUM INTO` to
+  `/data/backups/`, keeping the last 5 copies. If the copy fails, the API MUST NOT migrate and
+  MUST exit with an error.
+- Backups MUST have the same permissions as the database, because they hold password hashes,
+  token hashes and encrypted secrets.
+- The restore path (stop, replace the file, start, re-run newer migrations) MUST be tested once
+  in feature 1, before real data exists.
+
+## Development Workflow
+
+- Work follows Spec Kit: this constitution, then one `/speckit-specify` per feature, in the order
+  of the feature breakdown in `docs/project-brief.md`.
+- Each feature MUST end in something testable, as stated in its "done when" criteria.
+- A roadmap phase starts only when the phase before it runs on TrueNAS.
+- Each feature is developed on its own branch and merged to `main` by pull request.
+- CI MUST build both images and run all tests on every pull request. A failing check blocks the
+  merge.
+- Every plan MUST include a Constitution Check against these principles. Any deviation MUST be
+  recorded in the plan's Complexity Tracking table with the reason and the simpler option that
+  was rejected.
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+- This constitution supersedes other project practices. Where a spec, plan or task conflicts
+  with it, the constitution wins until it is amended.
+- Amendments are made by pull request that edits this file, states the reason, and bumps the
+  version. Dependent specs and plans that the change affects MUST be updated or listed as
+  follow-ups in the same pull request.
+- Versioning follows semantic versioning:
+  - MAJOR: a principle is removed or redefined in an incompatible way.
+  - MINOR: a principle or section is added, or guidance is materially expanded.
+  - PATCH: clarifications and wording fixes with no change in meaning.
+- Every pull request review MUST check compliance with these principles, including the
+  NON-NEGOTIABLE ones (IV and V). `docs/project-brief.md` is the guidance file for product scope.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: 1.0.0 | **Ratified**: 2026-11-08 | **Last Amended**: 2026-11-08
