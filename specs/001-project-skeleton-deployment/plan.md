@@ -16,7 +16,7 @@ images to `ghcr.io/helmnet` on a hand-pushed `vX.Y.Z` tag. Details are in
 
 ## Technical Context
 
-**Language/Version**: Go 1.27 (API); TypeScript 5 with React 18 on Node 22 (web build)
+**Language/Version**: Go 1.27 (API); TypeScript 5 with React 18 on Node 26 (web build)
 
 **Primary Dependencies**: `net/http` stdlib mux, `modernc.org/sqlite`; React, Vite; nginx
 (`nginxinc/nginx-unprivileged:alpine`)
@@ -101,7 +101,7 @@ web/
 ├── vite.config.ts                 # also Vitest config
 ├── tsconfig.json
 ├── index.html
-├── Dockerfile                     # node:22-alpine build -> nginx-unprivileged, USER 65532:65532
+├── Dockerfile                     # node:26-alpine build -> nginx-unprivileged, USER 65532:65532
 ├── nginx/
 │   └── default.conf               # static: /api proxy to api:8080, SPA fallback
 └── src/

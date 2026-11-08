@@ -18,7 +18,7 @@ the only endpoint is `GET /api/health`.
 
 ## Local development
 
-Go 1.27 and Node 22. Run the API on port 8080 with its database in `api/data/`:
+Go 1.27 and Node 26. Run the API on port 8080 with its database in `api/data/`:
 
 ```sh
 cd api
@@ -114,8 +114,11 @@ git tag vX.Y.Z && git push origin vX.Y.Z
 ```
 
 The `release` workflow builds `ghcr.io/helmnet/beer-menu-api` and
-`ghcr.io/helmnet/beer-menu-web` and publishes each with three tags: `X.Y.Z`, `X.Y` and
-`latest`. Tags that do not match `vX.Y.Z` exactly (for example `v1.2.3-rc1`) publish nothing.
+`ghcr.io/helmnet/beer-menu-web`, scans each with Trivy, and publishes it only if the scan
+passes, with three tags: `X.Y.Z`, `X.Y` and `latest`. Tags that do not match `vX.Y.Z` exactly
+(for example `v1.2.3-rc1`) publish nothing.
+Each image is published on its own: if one image fails its scan, the other is still published.
+Re-run the failed job once a fix is available, or release the next `X.Y.Z`.
 The image reports `X.Y.Z` as `version` in `/api/health`.
 
 Production pins an exact `X.Y.Z` in the `truenas_apps` repo and never uses `latest`.
@@ -128,8 +131,8 @@ The `ci` workflow runs on every pull request and every push to `main`:
 - `web`: `npm ci`, lint, tests and build in `web/`.
 - `openapi`: Redocly lint of `api/openapi.yaml`.
 - `images`: builds both images, checks their default user is non-root and that both refuse to
-  run as root, and runs a smoke test
-  of the stack as UID/GID `12345:12345`.
+  run as root, scans both with Trivy for HIGH or CRITICAL vulnerabilities that have a fix, and
+  runs a smoke test of the stack as UID/GID `12345:12345`.
 - `secrets`: gitleaks scan of the full git history.
 
 Never merge a pull request while any of the five checks (`api`, `web`, `openapi`, `images`,

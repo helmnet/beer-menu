@@ -95,7 +95,7 @@ choices left open.
 
 ## R10. Web image
 
-- **Decision**: build stage `node:22-alpine` runs `npm ci && npm run build`. Final stage
+- **Decision**: build stage `node:26-alpine` runs `npm ci && npm run build`. Final stage
   `nginxinc/nginx-unprivileged:alpine`, listening on 8080, `USER 65532:65532` as a non-root default (R19). The nginx
   config is a static file baked into the image at `/etc/nginx/conf.d/default.conf`:
   - `location /api/` proxies to `api:8080`, the compose service name. No `API_UPSTREAM` env and
@@ -109,6 +109,8 @@ choices left open.
     and world-writable in the base image, not made so by ours), so nginx runs as any non-root UID
     with no `chown` or `chmod` in our Dockerfile.
   - `HEALTHCHECK` uses `wget -q --spider http://127.0.0.1:8080/`.
+  - The final stage runs `apk upgrade --no-cache` as root before `USER 65532:65532`, because the
+    upstream base image lags Alpine security fixes.
 - **Rationale**: the unprivileged image is built for non-root; per-request resolution decouples
   startup order.
 - **Alternatives**: plain `nginx` image (needs root for port 80 and its paths); static
@@ -152,7 +154,9 @@ choices left open.
     `scratch` image with no group part runs as GID 0), then `docker compose up -d --no-build`
     with `PUID=12345 PGID=12345` and `./data` owned by `12345:12345`, which proves the images run
     under a UID/GID they were not built for and poll the health endpoint through the web
-    container (smoke test of User Story 1).
+    container (smoke test of User Story 1). Before the smoke test, the `aquasec/trivy`
+    container, pinned by tag and digest, scans a `docker save` tarball of each image (no Docker
+    socket) and fails on HIGH or CRITICAL findings that have a fix.
   - `secrets`: gitleaks scan (SC-007), run as the pinned `zricethezav/gitleaks` container.
     `gitleaks-action` is rejected: it needs a paid license secret for organization repos.
   Branch protection on `main` makes these required checks. It is turned on once, after the
@@ -166,7 +170,9 @@ choices left open.
   like `v1.2.3-rc1`). Then for each image: `docker/login-action` with `GITHUB_TOKEN`,
   `docker/metadata-action` with tags `type=semver,pattern={{version}}`,
   `type=semver,pattern={{major}}.{{minor}}` and `type=raw,value=latest`, and
-  `docker/build-push-action` with `VERSION` set to the version. Permissions:
+  `docker/build-push-action` with `VERSION` set to the version, loaded locally (`load: true`,
+  `push: false`), scanned with the same Trivy tarball step as CI, and pushed with
+  `docker push --all-tags` only if the scan passes. Permissions:
   `contents: read`, `packages: write`. Platform `linux/amd64` only (TrueNAS host).
 - **Rationale**: FR-022 to FR-024 and FR-026. Only built-in credentials.
 - **Alternatives**: multi-arch builds (no ARM target in scope).
@@ -204,6 +210,7 @@ choices left open.
 | `vitest`, `@testing-library/react`, `jsdom` | Web dev | Required component tests |
 | `@redocly/cli` | CI only, via `npx` | OpenAPI lint |
 | `zricethezav/gitleaks` image | CI only | Secret scan (SC-007) |
+| `aquasec/trivy` image, pinned by digest | CI and release only | Image vulnerability scan |
 
 ## R19. Container user
 

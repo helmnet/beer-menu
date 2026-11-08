@@ -1,4 +1,4 @@
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /src
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -10,6 +10,9 @@ COPY --from=build /src/dist /usr/share/nginx/html
 COPY nginx/default.conf /etc/nginx/conf.d/default.conf
 # Must stay executable in git: the base entrypoint skips non-executable scripts.
 COPY nginx/00-refuse-root.sh /docker-entrypoint.d/00-refuse-root.sh
+# The upstream base image lags Alpine security fixes, so apply them at build time.
+USER root
+RUN apk upgrade --no-cache
 # Non-root default only; the deployer may run it as any non-root UID/GID.
 USER 65532:65532
 EXPOSE 8080

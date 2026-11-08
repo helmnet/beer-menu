@@ -7,7 +7,7 @@ Paths and names follow [data-model.md](./data-model.md); the health response fol
 ## Prerequisites
 
 - Docker with Compose v2.
-- Go 1.27 and Node 22 (only for running tests outside Docker).
+- Go 1.27 and Node 26 (only for running tests outside Docker).
 - A checkout of this repo.
 
 ## 1. Start the stack (User Story 1)
