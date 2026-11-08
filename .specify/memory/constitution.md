@@ -50,7 +50,8 @@ without API rework.
   tests pass in CI.
 - API handlers MUST have tests that run against a real SQLite database, not mocks of it.
 - Authentication and authorization MUST have tests for each rule: unauthenticated access, `read`
-  versus `write` scope, revoked tokens, CSRF on session writes, and login rate limiting.
+  versus `write` scope, revoked tokens, CSRF on every browser write (including sign-in and
+  first-admin creation), and login rate limiting.
 - Every migration MUST be tested by applying it to a database at the previous version.
 - React components with logic MUST have component tests (for example Vitest and Testing Library).
 - A bug fix MUST include a test that fails without the fix.
@@ -70,8 +71,10 @@ Security is a top priority, and the repo may go public.
 - Admin sessions MUST use HttpOnly, SameSite cookies, with CSRF protection on every write.
 - API tokens MUST be shown once, stored hashed, sent as `Authorization: Bearer <token>`,
   revocable, and record a last-used time. Each token MUST have a `read` or `write` scope.
-- Only menu reads are public. Every other endpoint MUST require a session or a token with the
-  right scope.
+- Only these endpoints are public: menu reads, the health check, the first-run setup status,
+  first-admin creation (refused once an admin exists) and sign-in. Every other endpoint MUST
+  require a session or a token with the right scope. Public writes (first-admin creation and
+  sign-in) MUST also refuse cross-site browser requests.
 - Login MUST be rate limited.
 - Third-party secrets (such as the Brewfather API key) MUST be encrypted at rest, with the key
   held outside the database, and MUST never be returned by the API.
@@ -150,4 +153,4 @@ compromised.
 - Every pull request review MUST check compliance with these principles, including the
   NON-NEGOTIABLE ones (IV and V). `docs/project-brief.md` is the guidance file for product scope.
 
-**Version**: 1.1.0 | **Ratified**: 2026-11-08 | **Last Amended**: 2026-11-08
+**Version**: 1.2.0 | **Ratified**: 2026-11-08 | **Last Amended**: 2026-11-08
