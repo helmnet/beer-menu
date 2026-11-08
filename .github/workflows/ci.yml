@@ -119,5 +119,18 @@ jobs:
           done
           curl -fsS localhost:8080/api/health
           curl -fsS -o /dev/null localhost:8080/display
+          # Security headers (research R11): each exactly once, so nginx and the API never double them.
+          count() { curl -sI "localhost:8080$1" | grep -ci "^$2:" || true; }
+          for path in / /display; do
+            for h in X-Content-Type-Options X-Frame-Options Referrer-Policy Content-Security-Policy; do
+              n=$(count "$path" "$h")
+              if [[ "$n" != 1 ]]; then echo "::error::$path has $n $h headers, want 1"; exit 1; fi
+            done
+          done
+          n=$(count /api/setup X-Frame-Options)
+          if [[ "$n" != 1 ]]; then echo "::error::/api/setup has $n X-Frame-Options headers, want 1"; exit 1; fi
+          if ! curl -sI localhost:8080/api/setup | grep -qi '^cache-control: no-store'; then
+            echo "::error::/api/setup lacks Cache-Control: no-store"; exit 1
+          fi
       - if: failure()
         run: docker compose logs

@@ -1,0 +1,11 @@
+# Gitleaks configuration, read from the repo root by .github/workflows/secrets.yml: the
+# default rules plus one for Beer Menu API tokens (bmt_ and 43 base64url characters).
+[extend]
+useDefault = true
+
+[[rules]]
+id = "beer-menu-api-token"
+description = "Beer Menu API token"
+regex = '''bmt_[A-Za-z0-9_-]{43}'''
+keywords = ["bmt_"]
+

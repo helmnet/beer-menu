@@ -222,7 +222,7 @@ first's sessions end; reset a password with the subcommand (quickstart §5).
 
 - [X] T053 [US6] Add to `location /` in `web/nginx/default.conf` (not the server block, so `/api` responses keep only the API's headers; research R11), each with `always`: `X-Content-Type-Options nosniff`, `X-Frame-Options DENY`, `Referrer-Policy same-origin`, `Content-Security-Policy "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"`
 - [X] T054 [US6] Extend the compose smoke test in `.github/workflows/ci.yml` to assert, with `curl -sI`, that `/` and `/display` carry the four headers once each and `/api/setup` carries `X-Frame-Options` exactly once and `Cache-Control: no-store`
-- [ ] T055 [US6] Build the web image, load `/` and `/display` in a browser, and confirm no CSP violations in the console; record the result in the PR description
+- [X] T055 [US6] Build the web image, load `/` and `/display` in a browser, and confirm no CSP violations in the console; record the result in the PR description
 
 **Checkpoint**: quickstart §6 passes.
 

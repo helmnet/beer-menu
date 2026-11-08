@@ -5,8 +5,8 @@ and a TV shows the current menu in a browser. It runs as two containers: a Go RE
 owns a SQLite database, and nginx serving the React app and proxying `/api` to the API. Every
 client uses the same documented REST API.
 
-This is an early skeleton: the admin page and the `/display` tap list are placeholders, and
-the only endpoint is `GET /api/health`.
+This is an early version: the admin app handles sign-in, admins and API tokens, and the
+`/display` tap list is a placeholder.
 
 ## Layout
 
@@ -59,6 +59,41 @@ a supplementary group.
 
 The database is `data/beermenu.db`; backups go to `data/backups/`.
 
+## Admins and sign-in
+
+**First admin.** A fresh install has no admin and no default password. Either open
+`http://localhost:8080/` and create the first admin on the setup screen, or set both of these
+on the `api` service before the first start (see the commented lines in
+`docker-compose.yaml`):
+
+| Variable | Meaning |
+| --- | --- |
+| `BEER_MENU_ADMIN_USERNAME` | Username of the first admin |
+| `BEER_MENU_ADMIN_PASSWORD` | Its password, 12 to 256 characters; pass it from a secret, never commit it |
+
+They are used only while no admin exists and are ignored after that. Setting only one, or a
+value that breaks the rules, stops the API with an error. Remove them once the admin exists.
+
+**Cookie `Secure` flag.** `BEER_MENU_COOKIE_SECURE` (default `true`) marks the session cookie
+`Secure`, so browsers send it only over HTTPS and to `http://localhost`. Set it to `false`
+only when you reach the app over plain HTTP by LAN address or hostname; otherwise sign-in
+appears to work but the next request is not signed in. Behind a TLS proxy, leave it on.
+
+**Locked out.** If every admin has lost their password, reset one from the server:
+
+```sh
+docker compose exec -it api /beer-menu-api reset-password <username>
+```
+
+It asks for the new password twice without echoing it, refuses unless run in a terminal
+(`-it`), and ends all of that admin's sessions. There is no way to reset a password over HTTP.
+
+**API tokens.** Admins create tokens in the admin app with scope `read` or `write`. Clients
+send them as `Authorization: Bearer <token>`. A token's secret is shown once, when it is
+created; only its hash is stored. Every secret starts with `bmt_`, so secret scanners can
+find leaked ones (`.gitleaks.toml` has a rule for them). Revoke a leaked token in the admin
+app.
+
 ## API
 
 `api/openapi.yaml` is the API contract. Every change to an endpoint updates it in the same
@@ -67,6 +102,8 @@ change. CI lints it with Redocly, and the route-coverage test
 `internal/httpapi/routes.go` is not documented in it.
 
 `GET /api/health` is public and reports the app version and whether the database answers.
+Each operation's `x-access` says who may call it (`public`, `read`, `write` or `admin`), and
+the same test checks it against the route's declared access.
 
 ## Restore from a backup
 
@@ -101,6 +138,10 @@ from. It keeps the 5 newest copies. To go back to one of them:
    ```
 
 The API backs up the restored file and re-applies any migrations newer than `v<N>`.
+
+A restore brings back admins, passwords and tokens as they were when the backup was taken.
+Tokens revoked since the backup must be revoked again, and admins removed or passwords
+changed since then must be removed or changed again.
 
 Backups hold password and token hashes. Keep them, like the database, at mode `0600` and
 owned by the container user.
