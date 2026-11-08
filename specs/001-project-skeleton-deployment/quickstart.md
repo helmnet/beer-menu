@@ -70,6 +70,24 @@ Expected: `api` is healthy; its log shows a backup of the restored file and the 
 
 The same steps are in the README restore section.
 
+### Manual run record
+
+- **Date**: 2026-11-08, Docker 29.9.3, Compose 5.7.0, `PUID`/`PGID` = the invoking user.
+- **Method**: this release has only migration `0001`, so the stack never backs up on its own.
+  A throwaway API image was built from a copy of `api/` outside the repo with one extra
+  migration (`0002_restore_check.sql`, creates an empty table) and tagged
+  `beer-menu-api:restoretest`. Steps: start the normal stack on an empty `./data` (v1); stop
+  it; insert `settings` row `title=before`; start with `BEER_MENU_VERSION=restoretest`, which
+  made `backups/beermenu-<timestamp>-v1.db` through the real startup code and migrated to v2;
+  stop; change the row to `after`; start again. Then steps 2 to 4 above, word for word, with
+  `BEER_MENU_VERSION=restoretest` so the restored v1 file has a pending migration. The
+  throwaway image and `./data` were deleted afterwards.
+- **Result**: pass. The API log showed `database backed up ... -v1.db` and
+  `migrations applied from=1 to=2`; `/api/health` returned `ok`; the row read `before` and
+  `user_version` was 2; `data/beermenu.db` stayed mode `0600`.
+- **Elapsed (SC-005)**: 2.7 s from `docker compose down` to `/api/health` answering `ok`,
+  7.9 s until both containers were `healthy` (target: under 5 minutes).
+
 ## 4. Publish a release (User Story 4)
 
 1. Merge to `main` with green CI.
@@ -87,7 +105,7 @@ Expected:
 ## 5. API contract (User Story 5)
 
 ```sh
-npx @redocly/cli@<pinned> lint api/openapi.yaml
+npx --yes @redocly/cli@2.71.0 lint api/openapi.yaml
 cd api && go test ./... -run Routes
 ```
 
@@ -97,7 +115,9 @@ makes the test fail.
 ## 6. Secret scan (SC-007)
 
 ```sh
-docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest detect --source /repo
+docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.1 detect --source /repo --redact
 ```
 
-Expected: no leaks found.
+Expected: no leaks found. In a git worktree, `.git` is a file that points at the main
+checkout's `.git` folder; also mount that folder at the same path (`-v <main>/.git:<main>/.git:ro`),
+or gitleaks scans 0 commits.

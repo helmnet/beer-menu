@@ -234,7 +234,9 @@ route the API serves is listed in it.
 - **FR-024**: Released images MUST carry the release version so the health endpoint reports it.
   Local builds MUST report a development version.
 - **FR-025**: Every pull request MUST build both images and run all tests. A failure MUST block
-  the merge. Pull requests MUST NOT publish images.
+  the merge: by branch protection once the repo is public, and until then by the owner never
+  merging a pull request with a failing or pending check (private repos on a free GitHub org
+  plan have no branch protection). Pull requests MUST NOT publish images.
 - **FR-026**: Publishing MUST use only the CI system's built-in credentials. No registry
   credentials may be stored in the repo.
 

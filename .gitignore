@@ -31,3 +31,12 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# beer-menu
+data/
+web/node_modules/
+web/dist/
+api/bin/
+*.db
+*.db-wal
+*.db-shm

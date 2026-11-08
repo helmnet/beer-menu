@@ -86,7 +86,7 @@ choices left open.
 ## R9. API image and container health check
 
 - **Decision**: multi-stage build: `golang:1.27-alpine` builds with `CGO_ENABLED=0`; the final
-  stage is `scratch` with the binary, CA certificates (for the Brewfather calls in feature 6), and
+  stage is `scratch` with the binary and
   `USER 65532:65532` as a non-root default (R19). The binary has a `healthcheck` subcommand that calls
   `http://127.0.0.1:$PORT/api/health` and exits 0 or 1; the Dockerfile `HEALTHCHECK` runs it.
 - **Rationale**: `scratch` has no shell or curl, so the binary checks itself. Smallest image.

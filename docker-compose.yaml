@@ -1,0 +1,23 @@
+# Example compose file for trying Beer Menu from a checkout or from released images.
+#
+# Production pins an exact X.Y.Z release in truenas_apps (BEER_MENU_VERSION=X.Y.Z) and
+# never uses latest.
+#
+# Set PUID and PGID to any non-root UID and GID (never 0) that owns the data folder
+# (BEER_MENU_DATA, default ./data). Both containers refuse to start as UID 0 or GID 0.
+services:
+  api:
+    image: ghcr.io/helmnet/beer-menu-api:${BEER_MENU_VERSION:-latest}
+    build: ./api
+    user: "${PUID:-65532}:${PGID:-65532}"
+    volumes:
+      - ${BEER_MENU_DATA:-./data}:/data
+    restart: unless-stopped
+
+  web:
+    image: ghcr.io/helmnet/beer-menu-web:${BEER_MENU_VERSION:-latest}
+    build: ./web
+    user: "${PUID:-65532}:${PGID:-65532}"
+    ports:
+      - "${BEER_MENU_WEB_PORT:-8080}:8080"
+    restart: unless-stopped
