@@ -98,8 +98,10 @@ Expected:
 
 - `ghcr.io/helmnet/beer-menu-api` and `ghcr.io/helmnet/beer-menu-web` both have tags `0.1.0`,
   `0.1` and `latest`.
-- `BEER_MENU_VERSION=0.1.0 docker compose up -d` (no `--build`) starts, and `/api/health`
-  reports `"version":"0.1.0"`.
+- After `docker login ghcr.io` (the packages are private; the token needs `read:packages`),
+  `BEER_MENU_VERSION=0.1.0 docker compose up -d --pull always --no-build` starts, and
+  `/api/health` reports `"version":"0.1.0"`. The tag has no `v`. Without `--no-build`, a failed
+  pull silently falls back to a local build, which reports `"version":"dev"`.
 - Pushing `v0.1` or `test` publishes nothing.
 
 ## 5. API contract (User Story 5)

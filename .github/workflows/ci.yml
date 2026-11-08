@@ -1,11 +1,13 @@
-# Pull request and main-branch checks. Never merge while any job below (api, web, openapi,
-# images, secrets) fails; see "Required checks" in README.md.
+# Pull request and main-branch checks, skipped when only Markdown files change. Never merge while
+# any job below (api, web, openapi, images) or secrets.yml fails; see "Required checks" in README.md.
 name: ci
 
 on:
   pull_request:
+    paths-ignore: ['**/*.md']
   push:
     branches: [main]
+    paths-ignore: ['**/*.md']
 
 permissions:
   contents: read
@@ -119,13 +121,3 @@ jobs:
           curl -fsS -o /dev/null localhost:8080/display
       - if: failure()
         run: docker compose logs
-
-  secrets:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      # Not gitleaks-action: it needs a paid license secret for organization repos.
-      - run: docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.1 detect --source /repo --redact

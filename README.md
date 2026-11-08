@@ -125,7 +125,8 @@ Production pins an exact `X.Y.Z` in the `truenas_apps` repo and never uses `late
 
 ## Required checks
 
-The `ci` workflow runs on every pull request and every push to `main`:
+The `ci` workflow runs on every pull request and every push to `main`, except changes that touch
+only Markdown files:
 
 - `api`: `go vet` and `go test` in `api/`.
 - `web`: `npm ci`, lint, tests and build in `web/`.
@@ -133,9 +134,19 @@ The `ci` workflow runs on every pull request and every push to `main`:
 - `images`: builds both images, checks their default user is non-root and that both refuse to
   run as root, scans both with Trivy for HIGH or CRITICAL vulnerabilities that have a fix, and
   runs a smoke test of the stack as UID/GID `12345:12345`.
+
+The `secrets` workflow runs on its own on every pull request and every push to `main`, Markdown-only
+changes included:
+
 - `secrets`: gitleaks scan of the full git history.
 
 Never merge a pull request while any of the five checks (`api`, `web`, `openapi`, `images`,
-`secrets`) is failing or pending. The repo is private on a free GitHub org plan, which has no
+`secrets`) is failing or pending; on a Markdown-only pull request only `secrets` runs, so it is
+the only check to wait for. If `ci` did not run, confirm that the pull request really changes only
+Markdown before merging: `git diff --no-renames --name-only origin/main...<branch> | grep -v '\.md$'`
+must print nothing. GitHub's path filter reads only the first 300 changed files, so it is not proof
+on its own. The repo is private on a free GitHub org plan, which has no
 branch protection, so this rule is followed by hand. When the repo goes public, turn on branch
-protection for `main` requiring all five checks and up-to-date branches.
+protection for `main` requiring all five checks and up-to-date branches. A skipped workflow leaves
+its required checks pending, so Markdown-only pull requests would then block unless that is handled
+at that time (for example, require only `secrets`, or add a no-op job).
