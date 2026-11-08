@@ -1,0 +1,62 @@
+openapi: 3.1.0
+info:
+  title: Beer Menu API
+  version: 0.1.0
+  description: >
+    REST API for the Beer Menu self-hosted tap list. Served under /api on the same
+    origin as the admin app. Feature 1 exposes only the health endpoint.
+  license:
+    name: Unlicensed
+servers:
+  - url: /
+tags:
+  - name: system
+    description: Service status
+paths:
+  /api/health:
+    get:
+      operationId: getHealth
+      summary: Report service and database health
+      description: >
+        Public. Returns 200 when the API is running and the database answers a query,
+        503 otherwise. Never returns sensitive data.
+      tags: [system]
+      security: []
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example:
+                status: ok
+                version: 0.1.0
+                database: ok
+        "503":
+          description: Database unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example:
+                status: error
+                version: 0.1.0
+                database: unreachable
+components:
+  schemas:
+    Health:
+      type: object
+      additionalProperties: false
+      required: [status, version, database]
+      properties:
+        status:
+          type: string
+          enum: [ok, error]
+        version:
+          type: string
+          description: Release version X.Y.Z, or "dev" for local builds.
+          examples: ["0.1.0", "dev"]
+        database:
+          type: string
+          enum: [ok, unreachable]
