@@ -70,8 +70,10 @@ func TestGuardAccessTable(t *testing.T) {
 			rec := do(guard(deps, access, stub), http.MethodGet, "/x", "", append(bearer(h), cookie...)...)
 			wantError(t, rec, 401, "unauthenticated")
 		}
-		// Two Authorization headers are ambiguous, so neither is trusted.
-		rec := do(guard(deps, access, stub), http.MethodGet, "/x", "", append(bearer("Bearer "+writeSecret), bearer("Bearer "+writeSecret)...)...)
+		// Two Authorization headers are ambiguous, so neither is trusted, and the session cookie
+		// must not rescue the request.
+		two := append(bearer("Bearer "+writeSecret), bearer("Bearer "+writeSecret)...)
+		rec := do(guard(deps, access, stub), http.MethodGet, "/x", "", append(two, cookie...)...)
 		wantError(t, rec, 401, "unauthenticated")
 	}
 	if rec := do(guard(deps, AccessAdmin, stub), http.MethodGet, "/x", "", "Cookie", sessionCookieName+"=forged"); rec.Code != 401 {

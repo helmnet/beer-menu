@@ -57,6 +57,22 @@ func TestRoutesDocumented(t *testing.T) {
 	}
 }
 
+// TestPublicRoutes pins the public routes to constitution principle V (health, setup status,
+// first-admin creation, sign-in), so a new route can't go public by mistake. Feature 5 adds
+// GET /api/menu, the only menu read, and must update want.
+func TestPublicRoutes(t *testing.T) {
+	var public []string
+	for _, r := range Routes {
+		if r.Access == AccessPublic {
+			public = append(public, r.Method+" "+r.Path)
+		}
+	}
+	want := "GET /api/health,GET /api/setup,POST /api/setup,POST /api/session"
+	if got := strings.Join(public, ","); got != want {
+		t.Fatalf("public routes = %s, want %s", got, want)
+	}
+}
+
 func TestRoutesDocumentedCatchesMissing(t *testing.T) {
 	extra := []Route{
 		{Method: http.MethodPost, Path: "/api/health", Access: AccessPublic},

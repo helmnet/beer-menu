@@ -27,7 +27,7 @@ func listAdmins(deps Deps) http.Handler {
 func addAdmin(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body credentialsBody
-		if !decodeJSON(w, r, &body) {
+		if !decodeJSON(w, r, &body, maxBody) {
 			return
 		}
 		admin, err := auth.AddAdmin(deps.DB, body.Username, body.Password, deps.Now())

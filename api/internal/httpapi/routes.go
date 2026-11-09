@@ -50,6 +50,12 @@ var Routes = []Route{
 	{Method: http.MethodGet, Path: "/api/tokens", Access: AccessAdmin, Handler: listTokens},
 	{Method: http.MethodPost, Path: "/api/tokens", Access: AccessAdmin, Handler: createToken},
 	{Method: http.MethodDelete, Path: "/api/tokens/{id}", Access: AccessAdmin, Handler: revokeToken},
+	{Method: http.MethodGet, Path: "/api/beers", Access: AccessRead, Handler: listBeers},
+	{Method: http.MethodPost, Path: "/api/beers", Access: AccessWrite, Handler: createBeer},
+	{Method: http.MethodGet, Path: "/api/beers/{id}", Access: AccessRead, Handler: getBeer},
+	{Method: http.MethodPatch, Path: "/api/beers/{id}", Access: AccessWrite, Handler: updateBeer},
+	{Method: http.MethodDelete, Path: "/api/beers/{id}", Access: AccessWrite, Handler: deleteBeer},
+	{Method: http.MethodGet, Path: "/api/srm-colors", Access: AccessRead, Handler: getSrmColors},
 }
 
 // NewMux returns the API handler: every entry of Routes registered as "<METHOD> <path>"

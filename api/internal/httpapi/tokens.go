@@ -33,7 +33,7 @@ func listTokens(deps Deps) http.Handler {
 func createToken(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body tokenBody
-		if !decodeJSON(w, r, &body) {
+		if !decodeJSON(w, r, &body, maxBody) {
 			return
 		}
 		tok, secret, err := auth.CreateToken(deps.DB, body.Name, body.Scope, deps.Now())

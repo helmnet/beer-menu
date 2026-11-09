@@ -9,8 +9,12 @@ import (
 	"time"
 )
 
-// maxBody bounds every JSON request body (research R12).
+// maxBody bounds every JSON request body except beer writes (research R12).
 const maxBody = 8 << 10
+
+// maxBeerBody bounds beer create and edit bodies: a 2000-character description can need about
+// 12 KB as JSON (feature 3 research R5).
+const maxBeerBody = 16 << 10
 
 // sessionCookieName is the browser session cookie.
 const sessionCookieName = "bm_session"
@@ -20,17 +24,17 @@ type errorBody struct {
 	Message string `json:"message"`
 }
 
-// decodeJSON reads r's body, at most 8 KiB, as exactly one JSON value into dst, refusing
+// decodeJSON reads r's body, at most limit bytes, as exactly one JSON value into dst, refusing
 // unknown fields and trailing data. On failure it writes 400 invalid_request and returns false.
-func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody))
+func decodeJSON(w http.ResponseWriter, r *http.Request, dst any, limit int64) bool {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	dec.DisallowUnknownFields()
 	err := dec.Decode(dst)
 	if err == nil && !errors.Is(dec.Decode(&struct{}{}), io.EOF) {
 		err = errors.New("trailing data")
 	}
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Request body must be one JSON object with only the documented fields, at most 8 KiB.")
+		writeError(w, http.StatusBadRequest, "invalid_request", "Request body must be one JSON object with only the documented fields, within the size limit.")
 		return false
 	}
 	return true

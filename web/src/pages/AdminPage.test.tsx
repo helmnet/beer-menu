@@ -15,6 +15,7 @@ const unauthenticated = {
 
 // The signed-in view's panels load these on mount.
 const panels = {
+  "GET /api/beers": { status: 200, body: [] },
   "GET /api/admins": { status: 200, body: [] },
   "GET /api/tokens": { status: 200, body: [] },
 };
@@ -83,6 +84,17 @@ describe("AdminPage", () => {
     });
     render(<AdminPage />);
     expect(await screen.findByText("Signed in as owner")).toBeTruthy();
+  });
+
+  it("shows the beer library when signed in", async () => {
+    stubApi({
+      "GET /api/setup": { status: 200, body: { needed: false } },
+      "GET /api/session": { status: 200, body: owner },
+      ...panels,
+    });
+    render(<AdminPage />);
+    expect(await screen.findByRole("heading", { name: "Beer library" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Add beer" })).toBeTruthy();
   });
 
   it.each(Object.keys(panels))("returns to sign-in on a 401 from %s", async (key) => {

@@ -14,7 +14,7 @@ func TestDecodeJSON(t *testing.T) {
 	var got body
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got = body{}
-		if !decodeJSON(w, r, &got) {
+		if !decodeJSON(w, r, &got, maxBody) {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -37,6 +37,36 @@ func TestDecodeJSON(t *testing.T) {
 		if name == "over 8 KiB" && strings.Contains(rec.Body.String(), "aaaa") {
 			t.Errorf("error echoes the body")
 		}
+	}
+}
+
+func TestDecodeJSONLimit(t *testing.T) {
+	type body struct {
+		Name string `json:"name"`
+	}
+	const limit = 64
+	handler := func(limit int64) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var got body
+			if decodeJSON(w, r, &got, limit) {
+				w.WriteHeader(http.StatusNoContent)
+			}
+		})
+	}
+	// pad returns a valid body of exactly n bytes.
+	pad := func(n int) string { return `{"name":"` + strings.Repeat("a", n-len(`{"name":""}`)) + `"}` }
+
+	if rec := do(handler(limit), http.MethodPost, "/", pad(limit)); rec.Code != http.StatusNoContent {
+		t.Fatalf("body of exactly the limit: status %d %s", rec.Code, rec.Body)
+	}
+	rec := do(handler(limit), http.MethodPost, "/", pad(limit+1))
+	wantError(t, rec, http.StatusBadRequest, "invalid_request")
+	if strings.Contains(rec.Body.String(), "KiB") || strings.ContainsAny(rec.Body.String(), "0123456789") {
+		t.Errorf("error message names a size: %s", rec.Body)
+	}
+	wantError(t, do(handler(maxBody), http.MethodPost, "/", pad(9<<10)), http.StatusBadRequest, "invalid_request")
+	if maxBeerBody != 16<<10 {
+		t.Errorf("maxBeerBody = %d, want 16 KiB", maxBeerBody)
 	}
 }
 
