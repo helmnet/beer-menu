@@ -54,6 +54,26 @@ describe("apiFetch", () => {
     });
   });
 
+  it("keeps the per-field messages of a validation error", async () => {
+    stubFetch(400, {
+      error: "invalid_request",
+      message: "Some fields are invalid.",
+      fields: { abv: "Must be 0 to 25 with at most one decimal place.", name: "Required." },
+    });
+    const err = await apiFetch("POST", "/api/beers", {}).catch((e: unknown) => e);
+    expect(err).toMatchObject({
+      status: 400,
+      code: "invalid_request",
+      fields: { abv: "Must be 0 to 25 with at most one decimal place.", name: "Required." },
+    });
+  });
+
+  it("has no fields when the error body has none", async () => {
+    stubFetch(409, { error: "setup_done", message: "done" });
+    const err = await apiFetch("POST", "/api/setup", {}).catch((e: unknown) => e);
+    expect((err as ApiError).fields).toBeUndefined();
+  });
+
   it("reads Retry-After in seconds", async () => {
     stubFetch(
       429,

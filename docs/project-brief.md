@@ -50,7 +50,7 @@ The MVP covers five areas: the beer library, taps, keg levels, coming soon, and 
 
 **Beer library**
 
-- Create, edit, archive and delete beers: name, style, ABV, IBU, SRM or color, description, brewer, brew date, optional label image.
+- Create, edit, archive and delete beers: name, style, ABV, IBU, SRM or color, description, brewer, brew date. Beers have no uploaded image; they are shown as generated glass or keg artwork filled with their SRM color (see Display).
 - Beers imported from Brewfather keep a link to their source batch so they can be re-synced.
 
 **Taps**
@@ -139,7 +139,7 @@ Seven tables cover the MVP. This is a starting point for the first spec, not a f
 
 | Table | Key fields | Notes |
 | --- | --- | --- |
-| `beers` | id, name, style, abv, ibu, srm, description, brewer, brew_date, image_path, status, source, source_ref, archived_at | `status`: planned, fermenting, conditioning, ready. `source`: manual or brewfather |
+| `beers` | id, name, style, abv, ibu, srm, description, brewer, brew_date, status, source, source_ref, archived_at | `status`: planned, fermenting, conditioning, ready. `source`: manual or brewfather |
 | `taps` | id, position, label, enabled | Fixed slots on the kegerator |
 | `kegs` | id, tap_id, beer_id, size_l, remaining_l, tapped_at, kicked_at | One active keg per tap; history kept |
 | `users` | id, username, password_hash, created_at | Multiple admins; the first is created on first run |
@@ -209,7 +209,7 @@ Run `/speckit-constitution` once from this brief, then one `/speckit-specify` pe
 | 0 | Constitution | None | Principles recorded: API-first, Go + SQLite, React, tests required, LAN security baseline, well-documented but not verbose code (doc comments on every exported Go symbol, API handler and React component; inline comments explain why, never restate what the code does) |
 | 1 | Project skeleton and deployment | 0 | Go API and React app build in Docker; pushing a `vX.Y.Z` tag publishes both images to GHCR; `docker compose up` serves a health endpoint and a blank admin page; SQLite on a volume with migrations |
 | 2 | Authentication and API tokens | 1 | First-run admin setup, add and remove admins, login and logout, token create, list and revoke, `read` and `write` scopes enforced |
-| 3 | Beer library | 2 | Beer CRUD in API and admin app, image upload, archive |
+| 3 | Beer library | 2 | Beer CRUD in API and admin app, archive, SRM-colored glass and keg artwork |
 | 4 | Taps and kegs | 3 | Configure taps, put a keg on a tap, update and kick kegs, keg history |
 | 5 | TV display | 4 | Full-screen tap list with keg gauges and coming soon; live updates; works in Fully Kiosk on a Fire Stick |
 | 6 | Brewfather import | 3 | Connect account, list batches, import, re-sync and scheduled sync; status feeds coming soon |

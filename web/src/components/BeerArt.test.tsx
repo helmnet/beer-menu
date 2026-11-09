@@ -1,0 +1,81 @@
+import { cleanup, render } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
+import BeerArt, { colorForSrm } from "./BeerArt";
+
+afterEach(cleanup);
+
+function draw(onTap: boolean, color: string | null, height?: number) {
+  const { container } = render(<BeerArt onTap={onTap} color={color} name="Honey IPA" height={height} />);
+  const svg = container.querySelector("svg") as SVGSVGElement;
+  return { svg, liquid: svg.querySelector('[data-part="liquid"]') as SVGElement };
+}
+
+describe("BeerArt", () => {
+  it("draws a pint glass for a beer on tap and a keg otherwise", () => {
+    const glass = draw(true, "#ffbf42");
+    expect(glass.svg.getAttribute("data-vessel")).toBe("glass");
+    expect(glass.svg.getAttribute("role")).toBe("img");
+    expect(glass.svg.getAttribute("aria-label")).toBe("Honey IPA, pint glass");
+    cleanup();
+    const keg = draw(false, "#470606");
+    expect(keg.svg.getAttribute("data-vessel")).toBe("keg");
+    expect(keg.svg.getAttribute("aria-label")).toBe("Honey IPA, keg");
+    cleanup();
+    // onTap defaults to false: until feature 4 adds taps, every beer is a keg.
+    const { container } = render(<BeerArt color="#470606" name="Honey IPA" />);
+    expect(container.querySelector("svg")?.getAttribute("data-vessel")).toBe("keg");
+  });
+
+  it.each([true, false])("fills the liquid with the color, or nothing (onTap %s)", (onTap) => {
+    expect(draw(onTap, "#9b3200").liquid.getAttribute("fill")).toBe("#9b3200");
+    cleanup();
+    expect(draw(onTap, null).liquid.getAttribute("fill")).toBe("none");
+  });
+
+  it("fills the keg body from the top ring to the foot", () => {
+    const { liquid } = draw(false, "#36080a");
+    const top = Number(liquid.getAttribute("y"));
+    // The top ring ends at y 22 and the foot starts at y 84.
+    expect(top).toBeLessThanOrEqual(22);
+    expect(top + Number(liquid.getAttribute("height"))).toBeGreaterThanOrEqual(84);
+  });
+
+  it("sets the height and scales by viewBox", () => {
+    const { svg } = draw(true, null, 64);
+    expect(svg.getAttribute("height")).toBe("64");
+    expect(svg.getAttribute("viewBox")).toBeTruthy();
+  });
+
+  it.each([true, false])("uses no style attribute or external reference (onTap %s)", (onTap) => {
+    const { svg } = draw(onTap, "#9b3200");
+    for (const el of [svg, ...Array.from(svg.querySelectorAll("*"))]) {
+      expect(el.hasAttribute("style")).toBe(false);
+      for (const attr of Array.from(el.attributes)) {
+        expect(attr.name.endsWith("href")).toBe(false);
+        expect(attr.value).not.toMatch(/url\(|https?:/);
+      }
+    }
+  });
+});
+
+describe("colorForSrm", () => {
+  // Same table shape and expectations as TestColorFor in api/internal/beers/srm_test.go.
+  const colors = Array.from({ length: 40 }, (_, i) => `#0000${(i + 1).toString(16).padStart(2, "0")}`);
+
+  it("maps every SRM from 0 to 40 like the API", () => {
+    expect(colorForSrm(colors, 0)).toBe(colors[0]);
+    for (let n = 1; n <= 40; n++) expect(colorForSrm(colors, n)).toBe(colors[n - 1]);
+  });
+
+  it("rounds halves up and clamps above the table", () => {
+    expect(colorForSrm(colors, 4.4)).toBe(colors[3]);
+    expect(colorForSrm(colors, 4.5)).toBe(colors[4]);
+    expect(colorForSrm(colors, 60)).toBe(colors[39]);
+    expect(colorForSrm(colors, 100)).toBe(colors[39]);
+  });
+
+  it("gives null without an SRM or a table", () => {
+    expect(colorForSrm(colors, null)).toBeNull();
+    expect(colorForSrm([], 5)).toBeNull();
+  });
+});

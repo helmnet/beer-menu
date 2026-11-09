@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Beer Menu API
-  version: 0.2.0
+  version: 0.3.0
   description: >
     REST API for the Beer Menu self-hosted tap list. Served under /api on the same
     origin as the admin app.
@@ -30,6 +30,8 @@ tags:
     description: Admin accounts
   - name: tokens
     description: API tokens
+  - name: beers
+    description: Beer library
 security:
   - session: []
   - bearer: []
@@ -377,6 +379,154 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/beers:
+    get:
+      operationId: listBeers
+      summary: List beers
+      description: >
+        Public menu read. Current beers by default; `archived=true` lists only archived beers.
+        Sorted by name (case-insensitive), then id.
+      tags: [beers]
+      security: []
+      x-access: public
+      parameters:
+        - name: archived
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Beers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Beer"
+        "400":
+          $ref: "#/components/responses/Invalid"
+    post:
+      operationId: createBeer
+      summary: Create a beer
+      description: Source is always manual. Body at most 16 KiB.
+      tags: [beers]
+      x-access: write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BeerCreate"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Beer"
+        "400":
+          $ref: "#/components/responses/InvalidBeer"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/beers/{id}:
+    get:
+      operationId: getBeer
+      summary: Read one beer, archived or not
+      tags: [beers]
+      security: []
+      x-access: public
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: The beer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Beer"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateBeer
+      summary: Edit, archive or restore a beer
+      description: >
+        Merge-patch semantics: absent fields are kept, null clears an optional field.
+        `archived: true` archives (keeps an existing archived_at), `archived: false` restores.
+        Body at most 16 KiB.
+      tags: [beers]
+      x-access: write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BeerPatch"
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: The updated beer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Beer"
+        "400":
+          $ref: "#/components/responses/InvalidBeer"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteBeer
+      summary: Delete a beer permanently
+      tags: [beers]
+      x-access: write
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/srm-colors:
+    get:
+      operationId: getSrmColors
+      summary: The SRM color table
+      description: >
+        Public. `colors[i]` is the color for SRM i+1 (1 to 40). Clients round SRM to the
+        nearest integer and clamp to 1..40, as the API does for Beer.color.
+      tags: [beers]
+      security: []
+      x-access: public
+      responses:
+        "200":
+          description: The table
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [colors]
+                additionalProperties: false
+                properties:
+                  colors:
+                    type: array
+                    minItems: 40
+                    maxItems: 40
+                    items:
+                      $ref: "#/components/schemas/HexColor"
+
 components:
   securitySchemes:
     session:
@@ -465,6 +615,17 @@ components:
           example:
             error: busy
             message: Server busy. Try again shortly.
+    InvalidBeer:
+      description: Invalid request; `fields` names each invalid field when validation failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ValidationError"
+          example:
+            error: invalid_request
+            message: Some fields are invalid.
+            fields:
+              abv: Must be 0 to 25 with at most one decimal place.
   schemas:
     Health:
       type: object
@@ -584,3 +745,83 @@ components:
               type: string
               description: The token, shown only in this response.
               examples: ["bmt_<43 base64url characters>"]
+    HexColor:
+      type: string
+      pattern: "^#[0-9a-f]{6}$"
+    BeerStatus:
+      type: string
+      enum: [planned, fermenting, conditioning, ready]
+    ValidationError:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        fields:
+          type: object
+          additionalProperties:
+            type: string
+    Beer:
+      type: object
+      additionalProperties: false
+      required: [id, name, style, abv, ibu, srm, color, description, brewer, brew_date,
+        status, source, source_ref, archived_at, created_at, updated_at]
+      properties:
+        id: {type: integer}
+        name: {type: string}
+        style: {type: [string, "null"]}
+        abv: {type: [number, "null"]}
+        ibu: {type: [integer, "null"]}
+        srm: {type: [number, "null"]}
+        color:
+          oneOf:
+            - $ref: "#/components/schemas/HexColor"
+            - type: "null"
+        description: {type: [string, "null"]}
+        brewer: {type: [string, "null"]}
+        brew_date: {type: [string, "null"], format: date}
+        status:
+          $ref: "#/components/schemas/BeerStatus"
+        source:
+          type: string
+          enum: [manual, brewfather]
+        source_ref: {type: [string, "null"]}
+        archived_at: {type: [string, "null"], format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    BeerCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100}
+        style: {type: [string, "null"], maxLength: 100}
+        abv: {type: [number, "null"], minimum: 0, maximum: 25, description: At most one decimal place.}
+        ibu: {type: [integer, "null"], minimum: 0, maximum: 200}
+        srm: {type: [number, "null"], minimum: 0, maximum: 100, description: At most one decimal place.}
+        description: {type: [string, "null"], maxLength: 2000}
+        brewer: {type: [string, "null"], maxLength: 100}
+        brew_date: {type: [string, "null"], format: date}
+        status:
+          description: Absent or null means ready.
+          anyOf:
+            - $ref: "#/components/schemas/BeerStatus"
+            - type: "null"
+    BeerPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100}
+        style: {type: [string, "null"], maxLength: 100}
+        abv: {type: [number, "null"], minimum: 0, maximum: 25, description: At most one decimal place.}
+        ibu: {type: [integer, "null"], minimum: 0, maximum: 200}
+        srm: {type: [number, "null"], minimum: 0, maximum: 100, description: At most one decimal place.}
+        description: {type: [string, "null"], maxLength: 2000}
+        brewer: {type: [string, "null"], maxLength: 100}
+        brew_date: {type: [string, "null"], format: date}
+        status:
+          $ref: "#/components/schemas/BeerStatus"
+        archived: {type: boolean}

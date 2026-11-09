@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Admin, apiFetch, errorMessage, isUnauthenticated } from "../api";
 import AdminsPanel from "../components/AdminsPanel";
+import BeersPanel from "../components/BeersPanel";
 import LoginForm from "../components/LoginForm";
 import PasswordForm from "../components/PasswordForm";
 import SetupForm from "../components/SetupForm";
@@ -16,8 +17,9 @@ type View =
 /**
  * AdminPage is the admin app at `/` and every non-display path. On load it asks
  * GET /api/setup and GET /api/session, then shows the first-admin setup form, the sign-in
- * form or the signed-in view with the admins, tokens and change-password sections. Any 401
- * from a later call, including the panels' calls, returns to the sign-in form.
+ * form or the signed-in view with the beer library, admins, tokens and change-password
+ * sections. Any 401 from a later call, including the panels' calls, returns to the sign-in
+ * form.
  */
 export default function AdminPage() {
   const [view, setView] = useState<View>({ kind: "loading" });
@@ -60,6 +62,7 @@ export default function AdminPage() {
           <button type="button" onClick={signOut}>
             Sign out
           </button>
+          <BeersPanel onSignedOut={toLogin} />
           <AdminsPanel me={view.admin} onSignedOut={toLogin} />
           <TokensPanel onSignedOut={toLogin} />
           <PasswordForm onSignedOut={toLogin} />

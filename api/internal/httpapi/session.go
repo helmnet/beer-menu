@@ -19,7 +19,7 @@ import (
 func signIn(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body credentialsBody
-		if !decodeJSON(w, r, &body) {
+		if !decodeJSON(w, r, &body, maxBody) {
 			return
 		}
 		username, err := auth.ValidateUsername(body.Username)
@@ -112,7 +112,7 @@ type passwordChangeBody struct {
 func changePassword(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body passwordChangeBody
-		if !decodeJSON(w, r, &body) {
+		if !decodeJSON(w, r, &body, maxBody) {
 			return
 		}
 		p, _ := principalFrom(r.Context())

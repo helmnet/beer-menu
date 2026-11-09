@@ -211,3 +211,58 @@ func TestMigration0002FromVersion1(t *testing.T) {
 		t.Fatalf("sessions after user delete = %d (err %v), want 0", n, err)
 	}
 }
+
+// TestMigration0003FromVersion2 applies 0003_beers to a version 2 database holding an admin and
+// an API token, checks both survive unchanged, and that beers takes its defaults and enforces
+// its enum CHECKs.
+func TestMigration0003FromVersion2(t *testing.T) {
+	ms, err := LoadMigrations(Migrations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ms) < 3 {
+		t.Fatal("migration 0003 missing")
+	}
+	db := openTemp(t)
+	if err := Apply(db, ms[:2]); err != nil {
+		t.Fatal(err)
+	}
+	mustExec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := db.Exec(q, args...); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	mustExec("INSERT INTO users (id, username, password_hash, created_at) VALUES (1, 'owner', 'h', 1)")
+	mustExec("INSERT INTO api_tokens (id, name, token_hash, scope, created_at, last_used_at) VALUES (1, 'ha', x'01', 'write', 2, 3)")
+	if err := Apply(db, ms[2:3]); err != nil {
+		t.Fatal(err)
+	}
+	if v := mustVersion(t, db); v != 3 {
+		t.Fatalf("version = %d, want 3", v)
+	}
+	var user, hash string
+	var created int64
+	if err := db.QueryRow("SELECT username, password_hash, created_at FROM users WHERE id = 1").Scan(&user, &hash, &created); err != nil || user != "owner" || hash != "h" || created != 1 {
+		t.Fatalf("admin row = %q %q %d (err %v)", user, hash, created, err)
+	}
+	var name, scope string
+	var tokCreated, lastUsed int64
+	if err := db.QueryRow("SELECT name, scope, created_at, last_used_at FROM api_tokens WHERE id = 1").Scan(&name, &scope, &tokCreated, &lastUsed); err != nil || name != "ha" || scope != "write" || tokCreated != 2 || lastUsed != 3 {
+		t.Fatalf("token row = %q %q %d %d (err %v)", name, scope, tokCreated, lastUsed, err)
+	}
+
+	mustExec("INSERT INTO beers (name, created_at, updated_at) VALUES ('Pale', 1, 1)")
+	var status, source string
+	if err := db.QueryRow("SELECT status, source FROM beers WHERE name = 'Pale'").Scan(&status, &source); err != nil || status != "ready" || source != "manual" {
+		t.Fatalf("defaults = %q %q (err %v), want ready manual", status, source, err)
+	}
+	for _, q := range []string{
+		"INSERT INTO beers (name, status, created_at, updated_at) VALUES ('x', 'brewing', 1, 1)",
+		"INSERT INTO beers (name, source, created_at, updated_at) VALUES ('x', 'x', 1, 1)",
+	} {
+		if _, err := db.Exec(q); err == nil {
+			t.Fatalf("%s: want CHECK error", q)
+		}
+	}
+}
