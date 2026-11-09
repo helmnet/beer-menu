@@ -236,7 +236,7 @@ first's sessions end; reset a password with the subcommand (quickstart §5).
 - [X] T059 [P] Create `.gitleaks.toml` at the repo root with `[extend] useDefault = true` and a rule `beer-menu-api-token` matching `bmt_[A-Za-z0-9_-]{43}`; gitleaks in `.github/workflows/secrets.yml` reads `<source>/.gitleaks.toml` by default, so confirm with a local run that a planted fake token in an untracked file is reported, then delete it
 - [X] T060 Confirm `api/openapi.yaml` still matches `specs/002-auth-api-tokens/contracts/openapi.yaml` (copy back any change made during implementation) and that the redocly lint reports no errors
 - [X] T061 Run `go vet ./...`, `go test ./...`, `npm run lint`, `npm test`, `npm run build` and the compose smoke test locally; all pass
-- [ ] T062 Run quickstart §1 to §6 against the built images with `--pull never --build` from a clean data folder and record results in the PR; §7 (behind NPM) runs after the release deploys to TrueNAS; record the §7 sign-in time (SC-008)
+- [X] T062 Run quickstart §1 to §6 against the built images with `--pull never --build` from a clean data folder and record results in the PR; §7 (behind NPM) runs after the release deploys to TrueNAS; record the §7 sign-in time (SC-008)
 
 ---
 
