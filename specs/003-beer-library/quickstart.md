@@ -25,14 +25,15 @@ npx --yes @redocly/cli@2.71.0 lint api/openapi.yaml
 ```
 
 Expected: all pass, including the 0002 to 0003 migration test, the per-route auth and CSRF
-tests for every beer write, and the `x-access` contract test (research R11).
+tests for every beer write, the per-route auth tests for every beer read, and the `x-access`
+contract test (research R11).
 
 ## 1. Upgrade (SC-007)
 
 ```sh
 docker compose up -d --build
 ls -t data/backups | head -1          # a new beermenu-*-v2.db
-curl -s $B/api/beers                  # []
+curl -s -H "Authorization: Bearer $R" $B/api/beers   # []
 ```
 
 Sign in with the feature 2 admin: it still works, and the token list is unchanged.
@@ -54,11 +55,14 @@ In the admin app, time adding a beer with name, style, ABV, SRM and status: unde
 (SC-001). Add a beer with a name only, then edit it. Submitting an empty name shows an
 error next to the Name field.
 
-## 3. Public reads and refusals (User Story 2, SC-002, SC-003)
+## 3. Reads with any credential and refusals (User Story 2, SC-002, SC-003)
 
 ```sh
-curl -s $B/api/beers | jq '.[] | {name,srm,color}'     # no credential; color "#rrggbb"
-curl -s -o /dev/null -w '%{http_code}\n' $B/api/beers/999                        # 404
+curl -s -H "Authorization: Bearer $R" $B/api/beers | jq '.[] | {name,srm,color}'  # "#rrggbb"
+for p in /api/beers /api/beers/1 /api/srm-colors; do
+  curl -s -o /dev/null -w '%{http_code}\n' $B$p                                   # 401 each
+done
+curl -s -o /dev/null -w '%{http_code}\n' -H "$H" $B/api/beers/999                 # 404
 curl -s -o /dev/null -w '%{http_code}\n' -d '{"name":"x"}' $B/api/beers          # 401
 curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $R" \
   -X DELETE $B/api/beers/1                                                        # 403
@@ -71,7 +75,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "$H" -H 'Sec-Fetch-Site: cross-site'
 ```sh
 curl -s -H "$H" -d '{"name":"Pale","srm":4}' $B/api/beers > /dev/null
 curl -s -H "$H" -d '{"name":"Stout","srm":35,"status":"fermenting"}' $B/api/beers > /dev/null
-curl -s $B/api/srm-colors | jq '.colors | length'      # 40
+curl -s -H "$H" $B/api/srm-colors | jq '.colors | length'      # 40
 ```
 
 In the admin app's beer library every beer is a corny keg, since no beer is on a tap until
@@ -86,9 +90,9 @@ what you expect (SC-004).
 
 ```sh
 curl -s -H "$H" -X PATCH -d '{"archived":true}' $B/api/beers/1 | jq .archived_at  # a time
-curl -s $B/api/beers | jq 'map(.id) | index(1)'                   # null: gone from default
-curl -s "$B/api/beers?archived=true" | jq 'map(.id)'              # [1]
-curl -s $B/api/beers/1 | jq .archived_at                          # still readable, archived
+curl -s -H "$H" $B/api/beers | jq 'map(.id) | index(1)'           # null: gone from default
+curl -s -H "$H" "$B/api/beers?archived=true" | jq 'map(.id)'      # [1]
+curl -s -H "$H" $B/api/beers/1 | jq .archived_at                  # still readable, archived
 curl -s -H "$H" -X PATCH -d '{"archived":false}' $B/api/beers/1 | jq .archived_at  # null
 ```
 
@@ -97,14 +101,14 @@ In the admin app, "Show archived" lists archived beers, and Restore brings one b
 ## 6. Delete (User Story 5)
 
 In the admin app, click Delete on a beer and cancel the prompt: it stays. Delete and confirm:
-it is gone, and `curl -s -o /dev/null -w '%{http_code}\n' $B/api/beers/<id>` gives 404.
+it is gone, and `curl -s -o /dev/null -w '%{http_code}\n' -H "$H" $B/api/beers/<id>` gives 404.
 
 ## 7. Scale (SC-006)
 
 ```sh
 for i in $(seq 1 500); do curl -s -H "$H" -d "{\"name\":\"Beer $i\",\"srm\":$((i % 40 + 1))}" \
   $B/api/beers > /dev/null; done
-curl -s -o /dev/null -w '%{time_total}\n' $B/api/beers          # under 1 s
+curl -s -o /dev/null -w '%{time_total}\n' -H "$H" $B/api/beers  # under 1 s
 ```
 
 The admin library with 500 beers loads in under 1 second. Reset the data folder afterwards.

@@ -9,20 +9,23 @@ rejected. Requirement IDs refer to [spec.md](./spec.md).
 
   | Method | Path | x-access | Purpose |
   | --- | --- | --- | --- |
-  | GET | `/api/beers` | public | List current beers; `?archived=true` lists only archived ones (FR-010, FR-011) |
+  | GET | `/api/beers` | read | List current beers; `?archived=true` lists only archived ones (FR-010, FR-011) |
   | POST | `/api/beers` | write | Create a beer (201) |
-  | GET | `/api/beers/{id}` | public | Read one beer, archived or not (FR-012) |
+  | GET | `/api/beers/{id}` | read | Read one beer, archived or not (FR-012) |
   | PATCH | `/api/beers/{id}` | write | Edit fields, archive and restore (FR-022, FR-023) |
   | DELETE | `/api/beers/{id}` | write | Delete permanently (204) |
-  | GET | `/api/srm-colors` | public | The SRM color table (R6) |
+  | GET | `/api/srm-colors` | read | The SRM color table (R6) |
 
 - **Archive and restore** are `PATCH {"archived": true|false}`, not separate routes. Archiving
   sets `archived_at` to now only if it is empty; restoring clears it. Both are idempotent
   (FR-023).
-- **Rationale**: public GETs are menu reads under constitution v1.2.0 principle V and need no
-  guard. Writes use `AccessWrite`, so a `write` token (Home Assistant, scripts) works like a
-  session and a `read` token gets 403. A field on PATCH is one fewer route than
-  `POST .../archive` + `POST .../restore`, and is easy to explain in the contract.
+- **Rationale**: the full library is not a menu read (owner decision 2026-11-09): it holds
+  planned and archived beers the TV never shows. GETs use `AccessRead`, so a session, a `read`
+  token or a `write` token reads them and no credential gets 401. Feature 5 adds a public
+  `GET /api/menu` with only what the TV shows. Writes use `AccessWrite`, so a `write` token
+  (Home Assistant, scripts) works like a session and a `read` token gets 403. A field on PATCH
+  is one fewer route than `POST .../archive` + `POST .../restore`, and is easy to explain in
+  the contract.
 - **Alternatives**: `PUT` full replace (clients must resend every field, and clearing versus
   keeping is ambiguous for older clients after fields are added); `?archived=all` (no caller
   needs current and archived together).
@@ -81,8 +84,8 @@ rejected. Requirement IDs refer to [spec.md](./spec.md).
   cites the URL in a comment above the table. Mapping: round SRM to the nearest integer, clamp
   to 1..40, look up. So SRM 0 shows the palest color and SRM 60 the darkest (spec edge cases).
   - Every beer read includes `color` (`"#rrggbb"`, or `null` when `srm` is `null`).
-  - `GET /api/srm-colors` (public) returns the 40 colors, so the admin form's live preview
-    (FR-042) uses the same table before the beer is saved.
+  - `GET /api/srm-colors` (session or any token) returns the 40 colors, so the admin form's
+    live preview (FR-042) uses the same table before the beer is saved.
 - **Rationale**: the web and API images build from separate contexts (`./api`, `./web`), so a
   shared file is not possible without changing the release pipeline. One table in the API plus
   a read keeps a single definition and serves every later client (principle I).
@@ -155,8 +158,9 @@ rejected. Requirement IDs refer to [spec.md](./spec.md).
     and restore idempotence, delete, 404s, every validation rule, unknown fields (`source`)
     refused, 16 KiB limit, color mapping (SRM 0, 1, 4.4, 4.5, 40, 60, `null`).
   - Auth per write route: no credential 401, `read` token 403, revoked token 401, `write` token
-    and session succeed, cross-site `Sec-Fetch-Site` 403 (constitution IV). Public GETs succeed
-    with no credential.
+    and session succeed, cross-site `Sec-Fetch-Site` 403 (constitution IV). Per read route:
+    no credential and revoked token 401; `read` token, `write` token and session succeed. Both
+    tests walk `Routes`, so a new beer route is covered and a read can't silently turn public.
   - Migration 0003 applied to a version 2 database holding an admin and a token: both survive.
   - The existing `x-access` contract test covers the new routes.
   - Vitest: `BeerArt` (vessel by `onTap`, fill per color, empty without SRM, label), `BeerForm`

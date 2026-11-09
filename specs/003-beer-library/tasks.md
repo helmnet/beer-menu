@@ -76,7 +76,7 @@ own.
 - [X] T006 [P] Tests for the color table in `api/internal/beers/srm_test.go`: table has exactly 40 entries, each matching `^#[0-9a-f]{6}$`; `ColorFor(nil) == nil`; every SRM 0 to 40 in steps of 1 (0 → entry for 1, n → entry n); 4.4 → entry 4; 4.5 → entry 5; 60 and 100 → entry 40; each entry is no lighter than the one before (sum of RGB non-increasing)
 - [X] T007 [P] Tests for validation in `api/internal/beers/validate_test.go`, one case per rule, each asserting the `FieldErrors` key: name `""`, `"   "`, 101 code points, a control character → `name`; name of exactly 100 emoji passes; `style` and `brewer` "trimmed, up to 100, no control characters; empty → NULL"; `description` "trimmed, up to 2000; newline and tab allowed" (2000 multi-byte code points pass, 2001 fail, `\r` and `\x00` fail); `abv` "0 to 25, at most one decimal" (−0.1, 25.1, 6.75 fail; 0, 25, 6.7 pass); `ibu` "0 to 200" integer (−1, 201 fail); `srm` "0 to 100, at most one decimal" (100.1, 4.25 fail); `brew_date` `YYYY-MM-DD` (`2026-02-30`, `2026-1-5`, `01/05/2026` fail; a future date passes); `status` one of `planned`, `fermenting`, `conditioning`, `ready`; several bad fields give several keys
 - [X] T008 [P] Store tests in `api/internal/beers/beers_test.go` on a real migrated SQLite file: `Get` of a missing id returns `ErrNotFound`; `Get` returns every column with `nil` for empty optionals and `Color` derived from `SRM`; `List(db, false)` returns only rows with `archived_at IS NULL`, ordered `name COLLATE NOCASE, id` (insert "beta", "Alpha", "alpha" and check order and tie on id); `List(db, true)` returns only archived rows; 500 rows list in under 1 s (SC-006; loosened from 100 ms in quality review to avoid CI flakiness)
-- [X] T009 [P] Handler tests in `api/internal/httpapi/beers_test.go` for the reads: `GET /api/beers` with no credential gives 200 and a JSON array (`[]` when empty, never `null`); `GET /api/beers/{id}` with no credential gives 200 with every contract field present, including `color` and `null` optionals; unknown id, `0`, `-1` and `abc` give `404 not_found`; responses carry `Cache-Control: no-store` and the API CSP like other routes
+- [X] T009 [P] Handler tests in `api/internal/httpapi/beers_test.go` for the reads: `GET /api/beers` with a `read` token gives 200 and a JSON array (`[]` when empty, never `null`); `GET /api/beers/{id}` with a `read` token gives 200 with every contract field present, including `color` and `null` optionals; unknown id, `0`, `-1` and `abc` give `404 not_found`; responses carry `Cache-Control: no-store` and the API CSP like other routes
 
 ### Implementation for Foundational
 
@@ -86,7 +86,7 @@ own.
 - [X] T013 [P] Create `api/internal/beers/srm.go`: `var SRMColors = [40]string{...}` holding the widely published SRM 1–40 sRGB hex table, lower-case `#rrggbb`, copied from a public source whose URL is cited in a comment above it, and `ColorFor(srm *float64) *string` that rounds to the nearest integer, clamps to 1..40 and looks up (research R6) (depends on T006)
 - [X] T014 Create `api/internal/beers/validate.go`: `FieldErrors map[string]string` implementing `error`; `Input` struct for create (`Name string`, pointer optionals, `Status *string`) and `Patch` struct for PATCH (`Optional[...]` for every field plus `Archived Optional[bool]`), both with JSON tags matching the contract; `(Input) Normalize() (Values, error)` and `(Patch) Normalize() (...)` applying research R4 verbatim — trim text, empty optional text → nil, code-point lengths, control-character rules, `abv` "0 to 25, at most one decimal", `ibu` integer "0 to 200", `srm` "0 to 100, at most one decimal" checked as `|x·10 − round(x·10)| < 1e-9`, `brew_date` via `time.Parse("2006-01-02")`, `status` enum, default `ready` on create; PATCH refuses `null` for `name`, `status`, `archived` (depends on T007, T012)
 - [X] T015 Create `api/internal/beers/beers.go`: `Beer` struct with JSON tags for every contract field (`archived_at`, `created_at`, `updated_at` as `time.Time`/`*time.Time`, `Color *string`), `ErrNotFound`, `Get(db, id) (Beer, error)` and `List(db, archived bool) ([]Beer, error)` returning a non-nil slice, ordered `name COLLATE NOCASE, id`, with `Color` from `ColorFor` (depends on T008, T010, T013)
-- [X] T016 Create `api/internal/httpapi/beers.go` with `listBeers` (`GET /api/beers`, current beers only for now) and `getBeer` (`GET /api/beers/{id}`, using `pathID` and `writeNotFound`), and register both in `api/internal/httpapi/routes.go` with `AccessPublic` (depends on T001, T009, T015)
+- [X] T016 Create `api/internal/httpapi/beers.go` with `listBeers` (`GET /api/beers`, current beers only for now) and `getBeer` (`GET /api/beers/{id}`, using `pathID` and `writeNotFound`), and register both in `api/internal/httpapi/routes.go` with `AccessRead` (session or any token; depends on T001, T009, T015)
 
 **Checkpoint**: `go test ./...` passes; the read endpoints answer and the contract test covers them.
 
@@ -117,17 +117,17 @@ field of the first; both show in the admin list and in `GET /api/beers` (quickst
 
 ---
 
-## Phase 4: User Story 2 - Read beers without signing in (Priority: P1)
+## Phase 4: User Story 2 - Read beers with any credential (Priority: P1)
 
-**Goal**: prove the public read contract and that every change refuses missing or weak
-credentials.
+**Goal**: prove the read contract (session or any token; no credential 401) and that every
+change refuses missing or weak credentials.
 
 **Independent Test**: quickstart §3.
 
 ### Tests for User Story 2
 
 - [X] T025 [P] [US2] Table-driven test `TestBeerWritesRefuseWeakCredentials` in `api/internal/httpapi/beers_test.go` that walks `Routes` for every `/api/beers` route whose method is not GET and, for each, asserts no credential 401, `read` token 403, revoked token 401, and a cross-site session request 403, and that the beer table is unchanged afterwards; it fails if a beer write route is ever registered with weaker access (FR-020, SC-003)
-- [X] T026 [P] [US2] Test in `api/internal/httpapi/beers_test.go` that `GET /api/beers` and `GET /api/beers/{id}` succeed with no credential, with a `read` token and with a session, and that a beer with `srm` 7 returns `color` equal to `beers.SRMColors[6]` and one without SRM returns `"color": null` (FR-013, SC-002)
+- [X] T026 [P] [US2] Test in `api/internal/httpapi/beers_test.go` that `GET /api/beers`, `GET /api/beers/{id}` and `GET /api/srm-colors` succeed with a `read` token, a `write` token and a session, that every beer read in `Routes` is `AccessRead` and gives 401 with no credential or a revoked token, and that a beer with `srm` 7 returns `color` equal to `beers.SRMColors[6]` and one without SRM returns `"color": null` (FR-013, SC-002)
 
 ### Implementation for User Story 2
 
@@ -146,14 +146,14 @@ form.
 
 ### Tests for User Story 3
 
-- [X] T028 [P] [US3] Handler test in `api/internal/httpapi/beers_test.go`: `GET /api/srm-colors` with no credential gives 200 `{"colors": [...]}` equal to `beers.SRMColors`
+- [X] T028 [P] [US3] Handler test in `api/internal/httpapi/beers_test.go`: `GET /api/srm-colors` with a `read` token gives 200 `{"colors": [...]}` equal to `beers.SRMColors`
 - [X] T029 [P] [US3] Component test `web/src/components/BeerArt.test.tsx`: `onTap` renders the glass and no `onTap` renders the keg, whatever the beer's status (distinguish by a `data-vessel="glass"|"keg"` attribute on the root `svg`); the liquid element's `fill` equals the `color` prop; `color={null}` renders the liquid with `fill="none"`; root has `role="img"` and `aria-label` "<name>, pint glass" or "<name>, keg"; `height` prop sets the svg height; no element has a `style` attribute and nothing has an `href` to an external resource. Also test `colorForSrm` with a 40-entry table: every SRM 0 to 40 maps to the same index as the Go `ColorFor` test in T006 (0 → index 0, n → index n−1), plus 4.4 → 3, 4.5 → 4, 60 and 100 → 39, `null` → `null` (SC-004, research R6)
 - [X] T030 [P] [US3] Extend `web/src/components/BeerForm.test.tsx`: the form fetches `/api/srm-colors` once; typing SRM 20 shows the preview liquid filled with `colors[19]` before saving; the preview is a keg and changing status from ready to conditioning leaves it a keg with the same fill; SRM 4.5 previews `colors[4]` and 60 previews `colors[39]`
 - [X] T031 [P] [US3] Extend `web/src/components/BeersPanel.test.tsx`: each row shows a `BeerArt` using the beer's `color` from the API, drawn as a keg
 
 ### Implementation for User Story 3
 
-- [X] T032 [US3] Add `getSrmColors` (`GET /api/srm-colors`) to `api/internal/httpapi/beers.go` returning `{"colors": SRMColors}` and register it with `AccessPublic` (depends on T013, T028)
+- [X] T032 [US3] Add `getSrmColors` (`GET /api/srm-colors`) to `api/internal/httpapi/beers.go` returning `{"colors": SRMColors}` and register it with `AccessRead` (depends on T013, T028)
 - [X] T033 [US3] Create `web/src/components/BeerArt.tsx` (research R7): `BeerArt({onTap, color, name, height})` returning inline SVG, the glass when `onTap` and the keg otherwise (`onTap` defaults to false; feature 4 sets it) with a fixed `viewBox`; the glass is an original shaker pint (tapered body, foam band, liquid area); the keg is an original 5 gallon corny keg (cylindrical body, top and bottom rubber bands, handle cutouts; the whole body between the bands is the liquid, like a full keg — owner feedback 2026-11-09 replaced the first design's small window); liquid `fill={color ?? "none"}`; outlines in a neutral stroke that reads on light and dark backgrounds; export `colorForSrm(colors: string[], srm: number | null): string | null` with the same round-and-clamp rule as the API (depends on T029)
 - [X] T034 [US3] In `web/src/components/BeerForm.tsx` fetch `/api/srm-colors` once on mount and show a live `BeerArt` preview driven by the current SRM input via `colorForSrm`, always a keg (FR-042); a failed fetch shows the preview empty, not an error (depends on T030, T032, T033)
 - [X] T035 [US3] In `web/src/components/BeersPanel.tsx` show `BeerArt` (about 64 px high) in each row, from the beer's `color`, with no `onTap`, so every row is a keg (FR-040) (depends on T031, T033)
@@ -209,7 +209,7 @@ form.
 ## Phase 8: Polish & Cross-Cutting Concerns
 
 - [X] T048 [P] Confirm `api/openapi.yaml` matches the implementation (status codes, `fields`, `archived` query, `minProperties: 1` on `BeerPatch`); copy any change back into `specs/003-beer-library/contracts/beers.openapi.yaml`; redocly lint reports no errors
-- [X] T049 [P] Update `README.md`: a short "Beers" section listing the endpoints and their access (public reads, `write` for changes), the PATCH merge semantics, and that beer artwork is generated from SRM with no uploads
+- [X] T049 [P] Update `README.md`: a short "Beers" section listing the endpoints and their access (`read` for reads, `write` for changes), the PATCH merge semantics, and that beer artwork is generated from SRM with no uploads
 - [X] T050 Run `go vet ./...`, `go test ./...`, `npm run lint`, `npm test`, `npm run build` and the compose smoke test locally; all pass
 - [X] T051 Run quickstart §1 to §7 against images built with `--pull never --build` from a copy of a feature 2 data folder, and record results, including the SC-001 timing, the SC-004 color check and SC-006 timings, in the PR. In the PR review, confirm the glass and keg drawings in `web/src/components/BeerArt.tsx` are original work, not traced from taplist.io or any other product (FR-036)
 
@@ -272,7 +272,7 @@ Task: "Component test in web/src/components/BeersPanel.test.tsx (T020)"
 ### MVP First (P1 stories)
 
 1. Phase 1 and Phase 2.
-2. US1 and US2: add, edit and publicly read beers, with every refusal tested.
+2. US1 and US2: add, edit and read beers with a token, with every refusal tested.
 3. **Stop and validate**: quickstart §1 to §3.
 
 ### Incremental Delivery

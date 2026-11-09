@@ -22,6 +22,7 @@ func TestAPISecurityHeaders(t *testing.T) {
 		{http.MethodPost, "/api/health", false}, // 405 from the mux
 		{http.MethodGet, "/api/setup", true},
 		{http.MethodGet, "/api/session", true}, // 401 from the guard
+		{http.MethodGet, "/api/beers", true},   // 401 from the guard
 		{http.MethodGet, "/api/nothing", true}, // 404
 	}
 	for _, c := range cases {

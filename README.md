@@ -111,16 +111,18 @@ The beer library is managed through these endpoints (details in `api/openapi.yam
 
 | Method | Path | Access | Purpose |
 | --- | --- | --- | --- |
-| `GET` | `/api/beers` | public | Current beers by name; `?archived=true` lists only archived ones |
-| `GET` | `/api/beers/{id}` | public | One beer, archived or not |
+| `GET` | `/api/beers` | read | Current beers by name; `?archived=true` lists only archived ones |
+| `GET` | `/api/beers/{id}` | read | One beer, archived or not |
 | `POST` | `/api/beers` | write | Add a beer |
 | `PATCH` | `/api/beers/{id}` | write | Edit, archive (`{"archived": true}`) or restore (`{"archived": false}`) |
 | `DELETE` | `/api/beers/{id}` | write | Delete a beer permanently |
-| `GET` | `/api/srm-colors` | public | The SRM color table |
+| `GET` | `/api/srm-colors` | read | The SRM color table |
 
-Reads are public menu reads. Changes need an admin session or a `write` token; a `read` token
-gets 403. `PATCH` merges: fields left out are kept, `null` clears an optional field, and a value
-sets it. `source` and `source_ref` cannot be set by clients.
+Reads need an admin session or any token (`read` or `write`); with no credential they get 401.
+The full library is not public: feature 5 adds a public menu endpoint with only what the TV
+shows. Changes need an admin session or a `write` token; a `read` token gets 403. `PATCH`
+merges: fields left out are kept, `null` clears an optional field, and a value sets it.
+`source` and `source_ref` cannot be set by clients.
 
 Beers have no uploaded images. Each beer's artwork is drawn by the web app as inline SVG, a
 corny keg filled with the `color` the API derives from the beer's SRM. Only a beer on a tap is

@@ -9,8 +9,8 @@ import (
 	"github.com/helmnet/beer-menu/api/internal/beers"
 )
 
-// listBeers handles GET /api/beers (public menu read): 200 with the current beers sorted by
-// name, or only the archived ones with ?archived=true, as a JSON array that is [] when empty.
+// listBeers handles GET /api/beers (session or any token): 200 with the current beers sorted
+// by name, or only the archived ones with ?archived=true, as a JSON array that is [] when empty.
 // An archived value strconv.ParseBool refuses gives 400 invalid_request.
 func listBeers(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -31,8 +31,8 @@ func listBeers(deps Deps) http.Handler {
 	})
 }
 
-// getBeer handles GET /api/beers/{id} (public menu read): 200 with the beer, archived or not.
-// An unknown or non-positive id gives 404 not_found.
+// getBeer handles GET /api/beers/{id} (session or any token): 200 with the beer, archived or
+// not. An unknown or non-positive id gives 404 not_found.
 func getBeer(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, ok := pathID(w, r)
@@ -48,8 +48,9 @@ func getBeer(deps Deps) http.Handler {
 	})
 }
 
-// getSrmColors handles GET /api/srm-colors (public menu read): 200 with {"colors": [...]},
-// the 40 display colors for SRM 1 to 40, so clients preview colors with the API's table.
+// getSrmColors handles GET /api/srm-colors (session or any token): 200 with
+// {"colors": [...]}, the 40 display colors for SRM 1 to 40, so clients preview colors with the
+// API's table.
 func getSrmColors(Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, struct {

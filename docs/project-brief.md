@@ -127,7 +127,7 @@ Security is a top priority, and the repo may go public later: no secrets, creden
 
 **Rules**
 
-- Every token has a scope: `read` (menu only) or `write` (full API). Menu reads are public on the LAN, so the TV display needs no token.
+- Every token has a scope: `read` (read-only data access, such as the beer library) or `write` (also changes data, but cannot manage admins, tokens or passwords). Only the TV menu read (`GET /api/menu`, feature 5) is public on the LAN, so the TV display needs no token.
 - No default credentials. The first admin is created on first run (setup screen or env var).
 - Login is rate limited to slow password guessing.
 - Third-party secrets (the Brewfather API key) are stored encrypted at rest and never returned by the API.
@@ -211,7 +211,7 @@ Run `/speckit-constitution` once from this brief, then one `/speckit-specify` pe
 | 2 | Authentication and API tokens | 1 | First-run admin setup, add and remove admins, login and logout, token create, list and revoke, `read` and `write` scopes enforced |
 | 3 | Beer library | 2 | Beer CRUD in API and admin app, archive, SRM-colored glass and keg artwork |
 | 4 | Taps and kegs | 3 | Configure taps, put a keg on a tap, update and kick kegs, keg history |
-| 5 | TV display | 4 | Full-screen tap list with keg gauges and coming soon; live updates; works in Fully Kiosk on a Fire Stick |
+| 5 | TV display | 4 | Full-screen tap list with keg gauges and coming soon; live updates; works in Fully Kiosk on a Fire Stick. Adds a public `GET /api/menu` with only what the display shows; full beer reads need a credential |
 | 6 | Brewfather import | 3 | Connect account, list batches, import, re-sync and scheduled sync; status feeds coming soon |
 | 7 | Display settings | 5 | Title, logo, theme and units editable from the admin app |
 

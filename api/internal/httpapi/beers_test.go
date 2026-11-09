@@ -40,8 +40,9 @@ func insertBeer(t *testing.T, deps Deps, name string) string {
 func TestBeerReads(t *testing.T) {
 	deps, _ := newTestDeps(t)
 	mux := NewMux(deps)
+	c := newCreds(t, deps)
 
-	rec := do(mux, http.MethodGet, "/api/beers", "")
+	rec := do(mux, http.MethodGet, "/api/beers", "", c.read...)
 	if rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != "[]" {
 		t.Fatalf("empty list = %d %s, want 200 []", rec.Code, rec.Body)
 	}
@@ -50,7 +51,7 @@ func TestBeerReads(t *testing.T) {
 	}
 
 	id := insertBeer(t, deps, "Pale")
-	rec = do(mux, http.MethodGet, "/api/beers/"+id, "")
+	rec = do(mux, http.MethodGet, "/api/beers/"+id, "", c.read...)
 	if rec.Code != 200 {
 		t.Fatalf("GET beer = %d %s", rec.Code, rec.Body)
 	}
@@ -67,20 +68,20 @@ func TestBeerReads(t *testing.T) {
 		t.Fatalf("beer Cache-Control = %q", rec.Header().Get("Cache-Control"))
 	}
 
-	rec = do(mux, http.MethodGet, "/api/beers", "")
+	rec = do(mux, http.MethodGet, "/api/beers", "", c.read...)
 	var list []map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil || rec.Code != 200 || len(list) != 1 || list[0]["name"] != "Pale" {
 		t.Fatalf("list = %d %s (err %v)", rec.Code, rec.Body, err)
 	}
 
 	for _, p := range []string{"/api/beers/999", "/api/beers/0", "/api/beers/-1", "/api/beers/abc"} {
-		wantError(t, do(mux, http.MethodGet, p, ""), 404, "not_found")
+		wantError(t, do(mux, http.MethodGet, p, "", c.read...), 404, "not_found")
 	}
 }
 
 // creds holds header pairs for each kind of caller of a beer route.
 type creds struct {
-	none, read, revoked, write, session, crossSite []string
+	read, revoked, write, session, crossSite []string
 }
 
 // newCreds makes a read token, a revoked write token, a write token and an admin session.
@@ -249,6 +250,40 @@ func TestBeerWritesRefuseWeakCredentials(t *testing.T) {
 	}
 }
 
+// TestBeerReadsNeedCredential walks every GET /api/beers* and /api/srm-colors route in Routes,
+// so a beer read can't silently become public again: each must be AccessRead and refuse a
+// caller with no credential (FR-010). Bad-credential cases live in TestGuardAccessTable.
+// Feature 5 adds the public menu endpoint.
+func TestBeerReadsNeedCredential(t *testing.T) {
+	deps, _ := newTestDeps(t)
+	mux := NewMux(deps)
+	id := insertBeer(t, deps, "Pale")
+
+	var tested []string
+	for _, r := range Routes {
+		if r.Method != http.MethodGet || (!strings.HasPrefix(r.Path, "/api/beers") && r.Path != "/api/srm-colors") {
+			continue
+		}
+		name := r.Method + " " + r.Path
+		tested = append(tested, name)
+		if r.Access != AccessRead {
+			t.Errorf("%s: access %s, want read", name, r.Access)
+		}
+		path := strings.ReplaceAll(r.Path, "{id}", id)
+		wantError(t, do(mux, r.Method, path, ""), 401, "unauthenticated")
+	}
+	// The guard runs before the handler, so an unknown id is not told apart from a known one.
+	for _, p := range []string{"/api/beers/999", "/api/beers/abc"} {
+		wantError(t, do(mux, http.MethodGet, p, ""), 401, "unauthenticated")
+	}
+	want := "GET /api/beers,GET /api/beers/{id},GET /api/srm-colors"
+	if got := strings.Join(tested, ","); got != want {
+		t.Fatalf("beer read routes tested = %s, want %s", got, want)
+	}
+}
+
+// TestBeerReadsAnyCredential is the success side of TestBeerReadsNeedCredential: every beer read
+// works with a read token, a write token or a session, and beers carry their SRM color.
 func TestBeerReadsAnyCredential(t *testing.T) {
 	deps, _ := newTestDeps(t)
 	mux := NewMux(deps)
@@ -257,7 +292,7 @@ func TestBeerReadsAnyCredential(t *testing.T) {
 	amber := strconv.FormatFloat(decodeObject(t, rec.Body.String())["id"].(float64), 'f', -1, 64)
 	plain := insertBeer(t, deps, "Plain")
 
-	for name, h := range map[string][]string{"none": nil, "read token": c.read, "session": c.session} {
+	for name, h := range map[string][]string{"read token": c.read, "write token": c.write, "session": c.session} {
 		if rec := do(mux, http.MethodGet, "/api/beers", "", h...); rec.Code != 200 || !strings.Contains(rec.Body.String(), "Amber") {
 			t.Errorf("list with %s = %d %s", name, rec.Code, rec.Body)
 		}
@@ -269,12 +304,15 @@ func TestBeerReadsAnyCredential(t *testing.T) {
 		if b := decodeObject(t, rec.Body.String()); rec.Code != 200 || b["color"] != nil || !strings.Contains(rec.Body.String(), `"color":null`) {
 			t.Errorf("plain with %s = %d %s", name, rec.Code, rec.Body)
 		}
+		if rec := do(mux, http.MethodGet, "/api/srm-colors", "", h...); rec.Code != 200 {
+			t.Errorf("srm-colors with %s = %d %s", name, rec.Code, rec.Body)
+		}
 	}
 }
 
 func TestSRMColors(t *testing.T) {
 	deps, _ := newTestDeps(t)
-	rec := do(NewMux(deps), http.MethodGet, "/api/srm-colors", "")
+	rec := do(NewMux(deps), http.MethodGet, "/api/srm-colors", "", newCreds(t, deps).read...)
 	var body struct {
 		Colors []string `json:"colors"`
 	}
@@ -299,7 +337,7 @@ func TestArchiveBeer(t *testing.T) {
 	path := "/api/beers/" + id
 	listed := func(query string) string {
 		t.Helper()
-		rec := do(mux, http.MethodGet, "/api/beers"+query, "")
+		rec := do(mux, http.MethodGet, "/api/beers"+query, "", c.read...)
 		if rec.Code != 200 {
 			t.Fatalf("GET /api/beers%s = %d %s", query, rec.Code, rec.Body)
 		}
@@ -316,10 +354,10 @@ func TestArchiveBeer(t *testing.T) {
 	if !strings.Contains(listed("?archived=true"), "Pale") {
 		t.Fatal("archived beer missing from ?archived=true")
 	}
-	if b := decodeObject(t, do(mux, http.MethodGet, path, "").Body.String()); b["archived_at"] == nil {
+	if b := decodeObject(t, do(mux, http.MethodGet, path, "", c.read...).Body.String()); b["archived_at"] == nil {
 		t.Fatal("GET by id lost archived_at")
 	}
-	wantError(t, do(mux, http.MethodGet, "/api/beers?archived=yes", ""), 400, "invalid_request")
+	wantError(t, do(mux, http.MethodGet, "/api/beers?archived=yes", "", c.read...), 400, "invalid_request")
 	wantError(t, do(mux, http.MethodPatch, path, `{"archived":null}`, c.write...), 400, "invalid_request")
 
 	rec = do(mux, http.MethodPatch, path, `{"archived":false}`, c.session...)
@@ -340,7 +378,7 @@ func TestDeleteBeer(t *testing.T) {
 		if rec := do(mux, http.MethodDelete, path, "", h...); rec.Code != 204 || rec.Body.Len() != 0 {
 			t.Fatalf("DELETE with %s = %d %s", name, rec.Code, rec.Body)
 		}
-		wantError(t, do(mux, http.MethodGet, path, ""), 404, "not_found")
+		wantError(t, do(mux, http.MethodGet, path, "", h...), 404, "not_found")
 		wantError(t, do(mux, http.MethodDelete, path, "", h...), 404, "not_found")
 	}
 	for _, p := range []string{"/api/beers/999", "/api/beers/0", "/api/beers/x"} {

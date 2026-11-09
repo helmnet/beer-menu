@@ -8,13 +8,14 @@
 
 Add the beer library to the Go API and the admin app. A new `beers` table (migration 0003)
 holds each beer's details, status, source fields and archived time. Five beer endpoints follow
-the feature 2 access model: list and read are public menu reads; create, PATCH (edit, archive,
-restore) and delete need a session or a `write` token. PATCH uses merge-patch semantics. The API
-owns one SRM color table: every beer read includes its `color`, and `GET /api/srm-colors` serves
-the table for the admin form's live preview. The admin app gains a beer library panel, an
-add/edit form, and a `BeerArt` component that draws original inline-SVG artwork filled with the
-beer's color: a pint glass for beers on a tap (feature 4), a corny keg otherwise, so every beer
-is a keg in this feature. There are no uploads.
+the feature 2 access model: list and read need a session or any token (`read` or `write`);
+create, PATCH (edit, archive, restore) and delete need a session or a `write` token. The full
+library is not a menu read; feature 5 adds the public `GET /api/menu` for the TV. PATCH uses
+merge-patch semantics. The API owns one SRM color table: every beer read includes its `color`,
+and `GET /api/srm-colors` serves the table for the admin form's live preview. The admin app
+gains a beer library panel, an add/edit form, and a `BeerArt` component that draws original
+inline-SVG artwork filled with the beer's color: a pint glass for beers on a tap (feature 4), a
+corny keg otherwise, so every beer is a keg in this feature. There are no uploads.
 Details are in [research.md](./research.md).
 
 ## Technical Context
@@ -53,14 +54,15 @@ SVG presentation attributes so the nginx CSP is unchanged (R7); source fields re
 | I. API-First | Every capability is an endpoint documented with `x-access`. The color table is served by the API, so all clients share it. Artwork is presentation of API data (`status`, `color`), not a capability | Pass |
 | II. Go + SQLite | stdlib only; versioned migration 0003; `source`/`source_ref` are generic columns, no Brewfather-specific code | Pass |
 | III. React Clients | React + TS; same origin; `BeerArt` sized by `viewBox` for reuse on the 1080p display | Pass |
-| IV. Tests Required | Handler tests on real SQLite; per write route: unauthenticated, `read` vs `write`, revoked token, CSRF; migration 0003 applied to v2; component tests for all three components | Pass |
-| V. LAN Security | Public only for menu reads (beer list, beer, color table); every write needs a session or `write` token and refuses cross-site requests; all input validated, unknown fields refused, body capped; no uploads, so no file-handling surface | Pass |
+| IV. Tests Required | Handler tests on real SQLite; per write route: unauthenticated, `read` vs `write`, revoked token, CSRF; per read route: no credential and revoked token 401; migration 0003 applied to v2; component tests for all three components | Pass |
+| V. LAN Security | Nothing public: beer list, beer and color table need a session or any token (the public menu read is feature 5's `GET /api/menu`); every write needs a session or `write` token and refuses cross-site requests; all input validated, unknown fields refused, body capped; no uploads, so no file-handling surface | Pass |
 | VI. Documented | Doc comments on the new package, handlers and components | Pass |
 | VII. Simplicity | No new dependencies; archive via PATCH instead of extra routes; no index or columns for features 4 and 6 | Pass |
 | Deployment constraints | Images, users and volumes unchanged; backups still cover all data (database only) | Pass |
 
 Post-design re-check (after Phase 1): still passes. One addition beyond the spec's endpoint
-list, `GET /api/srm-colors`, is public as a menu read and keeps the table defined once (R6).
+list, `GET /api/srm-colors`, needs a session or any token like the other beer reads, and keeps
+the table defined once (R6).
 
 ## Project Structure
 

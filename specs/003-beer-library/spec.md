@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input** (label image upload superseded, see Clarifications): User description: "Feature 3: Beer library. Depends on feature 2 (auth and API tokens). Admins can create, edit, archive, unarchive and delete beers in the API and the admin app. Each beer has: name (required), style, ABV, IBU, SRM (color), description, brewer, brew date, optional label image, status (planned / fermenting / conditioning / ready), source (manual / brewfather) and source_ref (link to the Brewfather batch, so feature 6 can re-sync it later; this feature only creates manual beers but the fields must exist). Archived beers are hidden from the default list but kept; delete is permanent. Label image upload: admin uploads an image file for a beer, with its own size limit and content-type check (images only), stored in the app's data directory and served by this app (same origin, since the display CSP is img-src 'self'). Beer list and beer detail GET routes are public menu reads per constitution v1.2.0 principle V; every write needs an admin session or a write-scope API token, so Home Assistant and scripts can manage beers. The TV display (features 5 and 7) will later show beer color and label art, so SRM and image must be readable from the public API. Brief source: docs/project-brief.md, "Functional scope (MVP)" > "Beer library", the beers row in "Data model sketch", and row 3 of "Spec-kit feature breakdown"."
+**Input** (label image upload and public reads superseded, see Clarifications): User description: "Feature 3: Beer library. Depends on feature 2 (auth and API tokens). Admins can create, edit, archive, unarchive and delete beers in the API and the admin app. Each beer has: name (required), style, ABV, IBU, SRM (color), description, brewer, brew date, optional label image, status (planned / fermenting / conditioning / ready), source (manual / brewfather) and source_ref (link to the Brewfather batch, so feature 6 can re-sync it later; this feature only creates manual beers but the fields must exist). Archived beers are hidden from the default list but kept; delete is permanent. Label image upload: admin uploads an image file for a beer, with its own size limit and content-type check (images only), stored in the app's data directory and served by this app (same origin, since the display CSP is img-src 'self'). Beer list and beer detail GET routes are public menu reads per constitution v1.2.0 principle V; every write needs an admin session or a write-scope API token, so Home Assistant and scripts can manage beers. The TV display (features 5 and 7) will later show beer color and label art, so SRM and image must be readable from the public API. Brief source: docs/project-brief.md, "Functional scope (MVP)" > "Beer library", the beers row in "Data model sketch", and row 3 of "Spec-kit feature breakdown"."
 
 ## Context
 
@@ -20,9 +20,11 @@ color, taken from its SRM: a glass for beers on a tap, and a keg for every other
 arrive in feature 4, so in this feature every beer is a keg. This feature builds that artwork and shows it in the admin app. Feature 5 reuses
 it on the TV.
 
-The access rules are fixed by constitution principle V and feature 2:
+The access rules are fixed by constitution principle V, feature 2 and the owner's decision of
+2026-11-09:
 
-- Reading beers is a menu read, so it is public on the LAN. The TV display needs no credential.
+- Reading beers needs an admin session or any API token (`read` or `write`). The full library is
+  not a menu read. Only what the TV shows is public, and that endpoint comes in feature 5.
 - Every change to beers needs an admin session or a `write` API token.
 - Browser writes refuse cross-site requests.
 
@@ -38,6 +40,11 @@ The access rules are fixed by constitution principle V and feature 2:
   actually on a tap; only beers on a tap show the pint glass. Taps arrive in feature 4, so in
   this feature every beer is a keg, whatever its status. The glass drawing is still built here
   for feature 4 to use.
+- Q: Are the beer list, a single beer and the color table public menu reads? A: No (owner
+  decision). The full library is not a menu read: it holds planned and archived beers the TV
+  never shows. These reads need an admin session or any API token. Feature 5 adds a public
+  `GET /api/menu` that returns only the on-tap and coming-soon beers with the fields the display
+  shows, including color.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -53,7 +60,7 @@ coming-soon list all need beers to exist first.
 
 **Independent Test**: sign in, add a beer with only a name, add a second with every field, edit
 one field of the first, and confirm both beers and the edit appear in the admin list and in a
-public read.
+read with a `read` token.
 
 **Acceptance Scenarios**:
 
@@ -70,29 +77,32 @@ public read.
 
 ---
 
-### User Story 2 - Read beers without signing in (Priority: P1)
+### User Story 2 - Read beers with any credential (Priority: P1)
 
-Any device on the LAN, such as the TV display or a guest's phone, reads the beer list and a
-single beer's details without a credential. The response includes the beer's SRM and the
-color it maps to, so the display can draw the beer's artwork later.
+A script or device holding a `read` token, such as Home Assistant, reads the beer list and a
+single beer's details. A signed-in admin and a `write` token can read them too. The response
+includes the beer's SRM and the color it maps to. A client with no credential is refused: the
+full library is not public.
 
-**Why this priority**: the display (feature 5) has no credential. Public reads are the contract
-it depends on, and principle I requires them to stay stable.
+**Why this priority**: scripts and the admin app need the full library, and principle I requires
+the read contract to stay stable. The TV's public menu endpoint comes in feature 5.
 
-**Independent Test**: with beers in the library, request the list and one beer with no
-credential, and confirm every field, including SRM and its color, comes back. Then attempt a
-create, edit, archive and delete with no credential and with a `read` token, and confirm all are
-refused.
+**Independent Test**: with beers in the library, request the list and one beer with a `read`
+token, and confirm every field, including SRM and its color, comes back. Request them with no
+credential and confirm 401. Then attempt a create, edit, archive and delete with no credential
+and with a `read` token, and confirm all are refused.
 
 **Acceptance Scenarios**:
 
-1. **Given** beers in the library, **When** a device with no credential requests the beer list,
+1. **Given** beers in the library, **When** a client with a `read` token requests the beer list,
    **Then** it receives every beer that is not archived, with all their fields.
-2. **Given** a beer with an SRM, **When** a device with no credential reads that beer, **Then**
+2. **Given** a beer with an SRM, **When** a client with a `read` token reads that beer, **Then**
    the response includes the SRM and the display color it maps to.
-3. **Given** no credential, or a `read` token, **When** a client tries any beer change, **Then**
+3. **Given** no credential, or a revoked token, **When** a client reads the beer list, a beer or
+   the color table, **Then** it is refused with 401.
+4. **Given** no credential, or a `read` token, **When** a client tries any beer change, **Then**
    it is refused and nothing changes.
-4. **Given** a beer that does not exist, **When** a client reads it, **Then** it receives a
+5. **Given** a beer that does not exist, **When** a client reads it, **Then** it receives a
    clear "not found" answer.
 
 ---
@@ -140,7 +150,7 @@ archived view, then restore it and confirm it is back in the default list unchan
 **Acceptance Scenarios**:
 
 1. **Given** a current beer, **When** an admin archives it, **Then** it no longer appears in the
-   default list, for admins or the public.
+   default list, for admins or token holders.
 2. **Given** archived beers, **When** an admin asks to see archived beers, **Then** they are
    listed, each marked as archived.
 3. **Given** an archived beer, **When** an admin restores it, **Then** it appears in the default
@@ -209,10 +219,11 @@ confirmation deletes nothing.
 - **FR-007**: Each beer MUST have a stable identifier that does not change when it is edited,
   archived or restored.
 
-**Reading (public)**
+**Reading (any credential)**
 
-- **FR-010**: Anyone on the LAN MUST be able to list beers and read one beer without a
-  credential.
+- **FR-010**: Listing beers, reading one beer and reading the color table MUST need an admin
+  session or any API token (`read` or `write`). No credential, or an invalid or revoked token,
+  MUST be refused with 401.
 - **FR-011**: The list MUST exclude archived beers by default, and MUST include them only when a
   client asks for archived beers.
 - **FR-012**: Reading one beer by its identifier MUST return it whether or not it is archived,
@@ -295,8 +306,8 @@ confirmation deletes nothing.
 
 - **SC-001**: An admin can add a beer with name, style, ABV, SRM and status in under 1 minute
   from the admin app, on a laptop or a phone.
-- **SC-002**: A device with no credential can read the full beer list, including each beer's SRM
-  and display color.
+- **SC-002**: A client with a `read` token can read the full beer list, including each beer's
+  SRM and display color; with no credential it is refused.
 - **SC-003**: 100% of beer change operations are refused with no credential, with a `read`
   token, and from a cross-site browser request, as shown by automated tests.
 - **SC-004**: For every SRM from 0 to 40 in steps of 1, the artwork's fill matches the color table,
@@ -305,8 +316,8 @@ confirmation deletes nothing.
 - **SC-005**: Beer artwork loads no image or font: the drawings are part of the app. The beer
   list draws each beer from the color in its read, with no extra request; only the add/edit
   form reads the color table once, for its live preview.
-- **SC-006**: With 500 beers in the library, the admin list and the public list each load in
-  under 1 second on the home server.
+- **SC-006**: With 500 beers in the library, the admin list and the list read with a token each
+  load in under 1 second on the home server.
 - **SC-007**: Upgrading an install from feature 2 keeps all admins and tokens, and the beer
   library starts empty and usable, with a database backup taken before the upgrade.
 
@@ -316,6 +327,9 @@ confirmation deletes nothing.
   in feature 6, which sets source and source reference.
 - Taps and kegs arrive in feature 4. Feature 4 decides what happens when a beer that is on a tap
   is archived or deleted. Until then, nothing blocks either action.
+- The TV display reads no beer endpoint from this feature. Feature 5 adds a public
+  `GET /api/menu` with only the on-tap and coming-soon beers and the fields the display shows,
+  including color.
 - The display (feature 5) decides where each beer appears (on tap or coming soon). The vessel
   depends on whether the beer is on a tap, not on its status. Feature 4 supplies that; until
   then every beer is drawn as a keg.

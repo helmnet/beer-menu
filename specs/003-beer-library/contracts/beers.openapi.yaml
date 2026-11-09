@@ -12,11 +12,10 @@ paths:
       operationId: listBeers
       summary: List beers
       description: >
-        Public menu read. Current beers by default; `archived=true` lists only archived beers.
-        Sorted by name (case-insensitive), then id.
+        Needs a session or any API token. Current beers by default; `archived=true` lists only
+        archived beers. Sorted by name (case-insensitive), then id.
       tags: [beers]
-      security: []
-      x-access: public
+      x-access: read
       parameters:
         - name: archived
           in: query
@@ -35,6 +34,8 @@ paths:
                   $ref: "#/components/schemas/Beer"
         "400":
           $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
     post:
       operationId: createBeer
       summary: Create a beer
@@ -65,8 +66,7 @@ paths:
       operationId: getBeer
       summary: Read one beer, archived or not
       tags: [beers]
-      security: []
-      x-access: public
+      x-access: read
       parameters:
         - $ref: "#/components/parameters/Id"
       responses:
@@ -76,6 +76,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Beer"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
         "404":
           $ref: "#/components/responses/NotFound"
     patch:
@@ -131,11 +133,11 @@ paths:
       operationId: getSrmColors
       summary: The SRM color table
       description: >
-        Public. `colors[i]` is the color for SRM i+1 (1 to 40). Clients round SRM to the
-        nearest integer and clamp to 1..40, as the API does for Beer.color.
+        Needs a session or any API token. `colors[i]` is the color for SRM i+1 (1 to 40).
+        Clients round SRM to the nearest integer and clamp to 1..40, as the API does for
+        Beer.color.
       tags: [beers]
-      security: []
-      x-access: public
+      x-access: read
       responses:
         "200":
           description: The table
@@ -152,6 +154,8 @@ paths:
                     maxItems: 40
                     items:
                       $ref: "#/components/schemas/HexColor"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
 components:
   responses:
     InvalidBeer:
