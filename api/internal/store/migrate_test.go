@@ -157,3 +157,57 @@ func TestCheckVersion(t *testing.T) {
 		t.Errorf("CheckVersion(3, 2) = %v, want ErrNewerDatabase", err)
 	}
 }
+
+// TestMigration0002FromVersion1 applies 0002_auth to a version 1 database holding data and
+// checks the data survives and the auth tables enforce their constraints.
+func TestMigration0002FromVersion1(t *testing.T) {
+	ms, err := LoadMigrations(Migrations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ms) < 2 {
+		t.Fatal("migration 0002 missing")
+	}
+	db := openTemp(t)
+	if err := Apply(db, ms[:1]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO settings (key, value) VALUES ('title', 'kept')"); err != nil {
+		t.Fatal(err)
+	}
+	if err := Apply(db, ms[1:2]); err != nil {
+		t.Fatal(err)
+	}
+	if v := mustVersion(t, db); v != 2 {
+		t.Fatalf("version = %d, want 2", v)
+	}
+	var title string
+	if err := db.QueryRow("SELECT value FROM settings WHERE key = 'title'").Scan(&title); err != nil || title != "kept" {
+		t.Fatalf("settings row = %q (err %v), want kept", title, err)
+	}
+	mustExec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := db.Exec(q, args...); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	mustFail := func(q string, args ...any) {
+		t.Helper()
+		if _, err := db.Exec(q, args...); err == nil {
+			t.Fatalf("%s: want constraint error", q)
+		}
+	}
+	mustExec("INSERT INTO users (id, username, password_hash, created_at) VALUES (1, 'owner', 'h', 1)")
+	mustFail("INSERT INTO users (username, password_hash, created_at) VALUES ('OWNER', 'h', 1)")
+	mustExec("INSERT INTO api_tokens (name, token_hash, scope, created_at) VALUES ('t', x'01', 'read', 1)")
+	mustExec("INSERT INTO api_tokens (name, token_hash, scope, created_at) VALUES ('t', x'02', 'write', 1)")
+	mustFail("INSERT INTO api_tokens (name, token_hash, scope, created_at) VALUES ('t', x'03', 'admin', 1)")
+	mustFail("INSERT INTO api_tokens (name, token_hash, scope, created_at) VALUES ('t', x'01', 'read', 1)")
+	mustExec("INSERT INTO sessions (id_hash, user_id, created_at, last_seen_at, expires_at) VALUES (x'aa', 1, 1, 1, 2)")
+	mustFail("INSERT INTO sessions (id_hash, user_id, created_at, last_seen_at, expires_at) VALUES (x'bb', 99, 1, 1, 2)")
+	mustExec("DELETE FROM users WHERE id = 1")
+	var n int
+	if err := db.QueryRow("SELECT count(*) FROM sessions").Scan(&n); err != nil || n != 0 {
+		t.Fatalf("sessions after user delete = %d (err %v), want 0", n, err)
+	}
+}

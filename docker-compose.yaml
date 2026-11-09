@@ -12,6 +12,13 @@ services:
     user: "${PUID:-65532}:${PGID:-65532}"
     volumes:
       - ${BEER_MENU_DATA:-./data}:/data
+    # environment:
+    #   # First admin, created at startup only while no admin exists; set both or neither.
+    #   BEER_MENU_ADMIN_USERNAME: owner
+    #   # 12 to 256 characters, from your shell or an env file; never write the value here.
+    #   BEER_MENU_ADMIN_PASSWORD: ${BEER_MENU_ADMIN_PASSWORD}
+    #   # Default true; set false only for plain-HTTP access by LAN address (see README.md).
+    #   BEER_MENU_COOKIE_SECURE: "false"
     restart: unless-stopped
 
   web:

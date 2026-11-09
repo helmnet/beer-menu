@@ -1,7 +1,12 @@
 // Command beer-menu-api runs the Beer Menu REST API. It reads BEER_MENU_DATA_DIR
-// (default /data) and BEER_MENU_PORT (default 8080), prepares and migrates the database,
-// then serves HTTP until SIGTERM or SIGINT. "beer-menu-api healthcheck" probes the
-// running API's health endpoint and exits 0 when it returns 200, else 1.
+// (default /data), BEER_MENU_PORT (default 8080) and BEER_MENU_COOKIE_SECURE (default true;
+// only the exact value "false" drops the Secure flag from the session cookie, for plain-HTTP
+// access), and BEER_MENU_ADMIN_USERNAME with BEER_MENU_ADMIN_PASSWORD (both or neither; they
+// create the first admin when none exists and are ignored otherwise). It prepares and
+// migrates the database, then serves HTTP until SIGTERM or SIGINT. "beer-menu-api
+// healthcheck" probes the running API's health endpoint and exits 0 when it returns 200,
+// else 1. "beer-menu-api reset-password <username>" prompts on the terminal for a new
+// password for that admin and ends their sessions; it exits 0 on success, else 1.
 package main
 
 import (
@@ -15,8 +20,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/helmnet/beer-menu/api/internal/auth"
 	"github.com/helmnet/beer-menu/api/internal/httpapi"
 	"github.com/helmnet/beer-menu/api/internal/store"
+	"golang.org/x/term"
 )
 
 // version is the release version, set with -ldflags "-X main.version=X.Y.Z".
@@ -37,9 +44,16 @@ func main() {
 	cfg := config{
 		DataDir: envOr("BEER_MENU_DATA_DIR", "/data"),
 		Port:    envOr("BEER_MENU_PORT", "8080"),
+		// Secure unless explicitly disabled; never inferred from X-Forwarded-Proto (research R4).
+		CookieSecure:  os.Getenv("BEER_MENU_COOKIE_SECURE") != "false",
+		AdminUsername: os.Getenv("BEER_MENU_ADMIN_USERNAME"),
+		AdminPassword: os.Getenv("BEER_MENU_ADMIN_PASSWORD"),
 	}
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		os.Exit(healthcheck(cfg.Port))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "reset-password" {
+		os.Exit(resetPassword(cfg.DataDir, os.Args[2:], int(os.Stdin.Fd()), os.Stdout, term.IsTerminal, term.ReadPassword))
 	}
 	if err := run(cfg); err != nil {
 		slog.Error("beer-menu-api stopped", "err", err)
@@ -56,10 +70,21 @@ func run(cfg config) error {
 		return err
 	}
 	defer db.Close()
+	if err := prepareAuth(ctx, db, cfg, time.Now); err != nil {
+		return err
+	}
+	// Makes the dummy hash now, so the first unknown-username sign-in costs no more than a
+	// wrong password (research R3).
+	if err := auth.DummyVerify(""); err != nil {
+		return err
+	}
 
 	srv := &http.Server{
-		Addr:              ":" + cfg.Port,
-		Handler:           httpapi.NewMux(httpapi.Deps{DB: db, Version: version}),
+		Addr: ":" + cfg.Port,
+		Handler: httpapi.NewMux(httpapi.Deps{
+			DB: db, Version: version, CookieSecure: cfg.CookieSecure,
+			Now: time.Now, Limiter: auth.NewLimiter(time.Now),
+		}),
 		ReadHeaderTimeout: 10 * time.Second,
 		// Without these an idle keep-alive or a slow request body holds a connection forever.
 		ReadTimeout: 30 * time.Second,

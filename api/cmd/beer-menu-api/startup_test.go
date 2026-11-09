@@ -3,13 +3,18 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"database/sql"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
 
+	"github.com/helmnet/beer-menu/api/internal/auth"
 	"github.com/helmnet/beer-menu/api/internal/store"
 )
 
@@ -194,5 +199,122 @@ func TestStartupUnwritableDataFolder(t *testing.T) {
 	}
 	if err := runStartup(t, dir, v1); err == nil {
 		t.Fatal("want error for unwritable data folder")
+	}
+}
+
+// captureLog sends slog output to a buffer for the rest of the test.
+func captureLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(old) })
+	return &buf
+}
+
+// startAuth runs startup with the real migrations and then prepareAuth, as run does.
+func startAuth(t *testing.T, cfg config) (*sql.DB, error) {
+	t.Helper()
+	db, err := startup(context.Background(), cfg, store.Migrations, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	return db, prepareAuth(context.Background(), db, cfg, fixedNow)
+}
+
+func adminCount(t *testing.T, db *sql.DB) int {
+	t.Helper()
+	n, err := auth.AdminCount(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+func TestStartupCreatesFirstAdminFromEnv(t *testing.T) {
+	logs := captureLog(t)
+	pw := rand.Text()
+	cfg := config{DataDir: t.TempDir(), AdminUsername: "owner", AdminPassword: pw}
+	db, err := startAuth(t, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if adminCount(t, db) != 1 {
+		t.Fatal("admin not created")
+	}
+	if _, err := auth.Authenticate(db, "owner", pw); err != nil {
+		t.Fatalf("created admin cannot sign in: %v", err)
+	}
+	if !strings.Contains(logs.String(), "first admin created") {
+		t.Errorf("log lacks 'first admin created': %s", logs)
+	}
+	if strings.Contains(logs.String(), pw) {
+		t.Fatal("log contains the password")
+	}
+}
+
+func TestStartupIgnoresEnvWhenAdminExists(t *testing.T) {
+	logs := captureLog(t)
+	dir := t.TempDir()
+	first := rand.Text()
+	if _, err := startAuth(t, config{DataDir: dir, AdminUsername: "owner", AdminPassword: first}); err != nil {
+		t.Fatal(err)
+	}
+	second := rand.Text()
+	db, err := startAuth(t, config{DataDir: dir, AdminUsername: "owner", AdminPassword: second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if adminCount(t, db) != 1 {
+		t.Fatal("second admin created")
+	}
+	if _, err := auth.Authenticate(db, "owner", first); err != nil {
+		t.Fatalf("existing password no longer verifies: %v", err)
+	}
+	if !strings.Contains(logs.String(), "first admin settings ignored, an admin exists") {
+		t.Errorf("log lacks the ignored message: %s", logs)
+	}
+	if strings.Contains(logs.String(), first) || strings.Contains(logs.String(), second) {
+		t.Fatal("log contains a password")
+	}
+}
+
+func TestStartupRefusesBadAdminEnv(t *testing.T) {
+	logs := captureLog(t)
+	pw := rand.Text()
+	cases := map[string]config{
+		"username only":  {AdminUsername: "owner"},
+		"password only":  {AdminPassword: pw},
+		"short password": {AdminUsername: "owner", AdminPassword: pw[:11]},
+		"bad username":   {AdminUsername: "bad name", AdminPassword: pw},
+	}
+	for name, cfg := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg.DataDir = t.TempDir()
+			db, err := startAuth(t, cfg)
+			if err == nil {
+				t.Fatal("want error")
+			}
+			if strings.Contains(err.Error(), pw[:11]) {
+				t.Fatal("error contains the password")
+			}
+			if adminCount(t, db) != 0 {
+				t.Fatal("admin created")
+			}
+		})
+	}
+	if strings.Contains(logs.String(), pw[:11]) {
+		t.Fatal("log contains the password")
+	}
+}
+
+func TestStartupWithoutAdminEnvCreatesNothing(t *testing.T) {
+	db, err := startAuth(t, config{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if adminCount(t, db) != 0 {
+		t.Fatal("admin created without env vars")
 	}
 }

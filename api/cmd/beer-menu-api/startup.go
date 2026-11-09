@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
 	"path/filepath"
 	"time"
 
+	"github.com/helmnet/beer-menu/api/internal/auth"
 	"github.com/helmnet/beer-menu/api/internal/store"
 )
 
@@ -16,9 +18,15 @@ import (
 const keepBackups = 5
 
 // config is the runtime configuration read from the environment.
+// It holds the first-admin password, so it must never be logged.
 type config struct {
-	DataDir string
-	Port    string
+	DataDir      string
+	Port         string
+	CookieSecure bool
+	// AdminUsername and AdminPassword create the first admin at startup when both are set
+	// and no admin exists (research R9).
+	AdminUsername string
+	AdminPassword string
 }
 
 // startup prepares the database before the API serves requests: it checks the data folder
@@ -74,5 +82,32 @@ func migrate(ctx context.Context, db *sql.DB, dataDir string, migrationsFS fs.FS
 		return err
 	}
 	slog.InfoContext(ctx, "migrations applied", "from", current, "to", newest, "count", len(pending))
+	return nil
+}
+
+// prepareAuth runs after startup has migrated db to the newest schema and before the API
+// serves requests. It deletes expired sessions, then handles the first-admin settings: with
+// neither set it does nothing; with both set and no admin it creates that admin; with an
+// admin present it ignores them. Only one set, or values that break the username or
+// password rules, return an error so the API exits. Errors and logs never hold the password.
+func prepareAuth(ctx context.Context, db *sql.DB, cfg config, now func() time.Time) error {
+	if err := auth.SweepExpired(db, now()); err != nil {
+		return fmt.Errorf("delete expired sessions: %w", err)
+	}
+	if cfg.AdminUsername == "" && cfg.AdminPassword == "" {
+		return nil
+	}
+	if cfg.AdminUsername == "" || cfg.AdminPassword == "" {
+		return errors.New("set both BEER_MENU_ADMIN_USERNAME and BEER_MENU_ADMIN_PASSWORD, or neither")
+	}
+	admin, err := auth.CreateFirstAdmin(db, cfg.AdminUsername, cfg.AdminPassword, now())
+	if errors.Is(err, auth.ErrSetupDone) {
+		slog.InfoContext(ctx, "first admin settings ignored, an admin exists")
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("first admin from BEER_MENU_ADMIN_USERNAME and BEER_MENU_ADMIN_PASSWORD: %w", err)
+	}
+	slog.InfoContext(ctx, "first admin created", "username", admin.Username)
 	return nil
 }
