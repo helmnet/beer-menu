@@ -1,9 +1,15 @@
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import { menu, stubApi } from "./testApi";
+
+beforeEach(() => {
+  stubApi({ "GET /api/menu": { status: 200, body: menu() }, "GET /api/setup": { status: 200, body: { needed: true } } });
+});
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   window.history.pushState({}, "", "/");
 });
 
@@ -14,17 +20,17 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "Beer Menu" })).toBeTruthy();
   });
 
-  it("renders the display placeholder at /display", () => {
+  it("renders the display at /display", async () => {
     window.history.pushState({}, "", "/display");
     render(<App />);
-    expect(screen.getByText("Tap list coming soon")).toBeTruthy();
+    expect(await screen.findByText("Nothing on tap")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Beer Menu" })).toBeNull();
   });
 
-  it("renders the display placeholder below /display/", () => {
+  it("renders the display below /display/", async () => {
     window.history.pushState({}, "", "/display/tv1");
     render(<App />);
-    expect(screen.getByText("Tap list coming soon")).toBeTruthy();
+    expect(await screen.findByText("Nothing on tap")).toBeTruthy();
   });
 
   it("renders the admin page for /displayx", () => {

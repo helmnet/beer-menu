@@ -98,6 +98,44 @@ export interface Tap {
   updated_at: string;
 }
 
+/** MenuBeer is a beer as the public menu gives it: display fields only, nulls when empty. */
+export interface MenuBeer {
+  name: string;
+  style: string | null;
+  abv: number | null;
+  ibu: number | null;
+  color: string | null;
+}
+
+/** MenuKeg is a keg as the public menu gives it: its drawing and the fraction left, 0 to 1. */
+export interface MenuKeg {
+  shape: "corny" | "sanke";
+  level: number;
+}
+
+/** MenuTap is one enabled tap on the menu; `keg` is null exactly when `beer` is null (empty). */
+export interface MenuTap {
+  label: string;
+  beer: MenuBeer | null;
+  keg: MenuKeg | null;
+}
+
+/**
+ * OnDeckItem is one on-deck entry: a waiting keg (`keg` set, `status` null) or a beer still
+ * being made (`keg` null, `status` set).
+ */
+export interface OnDeckItem {
+  beer: MenuBeer;
+  keg: MenuKeg | null;
+  status: "fermenting" | "conditioning" | null;
+}
+
+/** Menu is the body of the public GET /api/menu: enabled taps in order, then on deck. */
+export interface Menu {
+  taps: MenuTap[];
+  on_deck: OnDeckItem[];
+}
+
 /**
  * ApiError is thrown by apiFetch for any non-2xx response. `code` and `message` come from the
  * API's `{"error", "message"}` body (`code` is "unknown" when the body is not that shape), and
@@ -119,11 +157,18 @@ export class ApiError extends Error {
 
 /**
  * apiFetch calls the same-origin API with an optional JSON body and returns the parsed JSON
- * response, or undefined for 204. It throws ApiError for any non-2xx status.
+ * response, or undefined for 204. It throws ApiError for any non-2xx status. `signal`, when
+ * given, aborts the request; fetch then rejects with its abort error.
  */
-export async function apiFetch<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
+export async function apiFetch<T = unknown>(
+  method: string,
+  path: string,
+  body?: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
   const res = await fetch(path, {
     method,
+    signal,
     credentials: "same-origin",
     headers: body === undefined ? {} : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),

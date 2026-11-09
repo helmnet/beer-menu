@@ -119,8 +119,8 @@ The beer library is managed through these endpoints (details in `api/openapi.yam
 | `GET` | `/api/srm-colors` | read | The SRM color table |
 
 Reads need an admin session or any token (`read` or `write`); with no credential they get 401.
-The full library is not public: feature 5 adds a public menu endpoint with only what the TV
-shows. Changes need an admin session or a `write` token; a `read` token gets 403. `PATCH`
+The full library is not public: the TV display reads `GET /api/menu`, which holds only what
+the TV shows. Changes need an admin session or a `write` token; a `read` token gets 403. `PATCH`
 merges: fields left out are kept, `null` clears an optional field, and a value sets it.
 `source` and `source_ref` cannot be set by clients.
 
@@ -157,6 +157,21 @@ A tap holds one current keg; a kicked keg is read-only history.
 
 Conflicts answer 409 with one of these `error` codes: `tap_occupied`, `tap_has_keg`,
 `last_tap`, `keg_kicked`, `beer_has_keg`, `beer_has_kegs`.
+
+## TV display
+
+Open `/display` on the TV (Fully Kiosk on a Fire TV Stick); it needs no credential. It shows
+the enabled taps in order, then an "On deck" page of waiting kegs and beers still being made,
+each drawn filled to its keg level. Pages hold up to 8 cards (4 × 2); with more than one page
+they rotate every 15 seconds with a "N / M" indicator in the corner. The interval is fixed for
+now; a setting for it is planned with the other display settings (feature 7). It polls
+`GET /api/menu` every 10 seconds, keeps the last menu through outages with a small "offline"
+notice after about 2 minutes, and reloads itself about once a day to pick up upgrades.
+
+`GET /api/menu` is the only public read. It returns display fields only (tap label, beer name,
+style, ABV, IBU, color, keg shape) and the keg level as a fraction from 0 to 1: no ids, sizes,
+volumes or timestamps. Home Assistant and scripts that need volumes use the credentialed
+`GET /api/kegs` and `GET /api/taps` with a token.
 
 ## Restore from a backup
 

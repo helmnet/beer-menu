@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import type { Beer, Keg, KegType, Tap } from "./api";
+import type { Beer, Keg, KegType, Menu, Tap } from "./api";
 
 /** Reply is one stubbed API response. */
 export interface Reply {
@@ -115,3 +115,8 @@ export const kegTypes: KegType[] = [
   { type: "euro_30_l", label: "Euro 30 L", size_l: 30, shape: "sanke" },
   { type: "euro_50_l", label: "Euro 50 L", size_l: 50, shape: "sanke" },
 ];
+
+/** menu returns a GET /api/menu body for stubs: no taps and nothing on deck, with overrides. */
+export function menu(overrides: Partial<Menu> = {}): Menu {
+  return { taps: [], on_deck: [], ...overrides };
+}

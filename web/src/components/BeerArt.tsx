@@ -24,6 +24,13 @@ export function colorForSrm(colors: string[], srm: number | null): string | null
  * empty. It makes no network request and scales by its viewBox, so `height` alone sizes it for
  * the admin list or the TV. The root has role img, a label naming the beer and vessel, and for
  * a keg `data-keg-shape`.
+ *
+ * `level` (0 to 1, optional) fills the liquid to that fraction from the bottom: any level above
+ * 0 shows at least a 2% sliver, 0 draws no liquid and no foam, and the label gains ", N% left"
+ * (N rounded, but at least 1 above 0 and at most 99 below 1, so the label never says empty or
+ * full when it is not). A keg keeps its full body outline above the liquid. The shapes are
+ * computed, with no clip path, ids or style, so many drawings share a page under the CSP.
+ * Without `level` the drawing is full, as before.
  */
 export default function BeerArt({
   onTap = false,
@@ -31,34 +38,78 @@ export default function BeerArt({
   color,
   name,
   height = 64,
+  level,
 }: {
   onTap?: boolean;
   kegShape?: "corny" | "sanke";
   color: string | null;
   name: string;
   height?: number;
+  level?: number;
 }) {
+  const vessel = onTap ? "pint glass" : "keg";
+  let label = `${name}, ${vessel}`;
+  let fill: number | undefined;
+  if (level !== undefined) {
+    const l = Math.min(Math.max(level, 0), 1);
+    fill = l > 0 ? Math.max(l, 0.02) : 0;
+    let pct = Math.round(l * 100);
+    if (l > 0) pct = Math.max(pct, 1);
+    if (l < 1) pct = Math.min(pct, 99);
+    label += `, ${pct}% left`;
+  }
   return (
     <svg
       viewBox="0 0 60 100"
       height={height}
       width={height * 0.6}
       role="img"
-      aria-label={`${name}, ${onTap ? "pint glass" : "keg"}`}
+      aria-label={label}
       data-vessel={onTap ? "glass" : "keg"}
       data-keg-shape={onTap ? undefined : kegShape}
     >
-      {onTap ? <Glass color={color} /> : kegShape === "sanke" ? <SankeKeg color={color} /> : <Keg color={color} />}
+      {onTap ? (
+        <Glass color={color} fill={fill ?? 1} />
+      ) : kegShape === "sanke" ? (
+        <SankeKeg color={color} fill={fill} />
+      ) : (
+        <Keg color={color} fill={fill} />
+      )}
     </svg>
   );
 }
 
-/** Glass is a shaker pint: straight walls tapering to a narrower, thicker base. */
-function Glass({ color }: { color: string | null }) {
+// One decimal is finer than a TV pixel and keeps the full glass path text as it always was.
+const r = (v: number) => Math.round(v * 10) / 10;
+
+// The glass walls run from (11.3, 22) to (16.8, 90) and (48.7, 22) to (43.2, 90).
+const wallLeft = (y: number) => r(11.3 + ((y - 22) * 5.5) / 68);
+const wallRight = (y: number) => r(48.7 - ((y - 22) * 5.5) / 68);
+
+/**
+ * Glass is a shaker pint: straight walls tapering to a narrower, thicker base. The liquid
+ * fills `fill` (0 to 1) of the glass from the base, with a foam band on top when there is any:
+ * 10 units tall, or half the liquid's height when that is less.
+ */
+function Glass({ color, fill }: { color: string | null; fill: number }) {
+  const top = r(90 - fill * 68);
+  // Foam at most half the beer's height, so a nearly empty glass looks nearly empty.
+  const head = r(top - Math.min(10, fill * 34));
   return (
     <g strokeLinejoin="round">
-      <path data-part="liquid" d="M11.3 22 L16.8 90 L43.2 90 L48.7 22 Z" fill={color ?? "none"} />
-      {color && <path d="M10.5 12 L11.3 22 L48.7 22 L49.5 12 Z" fill={foam} />}
+      {fill > 0 && (
+        <path
+          data-part="liquid"
+          d={`M${wallLeft(top)} ${top} L16.8 90 L43.2 90 L${wallRight(top)} ${top} Z`}
+          fill={color ?? "none"}
+        />
+      )}
+      {color && fill > 0 && (
+        <path
+          d={`M${wallLeft(head)} ${head} L${wallLeft(top)} ${top} L${wallRight(top)} ${top} L${wallRight(head)} ${head} Z`}
+          fill={foam}
+        />
+      )}
       <path d="M8 6 L15 94 L45 94 L52 6" fill="none" stroke={outline} strokeWidth={2} />
       <path d="M15.6 90 L44.4 90" stroke={outline} strokeWidth={1.5} />
       <path d="M14 28 L17.5 82" stroke="#ffffff" strokeOpacity={0.45} strokeWidth={1.5} strokeLinecap="round" />
@@ -67,13 +118,50 @@ function Glass({ color }: { color: string | null }) {
 }
 
 /**
- * Keg is a corny keg seen from the side: a rubber top ring with two handle cutouts, a rubber
- * foot, and between them a body with weld seams. The whole body is the liquid, like a full keg.
+ * KegBody is a keg's body rect. Without `fill` the whole body is the liquid, like a full keg;
+ * with `fill` (0 to 1) a square-cornered liquid rect sits on the body bottom under the unfilled
+ * full-size outline. Both kegs hide 2 units at each end of the body under their top and bottom
+ * parts, so `fill` spans the visible body between them: a sliver shows and only 1 reaches the top.
  */
-function Keg({ color }: { color: string | null }) {
+function KegBody({
+  x,
+  y,
+  width,
+  height,
+  rx,
+  color,
+  fill,
+}: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rx: number;
+  color: string | null;
+  fill?: number;
+}) {
+  if (fill === undefined) {
+    return (
+      <rect data-part="liquid" x={x} y={y} width={width} height={height} rx={rx} fill={color ?? "none"} stroke={outline} strokeWidth={1.5} />
+    );
+  }
+  const h = fill > 0 ? r(2 + fill * (height - 4)) : 0;
+  return (
+    <>
+      {h > 0 && <rect data-part="liquid" x={x} y={r(y + height - h)} width={width} height={h} fill={color ?? "none"} />}
+      <rect x={x} y={y} width={width} height={height} rx={rx} fill="none" stroke={outline} strokeWidth={1.5} />
+    </>
+  );
+}
+
+/**
+ * Keg is a corny keg seen from the side: a rubber top ring with two handle cutouts, a rubber
+ * foot, and between them a body with weld seams. The body holds the liquid (see KegBody).
+ */
+function Keg({ color, fill }: { color: string | null; fill?: number }) {
   return (
     <g strokeLinejoin="round">
-      <rect data-part="liquid" x={13} y={20} width={34} height={66} rx={3} fill={color ?? "none"} stroke={outline} strokeWidth={1.5} />
+      <KegBody x={13} y={20} width={34} height={66} rx={3} color={color} fill={fill} />
       {/* Translucent gray seams read on pale and near-black beer alike. */}
       <path d="M13 30 H47 M13 76 H47" stroke={outline} strokeOpacity={0.7} strokeWidth={1} />
       <path d="M17 26 V80" stroke="#ffffff" strokeOpacity={0.45} strokeWidth={1.5} strokeLinecap="round" />
@@ -93,12 +181,12 @@ function Keg({ color }: { color: string | null }) {
  * SankeKeg is a straight-sided steel sanke keg seen from the side: top and bottom chimes with
  * rounded hand-hold cutouts, two rolling rings around the body, and the spear fitting showing
  * above the top chime. It is wider and squatter than the corny keg in the same viewBox. The
- * whole body is the liquid, like a full keg.
+ * body holds the liquid (see KegBody).
  */
-function SankeKeg({ color }: { color: string | null }) {
+function SankeKeg({ color, fill }: { color: string | null; fill?: number }) {
   return (
     <g strokeLinejoin="round">
-      <rect data-part="liquid" x={10} y={19} width={40} height={64} rx={2} fill={color ?? "none"} stroke={outline} strokeWidth={1.5} />
+      <KegBody x={10} y={19} width={40} height={64} rx={2} color={color} fill={fill} />
       <path d="M14 26 V76" stroke="#ffffff" strokeOpacity={0.45} strokeWidth={1.5} strokeLinecap="round" />
       <rect x={8} y={36} width={44} height={4} rx={2} fill={steel} stroke={outline} strokeWidth={1} />
       <rect x={8} y={62} width={44} height={4} rx={2} fill={steel} stroke={outline} strokeWidth={1} />

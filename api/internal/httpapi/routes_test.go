@@ -58,8 +58,8 @@ func TestRoutesDocumented(t *testing.T) {
 }
 
 // TestPublicRoutes pins the public routes to constitution principle V (health, setup status,
-// first-admin creation, sign-in), so a new route can't go public by mistake. Feature 5 adds
-// GET /api/menu, the only menu read, and must update want.
+// first-admin creation, sign-in, and the menu the TV display reads, added by feature 5), so a
+// new route can't go public by mistake.
 func TestPublicRoutes(t *testing.T) {
 	var public []string
 	for _, r := range Routes {
@@ -67,7 +67,7 @@ func TestPublicRoutes(t *testing.T) {
 			public = append(public, r.Method+" "+r.Path)
 		}
 	}
-	want := "GET /api/health,GET /api/setup,POST /api/setup,POST /api/session"
+	want := "GET /api/health,GET /api/setup,POST /api/setup,POST /api/session,GET /api/menu"
 	if got := strings.Join(public, ","); got != want {
 		t.Fatalf("public routes = %s, want %s", got, want)
 	}

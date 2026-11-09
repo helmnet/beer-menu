@@ -169,7 +169,7 @@ describe("TapsPanel kegs", () => {
     await screen.findByText("Stout");
     const art = within(item("Left")).getByRole("img");
     expect(art.getAttribute("data-vessel")).toBe("glass");
-    expect(art.getAttribute("aria-label")).toBe("Stout, pint glass");
+    expect(art.getAttribute("aria-label")).toBe("Stout, pint glass, 65% left");
     expect(art.querySelector('[data-part="liquid"]')?.getAttribute("fill")).toBe("#470606");
     expect(within(item("Left")).getByText("Corny 5 gal")).toBeTruthy();
     expect(within(item("Left")).getByText(new RegExp(formatGallons(12.34)))).toBeTruthy();
@@ -308,13 +308,21 @@ describe("TapsPanel levels", () => {
     expect(calls.find((c) => c.key === "POST /api/kegs/11/pours")?.body).toEqual({ amount_l: 0.35 });
   });
 
-  it("draws a level bar that follows remaining over size, without inline style", async () => {
-    stubApi(kegRoutes([half]));
+  it("draws each keg's level as its filled artwork, with gallons and no meter or inline style", async () => {
+    const quarter = { ...tapped, remaining_l: 18.93 / 4 };
+    const waiting = { ...half, remaining_l: 58.67 * 0.3 };
+    stubApi(routes([{ ...one, keg: quarter }, empty], { "GET /api/kegs?state=waiting": { status: 200, body: [waiting] } }));
     const { container } = render(<TapsPanel onSignedOut={vi.fn()} />);
     await screen.findByText("Stout");
-    const bar = within(item("Left")).getByRole("meter");
-    expect(Number(bar.getAttribute("value")) / Number(bar.getAttribute("max"))).toBeCloseTo(12.34 / 18.93);
-    expect(bar.getAttribute("min")).toBe("0");
+    const glass = within(item("Left")).getByRole("img");
+    expect(glass.getAttribute("data-vessel")).toBe("glass");
+    expect(glass.getAttribute("aria-label")).toMatch(/25% left$/);
+    expect(within(item("Left")).getByText(new RegExp(formatGallons(18.93 / 4)))).toBeTruthy();
+    const deck = await screen.findByRole("region", { name: "On deck" });
+    const kegArt = await within(deck).findByRole("img");
+    expect(kegArt.getAttribute("data-keg-shape")).toBe("sanke");
+    expect(kegArt.getAttribute("aria-label")).toBe("Lager, keg, 30% left");
+    expect(screen.queryAllByRole("meter")).toHaveLength(0);
     expect(container.querySelectorAll("[style]")).toHaveLength(0);
   });
 });

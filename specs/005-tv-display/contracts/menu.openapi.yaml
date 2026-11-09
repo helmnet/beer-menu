@@ -1,0 +1,124 @@
+# Contract fragment for feature 5. Merge into api/openapi.yaml: add the `menu` tag, the path
+# below and the schemas under components. Reuses components HexColor. Bump info.version to
+# 0.5.0. This is a compatibility contract (constitution I): later clients (APK) read it, so
+# fields may be added but not removed or renamed within a major version.
+tags:
+  - name: menu
+    description: The public menu the TV display shows
+paths:
+  /api/menu:
+    get:
+      operationId: getMenu
+      summary: Read the menu the TV shows
+      description: >
+        Public on the LAN: no credential. Returns enabled taps in position order and the on-deck
+        list, with only the fields the TV display draws. No ids, sizes, volumes or timestamps;
+        clients that need those use the credentialed tap and keg reads. Never cached
+        (Cache-Control no-store).
+      tags: [menu]
+      security: []
+      x-access: public
+      responses:
+        "200":
+          description: The menu
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Menu"
+              example:
+                taps:
+                  - label: Tap 1
+                    beer: { name: Pale Ale, style: American Pale Ale, abv: 5.2, ibu: 35, color: "#e58500" }
+                    keg: { shape: corny, level: 0.6 }
+                  - label: Tap 2
+                    beer: null
+                    keg: null
+                on_deck:
+                  - beer: { name: Stout, style: Dry Irish Stout, abv: 4.2, ibu: 40, color: "#36080a" }
+                    keg: { shape: sanke, level: 1 }
+                    status: null
+                  - beer: { name: Saison, style: null, abv: null, ibu: null, color: null }
+                    keg: null
+                    status: fermenting
+components:
+  schemas:
+    Menu:
+      type: object
+      additionalProperties: false
+      required: [taps, on_deck]
+      properties:
+        taps:
+          type: array
+          description: Enabled taps in position order.
+          items:
+            $ref: "#/components/schemas/MenuTap"
+        on_deck:
+          type: array
+          description: Waiting kegs (oldest first), then conditioning beers, then fermenting beers, each by name.
+          items:
+            $ref: "#/components/schemas/OnDeckItem"
+    MenuTap:
+      type: object
+      additionalProperties: false
+      required: [label, beer, keg]
+      properties:
+        label:
+          type: string
+        beer:
+          description: Null when the tap is empty.
+          oneOf:
+            - $ref: "#/components/schemas/MenuBeer"
+            - type: "null"
+        keg:
+          description: Null exactly when beer is null.
+          oneOf:
+            - $ref: "#/components/schemas/MenuKeg"
+            - type: "null"
+    OnDeckItem:
+      type: object
+      additionalProperties: false
+      required: [beer, keg, status]
+      properties:
+        beer:
+          $ref: "#/components/schemas/MenuBeer"
+        keg:
+          description: A waiting keg, or null for a beer still being made.
+          oneOf:
+            - $ref: "#/components/schemas/MenuKeg"
+            - type: "null"
+        status:
+          description: Set exactly when keg is null.
+          type: [string, "null"]
+          enum: [fermenting, conditioning, null]
+    MenuBeer:
+      type: object
+      additionalProperties: false
+      required: [name, style, abv, ibu, color]
+      properties:
+        name:
+          type: string
+        style:
+          type: [string, "null"]
+        abv:
+          type: [number, "null"]
+          description: Percent alcohol by volume.
+        ibu:
+          type: [number, "null"]
+        color:
+          description: Display color from SRM; null without SRM.
+          oneOf:
+            - $ref: "#/components/schemas/HexColor"
+            - type: "null"
+    MenuKeg:
+      type: object
+      additionalProperties: false
+      required: [shape, level]
+      properties:
+        shape:
+          type: string
+          enum: [corny, sanke]
+        level:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Fraction of the keg left. Not rounded.

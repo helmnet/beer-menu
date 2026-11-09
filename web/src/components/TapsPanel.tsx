@@ -15,12 +15,12 @@ type Level = { kegId: number; kind: "pour" | "set" } | null;
  * tap at the end (POST /api/taps), renames and enables or disables one (PATCH
  * /api/taps/{id}), moves one up or down by sending every id in the new order (PUT
  * /api/taps/order), and removes one after a confirm prompt (DELETE /api/taps/{id}). Each tap
- * shows its keg: the beer as a pint glass, beer name, keg type, and level in US gallons with a
- * <meter> bar (no inline style, for the CSP), with Pour (US fl oz, prefilled 16, so a pour is
+ * shows its keg: the beer as a pint glass filled to the keg's level (remaining over size, also
+ * in the drawing's label), beer name, keg type, and level in US gallons, with Pour (US fl oz, prefilled 16, so a pour is
  * two clicks; POST /api/kegs/{id}/pours), Set level (gallons; PATCH remaining_l, sent only when
  * changed), Kick (after a confirm prompt; PATCH {"kicked": true}), Take off and Edit keg; an empty tap offers Add keg and, while kegs are
  * waiting, Put on tap. An On deck list shows waiting kegs (GET /api/kegs?state=waiting) in
- * their keg type's drawing, with the same keg actions but Take off, and Add keg for a waiting
+ * their keg type's drawing, filled to their level, with the same keg actions but Take off, and Add keg for a waiting
  * keg. Keg labels and drawings come from GET /api/keg-types, loaded once. Keg changes go to
  * PATCH /api/kegs/{id} or KegForm. Everything reloads after every change and server messages,
  * such as conflicts, are shown. Every successful keg change that can move a beer on or off a tap or into
@@ -135,13 +135,13 @@ export default function TapsPanel({
         kegShape={typeOf(k)?.shape}
         color={k.beer_color}
         name={k.beer_name}
+        level={k.remaining_l / k.size_l}
         height={64}
       />
       <p>{k.beer_name}</p>
       <p>{typeLabel(k)}</p>
       <p>
-        <meter aria-label="Level" min={0} max={k.size_l} value={k.remaining_l} /> {formatGallons(k.remaining_l)} of{" "}
-        {formatGallons(k.size_l)}
+        {formatGallons(k.remaining_l)} of {formatGallons(k.size_l)}
       </p>
       <button type="button" onClick={() => setLevel({ kegId: k.id, kind: "pour" })}>
         Pour

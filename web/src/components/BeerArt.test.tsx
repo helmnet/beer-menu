@@ -94,6 +94,116 @@ describe("BeerArt", () => {
   });
 });
 
+describe("BeerArt level", () => {
+  const foamFill = "#f3ead7";
+
+  function art(props: { onTap?: boolean; kegShape?: "corny" | "sanke"; level?: number; name?: string }) {
+    const { container } = render(<BeerArt color="#9b3200" name="Pale Ale" {...props} />);
+    const svg = container.querySelector("svg") as SVGSVGElement;
+    return {
+      svg,
+      liquid: svg.querySelector('[data-part="liquid"]'),
+      foam: svg.querySelector(`[fill="${foamFill}"]`),
+      label: svg.getAttribute("aria-label"),
+    };
+  }
+
+  // ys lists the y of every M and L point in a path.
+  const ys = (d: string) => Array.from(d.matchAll(/[ML]\s*[\d.]+\s+([\d.]+)/g), (m) => Number(m[1]));
+
+  it("draws exactly as before with no level", () => {
+    const glass = art({ onTap: true });
+    expect(glass.liquid?.getAttribute("d")).toBe("M11.3 22 L16.8 90 L43.2 90 L48.7 22 Z");
+    expect(glass.foam?.getAttribute("d")).toBe("M10.5 12 L11.3 22 L48.7 22 L49.5 12 Z");
+    expect(glass.label).toBe("Pale Ale, pint glass");
+    cleanup();
+    const corny = art({});
+    expect([corny.liquid?.getAttribute("y"), corny.liquid?.getAttribute("height")]).toEqual(["20", "66"]);
+    expect(corny.liquid?.getAttribute("stroke")).toBeTruthy();
+    expect(corny.label).toBe("Pale Ale, keg");
+    cleanup();
+    const sanke = art({ kegShape: "sanke" });
+    expect([sanke.liquid?.getAttribute("y"), sanke.liquid?.getAttribute("height")]).toEqual(["19", "64"]);
+  });
+
+  it("fills the glass from the base to the level, with foam on top", () => {
+    const { liquid, foam } = art({ onTap: true, level: 0.5 });
+    const y = ys(liquid?.getAttribute("d") ?? "");
+    expect(Math.min(...y)).toBe(56);
+    expect(Math.max(...y)).toBe(90);
+    expect(Math.max(...ys(foam?.getAttribute("d") ?? ""))).toBe(56);
+  });
+
+  it.each([
+    ["corny", 20, 66],
+    ["sanke", 19, 64],
+  ] as const)("fills the %s keg body from its bottom and keeps the outline", (kegShape, top, height) => {
+    const { svg, liquid } = art({ kegShape, level: 0.5 });
+    expect(Number(liquid?.getAttribute("height"))).toBe(height / 2);
+    expect(Number(liquid?.getAttribute("y")) + Number(liquid?.getAttribute("height"))).toBe(top + height);
+    expect(liquid?.getAttribute("fill")).toBe("#9b3200");
+    const outline = Array.from(svg.querySelectorAll("rect")).find(
+      (r) => r.getAttribute("y") === String(top) && r.getAttribute("height") === String(height),
+    );
+    expect(outline?.getAttribute("fill")).toBe("none");
+    expect(outline?.getAttribute("stroke")).toBeTruthy();
+  });
+
+  it.each([true, false])("draws no liquid and no foam at level 0 (onTap %s)", (onTap) => {
+    const { liquid, foam } = art({ onTap, level: 0 });
+    expect(liquid === null || liquid.getAttribute("fill") === "none").toBe(true);
+    expect(foam).toBeNull();
+  });
+
+  it("draws a 2% sliver for any beer left, and a full vessel at 1", () => {
+    const glass = art({ onTap: true, level: 0.001 });
+    const top = Math.min(...ys(glass.liquid?.getAttribute("d") ?? ""));
+    expect(top).toBeCloseTo(90 - 0.02 * 68, 1);
+    // The foam is at most half the sliver, so the glass still looks nearly empty.
+    expect(top - Math.min(...ys(glass.foam?.getAttribute("d") ?? ""))).toBeLessThanOrEqual((90 - top) / 2);
+    cleanup();
+    expect(art({ onTap: true, level: 1 }).liquid?.getAttribute("d")).toBe("M11.3 22 L16.8 90 L43.2 90 L48.7 22 Z");
+    cleanup();
+    const full = art({ level: 1 }).liquid;
+    expect([full?.getAttribute("y"), full?.getAttribute("height")]).toEqual(["22", "64"]);
+  });
+
+  it.each([
+    ["corny", 84],
+    ["sanke", 81],
+  ] as const)("shows the %s keg sliver above its bottom part", (kegShape, bottomTop) => {
+    const sliver = art({ kegShape, level: 0.001 }).liquid;
+    expect(Number(sliver?.getAttribute("y"))).toBeLessThan(bottomTop);
+  });
+
+  it.each([
+    [0.6, "60"],
+    [0.001, "1"],
+    [0.996, "99"],
+    [1, "100"],
+    [0, "0"],
+  ])("labels the glass at level %s with its percent left", (level, pct) => {
+    expect(art({ onTap: true, level }).label).toBe(`Pale Ale, pint glass, ${pct}% left`);
+  });
+
+  it("labels a keg with its level", () => {
+    expect(art({ level: 0.5 }).label).toBe("Pale Ale, keg, 50% left");
+  });
+
+  it.each([
+    [true, "corny"],
+    [false, "corny"],
+    [false, "sanke"],
+  ] as const)("uses no style attribute with a level (onTap %s, %s)", (onTap, kegShape) => {
+    const { svg } = art({ onTap, kegShape, level: 0.4 });
+    for (const el of [svg, ...Array.from(svg.querySelectorAll("*"))]) {
+      expect(el.hasAttribute("style")).toBe(false);
+      expect(el.hasAttribute("id")).toBe(false);
+    }
+    expect(svg.querySelector("clipPath")).toBeNull();
+  });
+});
+
 describe("colorForSrm", () => {
   // Same table shape and expectations as TestColorFor in api/internal/beers/srm_test.go.
   const colors = Array.from({ length: 40 }, (_, i) => `#0000${(i + 1).toString(16).padStart(2, "0")}`);
