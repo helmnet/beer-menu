@@ -213,7 +213,7 @@ Run `/speckit-constitution` once from this brief, then one `/speckit-specify` pe
 | 4 | Taps and kegs | 3 | Configure taps, put a keg on a tap, update and kick kegs, keg history |
 | 5 | TV display | 4 | Full-screen tap list with keg gauges and coming soon; live updates; works in Fully Kiosk on a Fire Stick. Adds a public `GET /api/menu` with only what the display shows; full beer reads need a credential |
 | 6 | Brewfather import | 3 | Connect account, list batches, import, re-sync and scheduled sync; status feeds coming soon |
-| 7 | Display settings | 5 | Title, logo, theme and units editable from the admin app |
+| 7 | Display settings | 5 | Title, logo, theme, units and the TV page rotation interval (default 15 s) editable from the admin app |
 
 Features 5 and 6 are independent and can run in either order. An OpenAPI spec is kept in the repo from feature 1 onward so later clients (APK, Home Assistant) have a contract.
 

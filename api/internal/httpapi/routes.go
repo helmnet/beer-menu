@@ -41,6 +41,7 @@ var Routes = []Route{
 	{Method: http.MethodGet, Path: "/api/setup", Access: AccessPublic, Handler: getSetup},
 	{Method: http.MethodPost, Path: "/api/setup", Access: AccessPublic, Handler: createFirstAdmin},
 	{Method: http.MethodPost, Path: "/api/session", Access: AccessPublic, Handler: signIn},
+	{Method: http.MethodGet, Path: "/api/menu", Access: AccessPublic, Handler: getMenu},
 	{Method: http.MethodGet, Path: "/api/session", Access: AccessAdmin, Handler: getSession},
 	{Method: http.MethodDelete, Path: "/api/session", Access: AccessAdmin, Handler: signOut},
 	{Method: http.MethodPost, Path: "/api/password", Access: AccessAdmin, Handler: changePassword},

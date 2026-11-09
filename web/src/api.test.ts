@@ -37,6 +37,13 @@ describe("apiFetch", () => {
     });
   });
 
+  it("passes the abort signal through to fetch", async () => {
+    const fetchMock = stubFetch(200, {});
+    const ctrl = new AbortController();
+    await apiFetch("GET", "/api/menu", undefined, ctrl.signal);
+    expect(fetchMock).toHaveBeenCalledWith("/api/menu", expect.objectContaining({ signal: ctrl.signal }));
+  });
+
   it("returns undefined on 204", async () => {
     stubFetch(204);
     expect(await apiFetch("DELETE", "/api/session")).toBeUndefined();
