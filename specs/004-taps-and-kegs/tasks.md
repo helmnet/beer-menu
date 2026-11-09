@@ -204,7 +204,7 @@ times; a new keg goes on the same tap (spec US4).
 - [X] T046 [P] Update `README.md`: a short "Taps and kegs" section listing the endpoints and their access, that volumes are litres in the API, that `POST /api/kegs/{id}/pours` is the endpoint for Home Assistant and keg scales with a `write` token, and the 409 codes
 - [X] T047 [P] Scale test in `api/internal/kegs/kegs_test.go`: 20 taps and 1,000 kicked kegs; `ListTaps` and `ListKegs(state=kicked)` each under 1 s (SC-005)
 - [X] T048 Run `go vet ./...`, `go test -race ./...`, `npm run lint`, `npm test`, `npm run build`, `govulncheck ./...` (in `api/`) and `gitleaks detect --source . --redact`; all pass
-- [ ] T049 Run quickstart §1 to §7 against images built with `--pull never --build` from a copy of a feature 3 data folder, and record results, including SC-001 and SC-002 timings and SC-005, in the PR. In the PR review, confirm the sanke drawing in `web/src/components/BeerArt.tsx` is original work
+- [X] T049 Run quickstart §1 to §7 against images built with `--pull never --build` from a copy of a feature 3 data folder, and record results, including SC-001 and SC-002 timings and SC-005, in the PR. In the PR review, confirm the sanke drawing in `web/src/components/BeerArt.tsx` is original work
 
 ---
 
