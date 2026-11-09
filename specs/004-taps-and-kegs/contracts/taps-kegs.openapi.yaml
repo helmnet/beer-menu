@@ -1,0 +1,465 @@
+# Contract fragment for feature 4. Merge into api/openapi.yaml: add the `taps` and `kegs` tags,
+# the paths below, the new responses and schemas under components, and `on_tap` on Beer. Path
+# parameters sit inside each operation (the route contract test decodes every key under a path
+# as an operation). Reuses components Invalid, InvalidBeer (a ValidationError body; any field
+# map), Unauthenticated, Forbidden, NotFound, Error, HexColor and parameters/Id.
+# Bump info.version to 0.4.0. Beer delete and PATCH gain a 409 Conflict response.
+tags:
+  - name: taps
+    description: Taps on the kegerator
+  - name: kegs
+    description: Kegs, levels and keg history
+paths:
+  /api/taps:
+    get:
+      operationId: listTaps
+      summary: List taps in position order, each with its current keg
+      tags: [taps]
+      x-access: read
+      responses:
+        "200":
+          description: Taps
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Tap"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    post:
+      operationId: createTap
+      summary: Add a tap at the end
+      description: Without a label the tap is named "Tap N", N being its new position.
+      tags: [taps]
+      x-access: write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TapCreate"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tap"
+        "400":
+          $ref: "#/components/responses/InvalidBeer"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/taps/order:
+    put:
+      operationId: reorderTaps
+      summary: Set the order of all taps
+      description: >
+        `ids` must list every tap exactly once, first to last. Positions become 1..N in that
+        order. Returns the taps in the new order.
+      tags: [taps]
+      x-access: write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TapOrder"
+      responses:
+        "200":
+          description: Taps in the new order
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Tap"
+        "400":
+          $ref: "#/components/responses/InvalidBeer"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/taps/{id}:
+    get:
+      operationId: getTap
+      summary: Read one tap with its current keg
+      tags: [taps]
+      x-access: read
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: The tap
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tap"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateTap
+      summary: Rename, enable or disable a tap
+      tags: [taps]
+      x-access: write
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TapPatch"
+      responses:
+        "200":
+          description: The tap
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tap"
+        "400":
+          $ref: "#/components/responses/InvalidBeer"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteTap
+      summary: Remove a tap
+      description: >
+        Refused with 409 `tap_has_keg` while a current keg is on it, and `last_tap` for the only
+        tap. Positions after it close up. Kicked kegs that were on it keep their tap label.
+      tags: [taps]
+      x-access: write
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: Removed
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/kegs:
+    get:
+      operationId: listKegs
+      summary: List kegs
+      description: >
+        `state=current` (default) lists kegs on a tap and waiting, oldest first; `waiting` only
+        kegs off a tap; `kicked` the keg history, newest kicked first. `beer_id` and `tap_id`
+        filter further; `tap_id` matches kegs on that tap or kicked while on it, not kegs taken
+        off it before kicking or kegs whose tap was removed.
+      tags: [kegs]
+      x-access: read
+      parameters:
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [current, waiting, kicked]
+            default: current
+        - name: beer_id
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+        - name: tap_id
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Kegs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Keg"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    post:
+      operationId: createKeg
+      summary: Create a keg, on a tap or waiting
+      description: >
+        `type` defaults to `corny_5_gal`; `size_l` to the type's size; `remaining_l` to
+        `size_l`. With `tap_id` the keg goes on that tap and `tapped_at` is now; a tap that
+        already has a keg gives 409 `tap_occupied`. Volumes are rounded to 0.01 L.
+      tags: [kegs]
+      x-access: write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KegCreate"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Keg"
+        "400":
+          $ref: "#/components/responses/InvalidBeer"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/kegs/{id}:
+    get:
+      operationId: getKeg
+      summary: Read one keg
+      tags: [kegs]
+      x-access: read
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: The keg
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Keg"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateKeg
+      summary: Correct, set level, move or kick a keg
+      description: >
+        Merge-patch. `type` alone changes only the type, not the size; send `size_l` too to
+        change it. `remaining_l` sets the level. `tap_id` moves the keg onto an empty tap, or
+        off its tap with `null`. `kicked: true` kicks it, freeing its tap. A `size_l` below the
+        remaining volume lowers it to the new size. On a kicked keg anything but a repeat
+        `{"kicked": true}` gives 409 `keg_kicked`.
+      tags: [kegs]
+      x-access: write
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KegPatch"
+      responses:
+        "200":
+          description: The keg
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Keg"
+        "400":
+          $ref: "#/components/responses/InvalidBeer"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      operationId: deleteKeg
+      summary: Delete a keg record permanently
+      tags: [kegs]
+      x-access: write
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/kegs/{id}/pours:
+    post:
+      operationId: pourKeg
+      summary: Record a pour
+      description: >
+        Subtracts `amount_l` from the remaining volume, stopping at 0. Concurrent pours all
+        count. Never kicks the keg. For Home Assistant and keg scales with a `write` token; this
+        operation stays backward compatible within the major version.
+      tags: [kegs]
+      x-access: write
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Pour"
+      responses:
+        "200":
+          description: The keg after the pour
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Keg"
+        "400":
+          $ref: "#/components/responses/InvalidBeer"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/keg-types:
+    get:
+      operationId: listKegTypes
+      summary: The fixed keg type table
+      tags: [kegs]
+      x-access: read
+      responses:
+        "200":
+          description: Keg types
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/KegType"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+components:
+  responses:
+    Conflict:
+      description: >
+        The change conflicts with current state. `error` is one of `tap_occupied`,
+        `tap_has_keg`, `last_tap`, `keg_kicked`, `beer_has_keg`, `beer_has_kegs`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Tap:
+      type: object
+      required: [id, position, label, enabled, keg, created_at, updated_at]
+      properties:
+        id: { type: integer }
+        position: { type: integer, minimum: 1 }
+        label: { type: string }
+        enabled: { type: boolean }
+        keg:
+          oneOf:
+            - $ref: "#/components/schemas/Keg"
+            - type: "null"
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    TapCreate:
+      type: object
+      additionalProperties: false
+      properties:
+        label: { type: string, minLength: 1, maxLength: 50 }
+        enabled: { type: boolean, default: true }
+    TapPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        label: { type: string, minLength: 1, maxLength: 50 }
+        enabled: { type: boolean }
+    TapOrder:
+      type: object
+      additionalProperties: false
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          items: { type: integer, minimum: 1 }
+    KegTypeKey:
+      type: string
+      enum: [corny_2_5_gal, corny_3_gal, corny_5_gal, sanke_sixth, sanke_quarter, sanke_half,
+        euro_20_l, euro_30_l, euro_50_l]
+    KegType:
+      type: object
+      required: [type, label, size_l, shape]
+      properties:
+        type: { $ref: "#/components/schemas/KegTypeKey" }
+        label: { type: string }
+        size_l: { type: number }
+        shape: { type: string, enum: [corny, sanke] }
+    Keg:
+      type: object
+      required: [id, beer_id, beer_name, beer_color, type, size_l, remaining_l, tap_id, tap_label,
+        state, tapped_at, kicked_at, created_at, updated_at]
+      properties:
+        id: { type: integer }
+        beer_id: { type: integer }
+        beer_name: { type: string }
+        beer_color:
+          oneOf:
+            - $ref: "#/components/schemas/HexColor"
+            - type: "null"
+        type: { $ref: "#/components/schemas/KegTypeKey" }
+        size_l: { type: number, description: "Litres, two decimals" }
+        remaining_l: { type: number, description: "Litres, two decimals" }
+        tap_id: { type: [integer, "null"] }
+        tap_label:
+          type: [string, "null"]
+          description: The tap's label while on a tap, else the label of the last tap it was on
+        state: { type: string, enum: [on_tap, waiting, kicked] }
+        tapped_at: { type: [string, "null"], format: date-time }
+        kicked_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    KegCreate:
+      type: object
+      additionalProperties: false
+      required: [beer_id]
+      properties:
+        beer_id: { type: integer, minimum: 1 }
+        type: { $ref: "#/components/schemas/KegTypeKey" }
+        size_l: { type: number, exclusiveMinimum: 0, maximum: 100 }
+        remaining_l: { type: number, minimum: 0, maximum: 100 }
+        tap_id: { type: [integer, "null"], minimum: 1 }
+    KegPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        beer_id: { type: integer, minimum: 1 }
+        type: { $ref: "#/components/schemas/KegTypeKey" }
+        size_l: { type: number, exclusiveMinimum: 0, maximum: 100 }
+        remaining_l: { type: number, minimum: 0, maximum: 100 }
+        tap_id: { type: [integer, "null"], minimum: 1 }
+        kicked: { type: boolean, const: true }
+    Pour:
+      type: object
+      additionalProperties: false
+      required: [amount_l]
+      properties:
+        amount_l: { type: number, exclusiveMinimum: 0, maximum: 100 }
+    # Added to the existing Beer schema's properties and required list:
+    BeerOnTap:
+      type: object
+      properties:
+        on_tap:
+          type: boolean
+          description: True when a current keg of this beer is on a tap

@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import type { Beer } from "./api";
+import type { Beer, Keg, KegType, Tap } from "./api";
 
 /** Reply is one stubbed API response. */
 export interface Reply {
@@ -61,8 +61,57 @@ export function beer(overrides: Partial<Beer> = {}): Beer {
     source: "manual",
     source_ref: null,
     archived_at: null,
+    on_tap: false,
     created_at: "2026-11-09T12:00:00Z",
     updated_at: "2026-11-09T12:00:00Z",
     ...overrides,
   };
 }
+
+/** tap returns a Tap body for stubs: an enabled, empty tap. */
+export function tap(overrides: Partial<Tap> = {}): Tap {
+  return {
+    id: 1,
+    position: 1,
+    label: "Tap 1",
+    enabled: true,
+    keg: null,
+    created_at: "2026-11-09T12:00:00Z",
+    updated_at: "2026-11-09T12:00:00Z",
+    ...overrides,
+  };
+}
+
+/** keg returns a Keg body for stubs: a full, waiting 5 gallon corny keg of beer 1. */
+export function keg(overrides: Partial<Keg> = {}): Keg {
+  return {
+    id: 1,
+    beer_id: 1,
+    beer_name: "Pale",
+    beer_color: null,
+    type: "corny_5_gal",
+    size_l: 18.93,
+    remaining_l: 18.93,
+    tap_id: null,
+    tap_label: null,
+    state: "waiting",
+    tapped_at: null,
+    kicked_at: null,
+    created_at: "2026-11-09T12:00:00Z",
+    updated_at: "2026-11-09T12:00:00Z",
+    ...overrides,
+  };
+}
+
+/** kegTypes is the GET /api/keg-types body, research R4's table. */
+export const kegTypes: KegType[] = [
+  { type: "corny_2_5_gal", label: "Corny 2.5 gal", size_l: 9.46, shape: "corny" },
+  { type: "corny_3_gal", label: "Corny 3 gal", size_l: 11.36, shape: "corny" },
+  { type: "corny_5_gal", label: "Corny 5 gal", size_l: 18.93, shape: "corny" },
+  { type: "sanke_sixth", label: "Sixth barrel", size_l: 19.56, shape: "sanke" },
+  { type: "sanke_quarter", label: "Quarter barrel", size_l: 29.34, shape: "sanke" },
+  { type: "sanke_half", label: "Half barrel", size_l: 58.67, shape: "sanke" },
+  { type: "euro_20_l", label: "Euro 20 L", size_l: 20, shape: "sanke" },
+  { type: "euro_30_l", label: "Euro 30 L", size_l: 30, shape: "sanke" },
+  { type: "euro_50_l", label: "Euro 50 L", size_l: 50, shape: "sanke" },
+];

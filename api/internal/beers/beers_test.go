@@ -295,3 +295,95 @@ func TestDelete(t *testing.T) {
 		t.Fatalf("other beer gone: %v", err)
 	}
 }
+
+// insertKeg adds a keg of beer on tap (nil for waiting), kicked at kicked (nil for current), and
+// returns its id. Migration 0004 seeds tap 1.
+func insertKeg(t *testing.T, db *sql.DB, beer int64, tap, kicked any) int64 {
+	t.Helper()
+	res, err := db.Exec("INSERT INTO kegs (beer_id, size_l, remaining_l, tap_id, kicked_at, created_at, updated_at) VALUES (?, 1, 1, ?, ?, 1, 1)", beer, tap, kicked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := res.LastInsertId()
+	return id
+}
+
+func TestOnTap(t *testing.T) {
+	db := openDB(t)
+	id := insert(t, db, "Pale", false)
+	onTap := func() bool {
+		t.Helper()
+		b, err := Get(db, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		list, err := List(db, false)
+		if err != nil || len(list) != 1 || list[0].OnTap != b.OnTap {
+			t.Fatalf("List = %+v (err %v), Get on_tap %v", list, err, b.OnTap)
+		}
+		return b.OnTap
+	}
+	if onTap() {
+		t.Fatal("on_tap with no kegs")
+	}
+	keg := insertKeg(t, db, id, nil, nil)
+	if onTap() {
+		t.Fatal("on_tap with a waiting keg")
+	}
+	if _, err := db.Exec("UPDATE kegs SET tap_id = 1 WHERE id = ?", keg); err != nil {
+		t.Fatal(err)
+	}
+	if !onTap() {
+		t.Fatal("on_tap false with a keg on a tap")
+	}
+	if b, err := Update(db, id, Patch{ABV: Optional[float64]{Set: true, Value: ptr(5.0)}}, t0); err != nil || !b.OnTap {
+		t.Fatalf("PATCH response on_tap = %+v (err %v)", b, err)
+	}
+	if _, err := db.Exec("UPDATE kegs SET tap_id = NULL WHERE id = ?", keg); err != nil {
+		t.Fatal(err)
+	}
+	if onTap() {
+		t.Fatal("on_tap after the keg was taken off")
+	}
+	if b, err := Create(db, Input{Name: "New"}, t0); err != nil || b.OnTap {
+		t.Fatalf("created on_tap = %+v (err %v)", b, err)
+	}
+}
+
+func TestArchiveWithCurrentKeg(t *testing.T) {
+	db := openDB(t)
+	archive := Patch{Archived: Optional[bool]{Set: true, Value: ptr(true)}, ABV: Optional[float64]{Set: true, Value: ptr(9.0)}}
+	for name, tap := range map[string]any{"on a tap": 1, "waiting": nil} {
+		id := insert(t, db, "Pale", false)
+		keg := insertKeg(t, db, id, tap, nil)
+		if _, err := Update(db, id, archive, t0.Add(time.Hour)); !errors.Is(err, ErrHasCurrentKeg) {
+			t.Fatalf("%s: archive = %v, want ErrHasCurrentKeg", name, err)
+		}
+		if b, _ := Get(db, id); b.ArchivedAt != nil || b.ABV != nil || !b.UpdatedAt.Equal(t0) {
+			t.Fatalf("%s: refused archive changed the beer: %+v", name, b)
+		}
+		if _, err := db.Exec("UPDATE kegs SET kicked_at = 2 WHERE id = ?", keg); err != nil {
+			t.Fatal(err)
+		}
+		if b, err := Update(db, id, archive, t0); err != nil || b.ArchivedAt == nil {
+			t.Fatalf("%s: archive with only kicked kegs = %+v (err %v)", name, b, err)
+		}
+	}
+	if _, err := Update(db, 999, archive, t0); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("archive missing = %v", err)
+	}
+}
+
+func TestDeleteWithKegs(t *testing.T) {
+	db := openDB(t)
+	for name, kicked := range map[string]any{"current": nil, "kicked": 2} {
+		id := insert(t, db, "Pale", false)
+		insertKeg(t, db, id, nil, kicked)
+		if err := Delete(db, id); !errors.Is(err, ErrHasKegs) {
+			t.Fatalf("%s: delete = %v, want ErrHasKegs", name, err)
+		}
+		if _, err := Get(db, id); err != nil {
+			t.Fatalf("%s: beer gone after refused delete: %v", name, err)
+		}
+	}
+}

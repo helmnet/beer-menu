@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"os"
 	"path/filepath"
 	"strings"
@@ -80,5 +81,39 @@ func TestCheckWritableReadOnlyFolder(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), dir) {
 		t.Fatalf("error %q does not name the folder %s", err, dir)
+	}
+}
+
+// TestOpenBeginTakesWriteLock checks db.Begin on an Open database is BEGIN IMMEDIATE: while a
+// transaction that has only read is open, another connection cannot take the write lock, so a
+// read-then-write transaction waits on busy_timeout instead of failing at its first write.
+func TestOpenBeginTakesWriteLock(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec("CREATE TABLE t (x INTEGER)"); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	var n int
+	if err := tx.QueryRow("SELECT count(*) FROM t").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+
+	other, err := sql.Open("sqlite", filepath.Join(dir, DBFile)+"?_pragma=busy_timeout(0)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	_, err = other.Exec("BEGIN IMMEDIATE")
+	if err == nil || !strings.Contains(err.Error(), "SQLITE_BUSY") {
+		t.Fatalf("second BEGIN IMMEDIATE = %v, want SQLITE_BUSY", err)
 	}
 }

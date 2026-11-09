@@ -42,7 +42,8 @@ function parse(field: Field, value: string): string | number {
  * The API is the only validator: its per-field messages are shown next to each field. A 401
  * calls `onSignedOut`; success calls `onSaved` with the stored beer. A BeerArt preview follows
  * the SRM input, colored from GET /api/srm-colors, fetched once on mount; if that fails the
- * preview stays empty rather than showing an error.
+ * preview stays empty rather than showing an error. The preview is a pint glass when the
+ * edited beer is on a tap, a keg otherwise.
  */
 export default function BeerForm({
   beer,
@@ -141,6 +142,7 @@ export default function BeerForm({
   return (
     <form onSubmit={submit} noValidate aria-label={beer ? `Edit ${beer.name}` : "Add beer"}>
       <BeerArt
+        onTap={beer?.on_tap ?? false}
         color={srm === null || Number.isNaN(srm) ? null : colorForSrm(colors, srm)}
         name={values.name || "New beer"}
         height={96}

@@ -1,6 +1,6 @@
 # Beer Menu — Project Brief
 
-As of 2026-11-08 · Source of truth while drafting: [Claude Doc](https://claude.ai/artifact/X88c2GQCWXC3Sp6rvVRpXp)
+As of 2026-11-08
 
 ## Overview
 

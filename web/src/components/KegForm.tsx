@@ -1,0 +1,163 @@
+import { FormEvent, useEffect, useId, useState } from "react";
+import { ApiError, apiFetch, Beer, errorMessage, isUnauthenticated, Keg, KegType } from "../api";
+import { gallons, gallonsToLitres, inputToLitres } from "../units";
+
+type Field = "beer_id" | "type" | "size_l" | "remaining_l";
+type Values = Record<Field, string>;
+
+/**
+ * KegForm adds a keg (POST /api/kegs), on tap `tapId` when given or waiting otherwise, or,
+ * given `keg`, corrects it (PATCH /api/kegs/{id}). It loads the current beers (GET /api/beers)
+ * and the keg type table (GET /api/keg-types) on mount. Size and remaining are shown and typed
+ * in US gallons and sent in litres. On add, choosing a type prefills size and remaining
+ * from the type's size; on edit it changes only the type, keeping the size (FR-020). Volumes are sent only when they differ from what was
+ * prefilled, so a keg saved without touching them keeps its stored litres exactly; on edit only
+ * changed fields are sent and no change just calls `onCancel`. The API is the only validator:
+ * its per-field messages are shown next to each field. A 401 calls `onSignedOut`; success calls
+ * `onSaved` with the stored keg.
+ */
+export default function KegForm({
+  keg,
+  tapId,
+  onSaved,
+  onCancel,
+  onSignedOut,
+}: {
+  keg?: Keg;
+  tapId?: number;
+  onSaved: (keg: Keg) => void;
+  onCancel: () => void;
+  onSignedOut: () => void;
+}) {
+  const id = useId();
+  const [beers, setBeers] = useState<Beer[]>([]);
+  const [types, setTypes] = useState<KegType[]>([]);
+  // base holds the values the user has not changed: the keg on edit, the type's prefill on add.
+  const [base, setBase] = useState<Values>(() =>
+    keg
+      ? { beer_id: String(keg.beer_id), type: keg.type, size_l: gallons(keg.size_l), remaining_l: gallons(keg.remaining_l) }
+      : { beer_id: "", type: "corny_5_gal", size_l: "", remaining_l: "" },
+  );
+  const [values, setValues] = useState(base);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<string, string>>>({});
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  function fail(err: unknown) {
+    if (isUnauthenticated(err)) onSignedOut();
+    else setError(errorMessage(err));
+  }
+
+  useEffect(() => {
+    Promise.all([apiFetch<Beer[]>("GET", "/api/beers"), apiFetch<KegType[]>("GET", "/api/keg-types")])
+      .then(([b, t]) => {
+        setBeers(b);
+        setTypes(t);
+        if (!keg) prefill(t, values.type, values);
+      })
+      .catch(fail);
+  }, []);
+
+  /** prefill sets type in v; on add it also sets the volumes from type's size as the unchanged base. */
+  function prefill(table: KegType[], type: string, v: Values) {
+    const t = table.find((k) => k.type === type);
+    if (keg || !t) {
+      setValues({ ...v, type });
+      return;
+    }
+    const size = gallons(t.size_l);
+    setValues({ ...v, type, size_l: size, remaining_l: size });
+    setBase({ ...base, size_l: size, remaining_l: size });
+  }
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    const body: Record<string, string | number> = {};
+    if (values.beer_id !== base.beer_id) body.beer_id = Number(values.beer_id);
+    if (!keg || values.type !== base.type) body.type = values.type;
+    if (!keg && tapId !== undefined) body.tap_id = tapId;
+    for (const f of ["size_l", "remaining_l"] as const) {
+      if (values[f] !== base[f]) body[f] = inputToLitres(values[f], gallonsToLitres);
+    }
+    if (keg && Object.keys(body).length === 0) {
+      onCancel();
+      return;
+    }
+    setError("");
+    setFieldErrors({});
+    setSaving(true);
+    try {
+      onSaved(
+        keg
+          ? await apiFetch<Keg>("PATCH", `/api/kegs/${keg.id}`, body)
+          : await apiFetch<Keg>("POST", "/api/kegs", body),
+      );
+    } catch (err) {
+      if (err instanceof ApiError && err.fields) setFieldErrors(err.fields);
+      fail(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function field(name: Field, label: string, control: (common: object) => JSX.Element) {
+    const errId = `${id}-${name}-error`;
+    const msg = fieldErrors[name];
+    return (
+      <div>
+        <label>
+          {label}
+          {control({
+            value: values[name],
+            "aria-invalid": msg ? true : undefined,
+            "aria-describedby": msg ? errId : undefined,
+          })}
+        </label>
+        {msg && <span id={errId}>{msg}</span>}
+      </div>
+    );
+  }
+
+  const volume = (name: "size_l" | "remaining_l") => (common: object) => (
+    <input
+      {...common}
+      type="number"
+      min="0"
+      step="0.01"
+      onChange={(e) => setValues({ ...values, [name]: e.target.value })}
+    />
+  );
+
+  return (
+    <form onSubmit={submit} noValidate aria-label={keg ? `Edit keg of ${keg.beer_name}` : "Add keg"}>
+      {field("beer_id", "Beer", (common) => (
+        <select {...common} onChange={(e) => setValues({ ...values, beer_id: e.target.value })}>
+          <option value="">Choose a beer</option>
+          {beers.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
+        </select>
+      ))}
+      {field("type", "Type", (common) => (
+        <select {...common} onChange={(e) => prefill(types, e.target.value, values)}>
+          {types.map((t) => (
+            <option key={t.type} value={t.type}>
+              {t.label}
+            </option>
+          ))}
+        </select>
+      ))}
+      {field("size_l", "Size (gal)", volume("size_l"))}
+      {field("remaining_l", "Remaining (gal)", volume("remaining_l"))}
+      {error && <p role="alert">{error}</p>}
+      <button type="submit" disabled={saving}>
+        Save
+      </button>
+      <button type="button" onClick={onCancel}>
+        Cancel
+      </button>
+    </form>
+  );
+}

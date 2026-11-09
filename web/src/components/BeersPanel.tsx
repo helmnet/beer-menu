@@ -8,14 +8,15 @@ type Editing = { kind: "none" } | { kind: "add" } | { kind: "edit"; beer: Beer }
 
 /**
  * BeersPanel is the admin beer library: it lists current beers (GET /api/beers) with their
- * artwork, drawn as a keg from each beer's `color` with no extra request, name, style, ABV and
- * status, and opens BeerForm to add a beer or edit one. "Show archived" switches to the
+ * artwork, drawn from each beer's `color` with no extra request as a pint glass when `on_tap`
+ * and a corny keg otherwise, name, style, ABV and status, and opens BeerForm to add a beer or edit one. "Show archived" switches to the
  * archived beers (GET /api/beers?archived=true); current beers can be archived and archived
  * ones restored (PATCH {"archived": ...}), and any beer deleted after a confirm prompt
- * (DELETE /api/beers/{id}). The list reloads after every change. Any 401 calls
- * `onSignedOut`.
+ * (DELETE /api/beers/{id}). The list reloads after every change, and whenever `refresh`
+ * changes (kegs changed elsewhere, so `on_tap` may have), keeping the view and any open form.
+ * Any 401 calls `onSignedOut`.
  */
-export default function BeersPanel({ onSignedOut }: { onSignedOut: () => void }) {
+export default function BeersPanel({ onSignedOut, refresh }: { onSignedOut: () => void; refresh?: number }) {
   const [beers, setBeers] = useState<Beer[]>([]);
   const [editing, setEditing] = useState<Editing>({ kind: "none" });
   const [error, setError] = useState("");
@@ -36,7 +37,7 @@ export default function BeersPanel({ onSignedOut }: { onSignedOut: () => void })
   const load = async () => setBeers(await fetchList(archived));
 
   useEffect(() => {
-    // A late answer for the view just left must not replace the new view's list.
+    // A late answer for the view just left, or an older refresh, must not replace the newer list.
     let stale = false;
     run(async () => {
       const list = await fetchList(archived);
@@ -45,7 +46,7 @@ export default function BeersPanel({ onSignedOut }: { onSignedOut: () => void })
     return () => {
       stale = true;
     };
-  }, [archived]);
+  }, [archived, refresh]);
 
   function setArchivedState(b: Beer, value: boolean) {
     run(async () => {
@@ -89,7 +90,7 @@ export default function BeersPanel({ onSignedOut }: { onSignedOut: () => void })
           {beers.map((b) => (
             <tr key={b.id}>
               <td>
-                <BeerArt color={b.color} name={b.name} height={64} />
+                <BeerArt onTap={b.on_tap} color={b.color} name={b.name} height={64} />
               </td>
               <td>{b.name}</td>
               <td>{b.style}</td>

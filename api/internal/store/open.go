@@ -17,8 +17,10 @@ import (
 const DBFile = "beermenu.db"
 
 // temp_store=MEMORY because the scratch image has no /tmp for SQLite temp files.
+// _txlock=immediate so a transaction that reads before it writes waits on busy_timeout for the
+// write lock instead of failing with SQLITE_BUSY at its first write (feature 4 research R3).
 const pragmas = "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)" +
-	"&_pragma=synchronous(NORMAL)&_pragma=temp_store(MEMORY)"
+	"&_pragma=synchronous(NORMAL)&_pragma=temp_store(MEMORY)&_txlock=immediate"
 
 // Open opens (creating if needed) <dataDir>/beermenu.db in WAL mode with the connection
 // pragmas every connection needs, then sets the database file and any existing -wal and

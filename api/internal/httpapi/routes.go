@@ -56,6 +56,19 @@ var Routes = []Route{
 	{Method: http.MethodPatch, Path: "/api/beers/{id}", Access: AccessWrite, Handler: updateBeer},
 	{Method: http.MethodDelete, Path: "/api/beers/{id}", Access: AccessWrite, Handler: deleteBeer},
 	{Method: http.MethodGet, Path: "/api/srm-colors", Access: AccessRead, Handler: getSrmColors},
+	{Method: http.MethodGet, Path: "/api/taps", Access: AccessRead, Handler: listTaps},
+	{Method: http.MethodPost, Path: "/api/taps", Access: AccessWrite, Handler: createTap},
+	{Method: http.MethodPut, Path: "/api/taps/order", Access: AccessWrite, Handler: reorderTaps},
+	{Method: http.MethodGet, Path: "/api/taps/{id}", Access: AccessRead, Handler: getTap},
+	{Method: http.MethodPatch, Path: "/api/taps/{id}", Access: AccessWrite, Handler: updateTap},
+	{Method: http.MethodDelete, Path: "/api/taps/{id}", Access: AccessWrite, Handler: deleteTap},
+	{Method: http.MethodGet, Path: "/api/kegs", Access: AccessRead, Handler: listKegs},
+	{Method: http.MethodPost, Path: "/api/kegs", Access: AccessWrite, Handler: createKeg},
+	{Method: http.MethodGet, Path: "/api/kegs/{id}", Access: AccessRead, Handler: getKeg},
+	{Method: http.MethodPatch, Path: "/api/kegs/{id}", Access: AccessWrite, Handler: updateKeg},
+	{Method: http.MethodDelete, Path: "/api/kegs/{id}", Access: AccessWrite, Handler: deleteKeg},
+	{Method: http.MethodPost, Path: "/api/kegs/{id}/pours", Access: AccessWrite, Handler: pourKeg},
+	{Method: http.MethodGet, Path: "/api/keg-types", Access: AccessRead, Handler: listKegTypes},
 }
 
 // NewMux returns the API handler: every entry of Routes registered as "<METHOD> <path>"
