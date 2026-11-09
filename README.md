@@ -126,7 +126,37 @@ merges: fields left out are kept, `null` clears an optional field, and a value s
 
 Beers have no uploaded images. Each beer's artwork is drawn by the web app as inline SVG, a
 corny keg filled with the `color` the API derives from the beer's SRM. Only a beer on a tap is
-drawn as a pint glass; taps arrive in feature 4, so for now every beer is a keg.
+drawn as a pint glass. Beer reads include `on_tap`. A beer with a current keg (on a tap or
+waiting) cannot be archived (409 `beer_has_keg`), and a beer with any keg, current or kicked,
+cannot be deleted (409 `beer_has_kegs`); archive it instead.
+
+## Taps and kegs
+
+Taps are the slots on the kegerator; kegs hold beers (details in `api/openapi.yaml`):
+
+| Method | Path | Access | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/taps` | read | Taps in order, each with its current keg or `null` |
+| `GET` | `/api/taps/{id}` | read | One tap |
+| `POST` | `/api/taps` | write | Add a tap at the end (default label "Tap N") |
+| `PATCH` | `/api/taps/{id}` | write | Rename, enable or disable |
+| `PUT` | `/api/taps/order` | write | Set the order: `{"ids": [...]}` listing every tap once |
+| `DELETE` | `/api/taps/{id}` | write | Remove a tap with no keg; at least one tap must remain |
+| `GET` | `/api/kegs` | read | `?state=current` (default), `waiting` or `kicked` (history); `beer_id`, `tap_id` filter |
+| `GET` | `/api/kegs/{id}` | read | One keg |
+| `POST` | `/api/kegs` | write | Add a keg, on a tap (`tap_id`) or waiting off-tap |
+| `PATCH` | `/api/kegs/{id}` | write | Correct, set `remaining_l`, move (`tap_id`, `null` takes it off) or kick (`{"kicked": true}`) |
+| `DELETE` | `/api/kegs/{id}` | write | Delete a keg record |
+| `POST` | `/api/kegs/{id}/pours` | write | Record a pour: `{"amount_l": 0.47}` |
+| `GET` | `/api/keg-types` | read | The keg types with default sizes and drawing shape |
+
+Volumes are litres in the API, rounded to 0.01 L; the admin app shows US gallons and takes pours
+in fluid ounces. Home Assistant and keg scales should use `POST /api/kegs/{id}/pours` with a
+`write` token: concurrent pours all count, and the level stops at 0 without kicking the keg.
+A tap holds one current keg; a kicked keg is read-only history.
+
+Conflicts answer 409 with one of these `error` codes: `tap_occupied`, `tap_has_keg`,
+`last_tap`, `keg_kicked`, `beer_has_keg`, `beer_has_kegs`.
 
 ## Restore from a backup
 

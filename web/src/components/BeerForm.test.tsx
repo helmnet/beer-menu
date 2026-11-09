@@ -127,6 +127,13 @@ describe("BeerForm", () => {
     expect(calls.filter((c) => c.key === "GET /api/srm-colors")).toHaveLength(1);
   });
 
+  it("previews a beer with a keg on a tap as a glass", async () => {
+    const calls = stubApi({ "GET /api/srm-colors": colorsReply });
+    render(<BeerForm beer={beer({ srm: 20, on_tap: true })} onSaved={vi.fn()} onCancel={vi.fn()} onSignedOut={vi.fn()} />);
+    await waitFor(() => expect(calls).toHaveLength(1));
+    await waitFor(() => expect(preview()).toEqual({ vessel: "glass", fill: colors[19] }));
+  });
+
   it("previews an empty vessel when the color table fails to load", async () => {
     const calls = stubApi({ "GET /api/srm-colors": { status: 502 } });
     render(<BeerForm beer={beer({ srm: 7 })} onSaved={vi.fn()} onCancel={vi.fn()} onSignedOut={vi.fn()} />);

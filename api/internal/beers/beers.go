@@ -11,6 +11,14 @@ import (
 // ErrNotFound means no beer has the given id.
 var ErrNotFound = errors.New("beer not found")
 
+// ErrHasCurrentKeg means archiving was refused because a current keg, on a tap or waiting, is
+// of the beer (409 beer_has_keg).
+var ErrHasCurrentKeg = errors.New("beer has a current keg")
+
+// ErrHasKegs means deleting was refused because a keg, current or kicked, is of the beer (409
+// beer_has_kegs).
+var ErrHasKegs = errors.New("beer has kegs")
+
 // Beer is a beer as the API returns it. Optional fields are nil when empty and marshal as null,
 // so every field is always present (FR-003). Color is derived from SRM, never stored.
 type Beer struct {
@@ -28,11 +36,15 @@ type Beer struct {
 	Source      string     `json:"source"`
 	SourceRef   *string    `json:"source_ref"`
 	ArchivedAt  *time.Time `json:"archived_at"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	// OnTap is true while a current keg of the beer is on a tap, so clients draw it as a glass.
+	OnTap     bool      `json:"on_tap"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
-const columns = "id, name, style, abv, ibu, srm, description, brewer, brew_date, status, source, source_ref, archived_at, created_at, updated_at"
+// columns is used in SELECT and RETURNING alike, so on_tap is a subquery rather than a join.
+const columns = "id, name, style, abv, ibu, srm, description, brewer, brew_date, status, source, source_ref, archived_at, created_at, updated_at, " +
+	"EXISTS (SELECT 1 FROM kegs WHERE kegs.beer_id = beers.id AND kegs.tap_id IS NOT NULL AND kegs.kicked_at IS NULL)"
 
 // scan reads one row selected with columns into a Beer and derives its Color.
 func scan(row interface{ Scan(...any) error }) (Beer, error) {
@@ -40,7 +52,7 @@ func scan(row interface{ Scan(...any) error }) (Beer, error) {
 	var archived sql.NullInt64
 	var created, updated int64
 	err := row.Scan(&b.ID, &b.Name, &b.Style, &b.ABV, &b.IBU, &b.SRM, &b.Description, &b.Brewer, &b.BrewDate,
-		&b.Status, &b.Source, &b.SourceRef, &archived, &created, &updated)
+		&b.Status, &b.Source, &b.SourceRef, &archived, &created, &updated, &b.OnTap)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Beer{}, ErrNotFound
 	}
@@ -100,7 +112,8 @@ func Create(db *sql.DB, in Input, now time.Time) (Beer, error) {
 // Update applies p to beer id at now in one statement and returns the updated beer; the id
 // never changes (FR-007). Archived true sets archived_at to now unless already set, so
 // archiving twice keeps the first time; false clears it (FR-023). It returns FieldErrors or ErrEmptyPatch, writing nothing, when p is
-// invalid, and ErrNotFound for an unknown id.
+// invalid, ErrNotFound for an unknown id, and ErrHasCurrentKeg, writing nothing, when archiving
+// a beer with a current keg (feature 4 FR-030).
 func Update(db *sql.DB, id int64, p Patch, now time.Time) (Beer, error) {
 	set, err := p.Normalize()
 	if err != nil {
@@ -113,27 +126,41 @@ func Update(db *sql.DB, id int64, p Patch, now time.Time) (Beer, error) {
 		query += ", " + col + " = ?"
 		args = append(args, set[col])
 	}
+	where := " WHERE id = ?"
+	archiving := p.Archived.Set && *p.Archived.Value
 	if p.Archived.Set {
-		if *p.Archived.Value {
+		if archiving {
 			query += ", archived_at = COALESCE(archived_at, ?)"
 			args = append(args, now.Unix())
+			// In the same statement as the update, so a keg added meanwhile cannot slip past.
+			where += " AND NOT EXISTS (SELECT 1 FROM kegs WHERE kegs.beer_id = beers.id AND kegs.kicked_at IS NULL)"
 		} else {
 			query += ", archived_at = NULL"
 		}
 	}
-	return scan(db.QueryRow(query+" WHERE id = ? RETURNING "+columns, append(args, id)...))
+	b, err := scan(db.QueryRow(query+where+" RETURNING "+columns, append(args, id)...))
+	if archiving && errors.Is(err, ErrNotFound) {
+		if _, getErr := Get(db, id); getErr == nil {
+			return Beer{}, ErrHasCurrentKeg
+		}
+	}
+	return b, err
 }
 
 // Delete removes beer id permanently (FR-024), archived or not. It returns ErrNotFound for an
-// unknown id.
+// unknown id and ErrHasKegs, deleting nothing, when any keg is of the beer (feature 4 FR-031);
+// the kegs.beer_id foreign key is the backstop.
 func Delete(db *sql.DB, id int64) error {
-	res, err := db.Exec("DELETE FROM beers WHERE id = ?", id)
+	res, err := db.Exec("DELETE FROM beers WHERE id = ? AND NOT EXISTS (SELECT 1 FROM kegs WHERE beer_id = ?)", id, id)
 	if err != nil {
 		return err
 	}
 	n, err := res.RowsAffected()
 	if err == nil && n == 0 {
 		err = ErrNotFound
+		if _, getErr := Get(db, id); getErr == nil {
+			err = ErrHasKegs
+		}
 	}
 	return err
 }

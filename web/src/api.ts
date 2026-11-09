@@ -20,7 +20,8 @@ export type BeerStatus = "planned" | "fermenting" | "conditioning" | "ready";
 
 /**
  * Beer is a beer as the API returns it. Optional fields are always present, as null when
- * empty; `color` is the "#rrggbb" display color for `srm`, null without one.
+ * empty; `color` is the "#rrggbb" display color for `srm`, null without one. `on_tap` is true
+ * while a current keg of this beer is on a tap; it picks the artwork vessel.
  */
 export interface Beer {
   id: number;
@@ -37,6 +38,62 @@ export interface Beer {
   source: "manual" | "brewfather";
   source_ref: string | null;
   archived_at: string | null;
+  on_tap: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** KegTypeKey names one row of the API's fixed keg type table. */
+export type KegTypeKey =
+  | "corny_2_5_gal"
+  | "corny_3_gal"
+  | "corny_5_gal"
+  | "sanke_sixth"
+  | "sanke_quarter"
+  | "sanke_half"
+  | "euro_20_l"
+  | "euro_30_l"
+  | "euro_50_l";
+
+/** KegType is one row of GET /api/keg-types: its label, default size in litres and drawing. */
+export interface KegType {
+  type: KegTypeKey;
+  label: string;
+  size_l: number;
+  shape: "corny" | "sanke";
+}
+
+/** KegState is derived by the API: kicked, else on a tap, else waiting (on deck). */
+export type KegState = "on_tap" | "waiting" | "kicked";
+
+/**
+ * Keg is a keg as the API returns it. Volumes are litres with two decimals. `tap_label` is the
+ * tap's live label while on a tap, else the label of the last tap it was on.
+ */
+export interface Keg {
+  id: number;
+  beer_id: number;
+  beer_name: string;
+  beer_color: string | null;
+  type: KegTypeKey;
+  size_l: number;
+  remaining_l: number;
+  tap_id: number | null;
+  tap_label: string | null;
+  state: KegState;
+  tapped_at: string | null;
+  kicked_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Tap is a tap as the API returns it, with its current keg or null. */
+export interface Tap {
+  id: number;
+  position: number;
+  label: string;
+  enabled: boolean;
+  keg: Keg | null;
   created_at: string;
   updated_at: string;
 }

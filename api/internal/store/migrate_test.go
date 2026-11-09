@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 	"testing/fstest"
 )
@@ -264,5 +265,89 @@ func TestMigration0003FromVersion2(t *testing.T) {
 		if _, err := db.Exec(q); err == nil {
 			t.Fatalf("%s: want CHECK error", q)
 		}
+	}
+}
+
+// TestMigration0004FromVersion3 applies 0004_taps_kegs to a version 3 database holding an admin,
+// an API token and a beer, checks they survive, the seeded tap exists, and kegs enforces one
+// current keg per tap and its foreign keys.
+func TestMigration0004FromVersion3(t *testing.T) {
+	ms, err := LoadMigrations(Migrations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ms) < 4 {
+		t.Fatal("migration 0004 missing")
+	}
+	db := openTemp(t)
+	if err := Apply(db, ms[:3]); err != nil {
+		t.Fatal(err)
+	}
+	mustExec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := db.Exec(q, args...); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	mustFail := func(q string, args ...any) {
+		t.Helper()
+		if _, err := db.Exec(q, args...); err == nil {
+			t.Fatalf("%s: want constraint error", q)
+		}
+	}
+	mustExec("INSERT INTO users (id, username, password_hash, created_at) VALUES (1, 'owner', 'h', 1)")
+	mustExec("INSERT INTO api_tokens (id, name, token_hash, scope, created_at, last_used_at) VALUES (1, 'ha', x'01', 'write', 2, 3)")
+	mustExec("INSERT INTO beers (id, name, abv, created_at, updated_at) VALUES (1, 'Pale', 5.5, 4, 5)")
+	if err := Apply(db, ms[3:4]); err != nil {
+		t.Fatal(err)
+	}
+	if v := mustVersion(t, db); v != 4 {
+		t.Fatalf("version = %d, want 4", v)
+	}
+	var user, hash string
+	var created int64
+	if err := db.QueryRow("SELECT username, password_hash, created_at FROM users WHERE id = 1").Scan(&user, &hash, &created); err != nil || user != "owner" || hash != "h" || created != 1 {
+		t.Fatalf("admin row = %q %q %d (err %v)", user, hash, created, err)
+	}
+	var name, scope string
+	var tokCreated, lastUsed int64
+	if err := db.QueryRow("SELECT name, scope, created_at, last_used_at FROM api_tokens WHERE id = 1").Scan(&name, &scope, &tokCreated, &lastUsed); err != nil || name != "ha" || scope != "write" || tokCreated != 2 || lastUsed != 3 {
+		t.Fatalf("token row = %q %q %d %d (err %v)", name, scope, tokCreated, lastUsed, err)
+	}
+	var beer string
+	var abv float64
+	var bCreated, bUpdated int64
+	if err := db.QueryRow("SELECT name, abv, created_at, updated_at FROM beers WHERE id = 1").Scan(&beer, &abv, &bCreated, &bUpdated); err != nil || beer != "Pale" || abv != 5.5 || bCreated != 4 || bUpdated != 5 {
+		t.Fatalf("beer row = %q %v %d %d (err %v)", beer, abv, bCreated, bUpdated, err)
+	}
+
+	var n, tapID, position, enabled int64
+	var label string
+	if err := db.QueryRow("SELECT count(*), max(id), max(position), max(label), max(enabled) FROM taps").Scan(&n, &tapID, &position, &label, &enabled); err != nil || n != 1 || position != 1 || label != "Tap 1" || enabled != 1 {
+		t.Fatalf("taps = %d rows, position %d, label %q, enabled %d (err %v)", n, position, label, enabled, err)
+	}
+
+	mustExec("INSERT INTO kegs (id, beer_id, size_l, remaining_l, tap_id, created_at, updated_at) VALUES (1, 1, 18.93, 18.93, ?, 1, 1)", tapID)
+	var kegType string
+	if err := db.QueryRow("SELECT type FROM kegs WHERE id = 1").Scan(&kegType); err != nil || kegType != "corny_5_gal" {
+		t.Fatalf("keg type = %q (err %v), want corny_5_gal", kegType, err)
+	}
+	var idx string
+	if _, err := db.Exec("INSERT INTO kegs (beer_id, size_l, remaining_l, tap_id, created_at, updated_at) VALUES (1, 1, 1, ?, 1, 1)", tapID); err == nil || !strings.Contains(err.Error(), "kegs.tap_id") {
+		t.Fatalf("second current keg on a tap: err %v, want unique kegs.tap_id", err)
+	}
+	if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'kegs_one_per_tap'").Scan(&idx); err != nil {
+		t.Fatalf("index kegs_one_per_tap: %v", err)
+	}
+	mustExec("INSERT INTO kegs (beer_id, size_l, remaining_l, tap_id, kicked_at, created_at, updated_at) VALUES (1, 1, 1, ?, 2, 1, 1)", tapID)
+	mustExec("INSERT INTO kegs (beer_id, size_l, remaining_l, tap_id, kicked_at, created_at, updated_at) VALUES (1, 1, 1, ?, 3, 1, 1)", tapID)
+	mustExec("INSERT INTO kegs (beer_id, size_l, remaining_l, created_at, updated_at) VALUES (1, 1, 1, 1, 1)")
+	mustExec("INSERT INTO kegs (beer_id, size_l, remaining_l, created_at, updated_at) VALUES (1, 1, 1, 1, 1)")
+	mustFail("DELETE FROM beers WHERE id = 1")
+
+	mustExec("DELETE FROM kegs WHERE id = 1")
+	mustExec("DELETE FROM taps WHERE id = ?", tapID)
+	if err := db.QueryRow("SELECT count(*) FROM kegs WHERE kicked_at IS NOT NULL AND tap_id IS NULL").Scan(&n); err != nil || n != 2 {
+		t.Fatalf("kicked kegs with tap_id NULL after tap delete = %d (err %v), want 2", n, err)
 	}
 }

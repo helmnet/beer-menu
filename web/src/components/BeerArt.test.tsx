@@ -21,9 +21,40 @@ describe("BeerArt", () => {
     expect(keg.svg.getAttribute("data-vessel")).toBe("keg");
     expect(keg.svg.getAttribute("aria-label")).toBe("Honey IPA, keg");
     cleanup();
-    // onTap defaults to false: until feature 4 adds taps, every beer is a keg.
+    // onTap defaults to false: a beer with no keg on a tap is a keg.
     const { container } = render(<BeerArt color="#470606" name="Honey IPA" />);
     expect(container.querySelector("svg")?.getAttribute("data-vessel")).toBe("keg");
+  });
+
+  it("draws a corny keg by default and a sanke keg on request", () => {
+    const shape = (kegShape?: "corny" | "sanke") => {
+      const { container } = render(<BeerArt kegShape={kegShape} color="#9b3200" name="Honey IPA" />);
+      const svg = container.querySelector("svg") as SVGSVGElement;
+      const result = {
+        vessel: svg.getAttribute("data-vessel"),
+        shape: svg.getAttribute("data-keg-shape"),
+        fill: svg.querySelector('[data-part="liquid"]')?.getAttribute("fill"),
+        label: svg.getAttribute("aria-label"),
+      };
+      cleanup();
+      return result;
+    };
+    const corny = { vessel: "keg", shape: "corny", fill: "#9b3200", label: "Honey IPA, keg" };
+    expect(shape()).toEqual(corny);
+    expect(shape("corny")).toEqual(corny);
+    expect(shape("sanke")).toEqual({ ...corny, shape: "sanke" });
+  });
+
+  it.each(["corny", "sanke"] as const)("draws the glass on tap whatever the keg shape (%s)", (kegShape) => {
+    const { container } = render(<BeerArt onTap kegShape={kegShape} color="#9b3200" name="Honey IPA" />);
+    const svg = container.querySelector("svg") as SVGSVGElement;
+    expect(svg.getAttribute("data-vessel")).toBe("glass");
+    expect(svg.getAttribute("aria-label")).toBe("Honey IPA, pint glass");
+  });
+
+  it("draws an empty sanke keg without a color", () => {
+    const { container } = render(<BeerArt kegShape="sanke" color={null} name="Honey IPA" />);
+    expect(container.querySelector('[data-part="liquid"]')?.getAttribute("fill")).toBe("none");
   });
 
   it.each([true, false])("fills the liquid with the color, or nothing (onTap %s)", (onTap) => {
@@ -46,8 +77,13 @@ describe("BeerArt", () => {
     expect(svg.getAttribute("viewBox")).toBeTruthy();
   });
 
-  it.each([true, false])("uses no style attribute or external reference (onTap %s)", (onTap) => {
-    const { svg } = draw(onTap, "#9b3200");
+  it.each([
+    [true, "corny"],
+    [false, "corny"],
+    [false, "sanke"],
+  ] as const)("uses no style attribute or external reference (onTap %s, %s)", (onTap, kegShape) => {
+    const { container } = render(<BeerArt onTap={onTap} kegShape={kegShape} color="#9b3200" name="Honey IPA" />);
+    const svg = container.querySelector("svg") as SVGSVGElement;
     for (const el of [svg, ...Array.from(svg.querySelectorAll("*"))]) {
       expect(el.hasAttribute("style")).toBe(false);
       for (const attr of Array.from(el.attributes)) {

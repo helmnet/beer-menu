@@ -80,7 +80,8 @@ func createBeer(deps Deps) http.Handler {
 
 // updateBeer handles PATCH /api/beers/{id} (write): it applies the BeerPatch body, at most
 // 16 KiB, with merge-patch semantics and returns 200 with the Beer. An empty body object or
-// invalid fields give 400; an unknown or non-positive id gives 404 not_found.
+// invalid fields give 400; an unknown or non-positive id gives 404 not_found; archiving a beer
+// with a current keg, on a tap or waiting, gives 409 beer_has_keg and changes nothing.
 func updateBeer(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, ok := pathID(w, r)
@@ -102,7 +103,8 @@ func updateBeer(deps Deps) http.Handler {
 }
 
 // deleteBeer handles DELETE /api/beers/{id} (write): it removes the beer permanently and
-// returns 204. An unknown or non-positive id gives 404 not_found.
+// returns 204. An unknown or non-positive id gives 404 not_found; a beer with any keg, current
+// or kicked, gives 409 beer_has_kegs.
 func deleteBeer(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, ok := pathID(w, r)
@@ -119,7 +121,8 @@ func deleteBeer(deps Deps) http.Handler {
 }
 
 // writeBeerError answers err from the beers package: 400 with a fields map for FieldErrors,
-// 400 for an empty patch, 404 for ErrNotFound and 500 otherwise.
+// 400 for an empty patch, 404 for ErrNotFound, 409 beer_has_keg for ErrHasCurrentKeg, 409
+// beer_has_kegs for ErrHasKegs and 500 otherwise.
 func writeBeerError(w http.ResponseWriter, r *http.Request, err error) {
 	var fe beers.FieldErrors
 	switch {
@@ -132,6 +135,10 @@ func writeBeerError(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "Send at least one field to change.")
 	case errors.Is(err, beers.ErrNotFound):
 		writeNotFound(w)
+	case errors.Is(err, beers.ErrHasCurrentKeg):
+		writeError(w, http.StatusConflict, "beer_has_keg", "This beer has a keg on a tap or waiting. Kick or delete the keg first.")
+	case errors.Is(err, beers.ErrHasKegs):
+		writeError(w, http.StatusConflict, "beer_has_kegs", "This beer has kegs, current or in history. Archive it instead.")
 	default:
 		writeInternal(w, r, err)
 	}

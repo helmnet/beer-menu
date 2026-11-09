@@ -1,6 +1,6 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { owner, stubApi, testPassword } from "../testApi";
+import { keg, owner, stubApi, tap, testPassword } from "../testApi";
 import AdminPage from "./AdminPage";
 
 afterEach(() => {
@@ -15,6 +15,10 @@ const unauthenticated = {
 
 // The signed-in view's panels load these on mount.
 const panels = {
+  "GET /api/taps": { status: 200, body: [] },
+  "GET /api/kegs?state=waiting": { status: 200, body: [] },
+  "GET /api/kegs?state=kicked": { status: 200, body: [] },
+  "GET /api/keg-types": { status: 200, body: [] },
   "GET /api/beers": { status: 200, body: [] },
   "GET /api/admins": { status: 200, body: [] },
   "GET /api/tokens": { status: 200, body: [] },
@@ -95,6 +99,49 @@ describe("AdminPage", () => {
     render(<AdminPage />);
     expect(await screen.findByRole("heading", { name: "Beer library" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Add beer" })).toBeTruthy();
+  });
+
+  it("shows the taps and keg history when signed in", async () => {
+    stubApi({
+      "GET /api/setup": { status: 200, body: { needed: false } },
+      "GET /api/session": { status: 200, body: owner },
+      ...panels,
+    });
+    render(<AdminPage />);
+    expect(await screen.findByRole("heading", { name: "Taps" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Keg history" })).toBeTruthy();
+  });
+
+  it("reloads the keg history after a kick", async () => {
+    const onTap = keg({ id: 10, beer_name: "Stout", tap_id: 1, state: "on_tap" });
+    const calls = stubApi({
+      "GET /api/setup": { status: 200, body: { needed: false } },
+      "GET /api/session": { status: 200, body: owner },
+      ...panels,
+      "GET /api/taps": { status: 200, body: [tap({ keg: onTap })] },
+      "PATCH /api/kegs/10": { status: 200, body: { ...onTap, state: "kicked" } },
+    });
+    vi.stubGlobal("confirm", () => true);
+    render(<AdminPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Kick" }));
+    const histories = () => calls.filter((c) => c.key === "GET /api/kegs?state=kicked").length;
+    await waitFor(() => expect(histories()).toBe(2));
+  });
+
+  it("reloads the beer library after a keg goes on a tap", async () => {
+    const waiting = keg({ id: 11, beer_name: "Stout" });
+    const calls = stubApi({
+      "GET /api/setup": { status: 200, body: { needed: false } },
+      "GET /api/session": { status: 200, body: owner },
+      ...panels,
+      "GET /api/taps": { status: 200, body: [tap()] },
+      "GET /api/kegs?state=waiting": { status: 200, body: [waiting] },
+      "PATCH /api/kegs/11": { status: 200, body: { ...waiting, tap_id: 1, state: "on_tap" } },
+    });
+    render(<AdminPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Put on tap" }));
+    const libraries = () => calls.filter((c) => c.key === "GET /api/beers").length;
+    await waitFor(() => expect(libraries()).toBe(2));
   });
 
   it.each(Object.keys(panels))("returns to sign-in on a 401 from %s", async (key) => {

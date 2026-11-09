@@ -78,6 +78,14 @@ describe("BeersPanel", () => {
     expect(calls.map((c) => c.key)).toEqual(["GET /api/beers"]);
   });
 
+  it("draws a beer with a keg on a tap as a glass and the others as kegs", async () => {
+    stubApi({ "GET /api/beers": { status: 200, body: [{ ...pale, on_tap: true }, stout] } });
+    render(<BeersPanel onSignedOut={vi.fn()} />);
+    await screen.findByText("Pale");
+    expect(within(row("Pale")).getByRole("img").getAttribute("data-vessel")).toBe("glass");
+    expect(within(row("Stout")).getByRole("img").getAttribute("data-vessel")).toBe("keg");
+  });
+
   it("shows archived beers on request, marked archived", async () => {
     const old = beer({ id: 9, name: "Old Ale", archived_at: "2026-11-01T12:00:00Z" });
     const calls = stubApi({
@@ -95,6 +103,38 @@ describe("BeersPanel", () => {
 
     fireEvent.click(screen.getByLabelText("Show archived"));
     expect(await screen.findByText("Pale")).toBeTruthy();
+  });
+
+  it("reloads the shown list when refresh changes, keeping the archived view", async () => {
+    const old = beer({ id: 9, name: "Old Ale", archived_at: "2026-11-01T12:00:00Z" });
+    const routes = {
+      "GET /api/beers": { status: 200, body: [pale] },
+      "GET /api/beers?archived=true": { status: 200, body: [old] },
+    };
+    const calls = stubApi(routes);
+    const { rerender } = render(<BeersPanel onSignedOut={vi.fn()} refresh={0} />);
+    await screen.findByText("Pale");
+    fireEvent.click(screen.getByLabelText("Show archived"));
+    await screen.findByText("Old Ale");
+    expect(within(row("Old Ale")).getByRole("img").getAttribute("data-vessel")).toBe("keg");
+
+    routes["GET /api/beers?archived=true"] = { status: 200, body: [{ ...old, on_tap: true }] };
+    rerender(<BeersPanel onSignedOut={vi.fn()} refresh={1} />);
+    await waitFor(() => expect(within(row("Old Ale")).getByRole("img").getAttribute("data-vessel")).toBe("glass"));
+    expect((screen.getByLabelText("Show archived") as HTMLInputElement).checked).toBe(true);
+    expect(calls.map((c) => c.key)).toEqual(["GET /api/beers", "GET /api/beers?archived=true", "GET /api/beers?archived=true"]);
+  });
+
+  it("keeps an open form when refresh changes", async () => {
+    const routes = { "GET /api/beers": { status: 200, body: [pale] } };
+    stubApi(routes);
+    const { rerender } = render(<BeersPanel onSignedOut={vi.fn()} refresh={0} />);
+    await screen.findByText("Pale");
+    fireEvent.click(screen.getByRole("button", { name: "Add beer" }));
+    routes["GET /api/beers"] = { status: 200, body: [{ ...pale, on_tap: true }] };
+    rerender(<BeersPanel onSignedOut={vi.fn()} refresh={1} />);
+    await waitFor(() => expect(within(row("Pale")).getByRole("img").getAttribute("data-vessel")).toBe("glass"));
+    expect(screen.queryByRole("button", { name: "Add beer" })).toBeNull();
   });
 
   it("archives a current beer", async () => {
