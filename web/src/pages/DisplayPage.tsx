@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { apiFetch, type Menu, type MenuBeer, type MenuTap, type OnDeckItem } from "../api";
+import { apiFetch, type Menu, type MenuBeer, type MenuTap, type OnDeckItem, type Theme } from "../api";
 import BeerArt from "../components/BeerArt";
 import "./DisplayPage.css";
 
@@ -11,8 +11,6 @@ const TIMEOUT_MS = 8_000;
 const OFFLINE_AFTER = 12;
 // 8,640 ticks of 10 s is about a day (FR-024); ticks, because the TV clock drifts and jumps.
 const RELOAD_AFTER = 8_640;
-// 15 s per page reads a page from across the room and keeps a 3-page cycle under a minute (FR-017).
-const PAGE_MS = 15_000;
 // 4 × 2 keeps each glass big enough to read as a gauge from 3 m on a 16:9 TV (research R12).
 // shortcut: fixed 8 per page, tuned for 16:9; measure if other screens matter.
 const CARDS_PER_PAGE = 8;
@@ -50,6 +48,20 @@ function isMenu(m: unknown): m is Menu {
   return obj(m) && Array.isArray(m.taps) && Array.isArray(m.on_deck) && m.taps.every(isTap) && m.on_deck.every(isOnDeck);
 }
 
+/**
+ * displayOf reads the TV settings from a menu's `display`, checking each field on its own and
+ * falling back to its default (no title, dark, 15 s pages) when it is missing or malformed, so
+ * an API that predates `display`, or a bad value in it, still draws the menu.
+ */
+function displayOf(menu: Menu | null): { title: string; theme: Theme; pageMs: number } {
+  const d: unknown = menu?.display;
+  const title = obj(d) && typeof d.title === "string" ? d.title : "";
+  const theme = obj(d) && d.theme === "light" ? "light" : "dark";
+  const s = obj(d) && typeof d.page_seconds === "number" ? d.page_seconds : 0;
+  const pageSeconds = Number.isInteger(s) && s >= 5 && s <= 300 ? s : 15;
+  return { title, theme, pageMs: pageSeconds * 1000 };
+}
+
 /** Facts is a beer's ABV as "N%" and, when `ibu`, its IBU as "N IBU", each only when known. */
 function Facts({ beer, ibu }: { beer: MenuBeer; ibu: boolean }) {
   const showIbu = ibu && beer.ibu !== null;
@@ -78,11 +90,19 @@ function Facts({ beer, ibu }: { beer: MenuBeer; ibu: boolean }) {
  * kegs in their keg shape filled to their level, and beers still being made as a full corny keg
  * with their status. Pages hold at most 8 cards, taps first; the grid class is `taps-s` for 1
  * to 4 cards on the page and `taps-m` for 5 to 8. With more than one page a separate timer turns
- * the page every 15 s and a "N / M" indicator shows. The page number survives menu updates and
+ * the page every `page_seconds` and a "N / M" indicator shows. The page number survives menu updates and
  * failed checks; when it is past the last page (after the last page turns, or when an update
  * leaves fewer pages) it goes back to page 1. "Nothing on tap" shows only when both lists are
  * empty. No level number is shown; the level is only the fill and the art's label. No inline
  * styles (CSP): classes from DisplayPage.css.
+ *
+ * The menu's `display` sets the theme (class `light` on the page for the light palette in
+ * DisplayPage.css, else dark), the title, shown as one heading line above the cards on every page
+ * when non-empty, and the page interval. A changed interval restarts the page timer, so the
+ * next turn comes one new interval after the check lands; an unchanged one keeps the timing.
+ * `display` comes from the last good check, so failed checks keep the theme, title and interval, and
+ * each field falls back to its default when missing or malformed (`displayOf`) without failing
+ * the check.
  */
 export default function DisplayPage({ reload = () => window.location.reload() }: { reload?: () => void }) {
   const [menu, setMenu] = useState<Menu | null>(null);
@@ -140,18 +160,19 @@ export default function DisplayPage({ reload = () => window.location.reload() }:
     ...chunks(menu?.on_deck ?? []).map((onDeck) => ({ onDeck })),
   ];
   const rotating = pages.length > 1;
+  const { title, theme, pageMs } = displayOf(menu);
 
-  // Only the start and stop of rotation restart this chain, so a menu update keeps the page timing.
+  // Only rotation starting or stopping, or a new interval, restarts this chain; a menu update keeps the timing.
   useEffect(() => {
     if (!rotating) return;
     let next: ReturnType<typeof setTimeout>;
     const turn = () => {
       setPage((p) => p + 1);
-      next = setTimeout(turn, PAGE_MS);
+      next = setTimeout(turn, pageMs);
     };
-    next = setTimeout(turn, PAGE_MS);
+    next = setTimeout(turn, pageMs);
     return () => clearTimeout(next);
-  }, [rotating]);
+  }, [rotating, pageMs]);
 
   // Past the last page (a turn or a smaller menu) starts over; React re-renders before painting.
   if (page > 0 && page >= pages.length) setPage(0);
@@ -159,7 +180,8 @@ export default function DisplayPage({ reload = () => window.location.reload() }:
   const size = (cur?.taps ?? cur?.onDeck ?? []).length <= 4 ? "taps-s" : "taps-m";
 
   return (
-    <main className={`display ${size}`}>
+    <main className={`display ${size}${theme === "light" ? " light" : ""}`}>
+      {title && <h1 className="title">{title}</h1>}
       {menu && pages.length === 0 && <p className="nothing">Nothing on tap</p>}
       {cur?.taps && (
         <ul className="cards" aria-label="Taps">

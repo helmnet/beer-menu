@@ -150,8 +150,8 @@ Taps are the slots on the kegerator; kegs hold beers (details in `api/openapi.ya
 | `POST` | `/api/kegs/{id}/pours` | write | Record a pour: `{"amount_l": 0.47}` |
 | `GET` | `/api/keg-types` | read | The keg types with default sizes and drawing shape |
 
-Volumes are litres in the API, rounded to 0.01 L; the admin app shows US gallons and takes pours
-in fluid ounces. Home Assistant and keg scales should use `POST /api/kegs/{id}/pours` with a
+Volumes are litres in the API, rounded to 0.01 L; the admin app shows them in the units setting
+(US gallons with pours in fluid ounces, or litres with pours in millilitres). Home Assistant and keg scales should use `POST /api/kegs/{id}/pours` with a
 `write` token: concurrent pours all count, and the level stops at 0 without kicking the keg.
 A tap holds one current keg; a kicked keg is read-only history.
 
@@ -163,15 +163,29 @@ Conflicts answer 409 with one of these `error` codes: `tap_occupied`, `tap_has_k
 Open `/display` on the TV (Fully Kiosk on a Fire TV Stick); it needs no credential. It shows
 the enabled taps in order, then an "On deck" page of waiting kegs and beers still being made,
 each drawn filled to its keg level. Pages hold up to 8 cards (4 × 2); with more than one page
-they rotate every 15 seconds with a "N / M" indicator in the corner. The interval is fixed for
-now; a setting for it is planned with the other display settings (feature 7). It polls
+they rotate every 15 seconds (a display setting) with a "N / M" indicator in the corner. It polls
 `GET /api/menu` every 10 seconds, keeps the last menu through outages with a small "offline"
 notice after about 2 minutes, and reloads itself about once a day to pick up upgrades.
 
 `GET /api/menu` is the only public read. It returns display fields only (tap label, beer name,
 style, ABV, IBU, color, keg shape) and the keg level as a fraction from 0 to 1: no ids, sizes,
 volumes or timestamps. Home Assistant and scripts that need volumes use the credentialed
-`GET /api/kegs` and `GET /api/taps` with a token.
+`GET /api/kegs` and `GET /api/taps` with a token. The menu also carries `display`: the title,
+theme and page interval below. Units are not public.
+
+## Display settings
+
+The admin app's "Display settings" panel sets:
+
+| Setting | Values | Default | Applies to |
+| --- | --- | --- | --- |
+| `title` | text, up to 60 characters; empty shows no title | empty | TV |
+| `theme` | `dark` or `light` | `dark` | TV only (the admin app is unchanged) |
+| `units` | `us` or `metric` | `us` | admin app volumes |
+| `page_seconds` | whole seconds, 5 to 300 | 15 | TV page rotation |
+
+`GET /api/settings` (read) returns all four; `PATCH /api/settings` (write) changes the ones
+named, all or nothing. The TV picks a change up on its next menu check, within about 10 seconds.
 
 ## Brewfather import
 

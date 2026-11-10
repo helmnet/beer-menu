@@ -57,6 +57,18 @@ describe("KegHistory", () => {
     ]);
   });
 
+  it("shows sizes in litres with units metric and in gallons with units us", async () => {
+    stubApi(routes());
+    const { unmount } = render(<KegHistory units="metric" onSignedOut={vi.fn()} />);
+    await screen.findByText("Half barrel");
+    expect(within(row("Stout")).getByText("58.67 L")).toBeTruthy();
+    expect(within(row("Pale")).getByText("18.93 L")).toBeTruthy();
+    unmount();
+    render(<KegHistory units="us" onSignedOut={vi.fn()} />);
+    await screen.findByText("Half barrel");
+    expect(within(row("Stout")).getByText("15.50 gal")).toBeTruthy();
+  });
+
   it("deletes a keg only after confirmation", async () => {
     const r = routes({ "DELETE /api/kegs/4": { status: 204 } });
     const calls = stubApi(r);

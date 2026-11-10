@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/helmnet/beer-menu/api/internal/beers"
+	"github.com/helmnet/beer-menu/api/internal/settings"
 )
 
 // providerName is the provider_connections and sync_runs key, and the source of imported beers.
@@ -27,24 +28,6 @@ var ErrInvalidInterval = errors.New("interval must be off, 15m, 1h, 6h or 24h")
 // maxRunMessage caps a stored sync message, in characters.
 const maxRunMessage = 500
 
-// GetSetting returns the value of settings key and whether it exists.
-func GetSetting(db *sql.DB, key string) (string, bool, error) {
-	var v string
-	err := db.QueryRow("SELECT value FROM settings WHERE key = ?", key).Scan(&v)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", false, nil
-	}
-	return v, err == nil, err
-}
-
-// SetSetting stores value under key at now, replacing any earlier value. The caller validates
-// value; the table does not.
-func SetSetting(db *sql.DB, key, value string, now time.Time) error {
-	_, err := db.Exec(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
-		ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`, key, value, now.Unix())
-	return err
-}
-
 // ParseInterval returns the duration of a sync interval, 0 for off, or ErrInvalidInterval.
 func ParseInterval(s string) (time.Duration, error) {
 	d, ok := intervals[s]
@@ -56,7 +39,7 @@ func ParseInterval(s string) (time.Duration, error) {
 
 // loadInterval returns the stored sync interval; missing or invalid reads as off.
 func loadInterval(db *sql.DB) (string, error) {
-	v, _, err := GetSetting(db, intervalKey)
+	v, _, err := settings.Get(db, intervalKey)
 	if err != nil {
 		return "", err
 	}
@@ -71,7 +54,7 @@ func saveInterval(db *sql.DB, v string, now time.Time) error {
 	if _, err := ParseInterval(v); err != nil {
 		return err
 	}
-	return SetSetting(db, intervalKey, v, now)
+	return settings.Set(db, intervalKey, v, now)
 }
 
 // cleanCredentials trims userID and apiKey and checks their limits: 1 to 200 and 1 to 500

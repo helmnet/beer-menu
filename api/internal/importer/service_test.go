@@ -10,6 +10,7 @@ import (
 
 	"github.com/helmnet/beer-menu/api/internal/importer"
 	"github.com/helmnet/beer-menu/api/internal/importer/importertest"
+	"github.com/helmnet/beer-menu/api/internal/settings"
 )
 
 var t0 = time.Date(2026, 11, 9, 18, 0, 0, 0, time.UTC)
@@ -127,7 +128,7 @@ func TestDisconnect(t *testing.T) {
 	s, _, _ := newService(t)
 	ctx := context.Background()
 	mustConnect(t, s)
-	if err := importer.SetSetting(s.DB, "brewfather.sync_interval", "1h", t0); err != nil {
+	if err := settings.Set(s.DB, "brewfather.sync_interval", "1h", t0); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.DB.Exec("INSERT INTO beers (name, source, source_ref, created_at, updated_at) VALUES ('B', 'brewfather', 'b1', 1, 1)"); err != nil {

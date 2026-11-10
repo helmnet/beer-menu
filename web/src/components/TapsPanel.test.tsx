@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { formatGallons, gallonsToLitres } from "../units";
+import { formatVolume, volumeToLitres } from "../units";
 import { beer, keg, kegTypes, Reply, stubApi, tap } from "../testApi";
 import TapsPanel from "./TapsPanel";
 
@@ -172,7 +172,7 @@ describe("TapsPanel kegs", () => {
     expect(art.getAttribute("aria-label")).toBe("Stout, pint glass, 65% left");
     expect(art.querySelector('[data-part="liquid"]')?.getAttribute("fill")).toBe("#470606");
     expect(within(item("Left")).getByText("Corny 5 gal")).toBeTruthy();
-    expect(within(item("Left")).getByText(new RegExp(formatGallons(12.34)))).toBeTruthy();
+    expect(within(item("Left")).getByText(new RegExp(formatVolume(12.34, "us")))).toBeTruthy();
     expect(within(item("Left")).queryByRole("button", { name: "Add keg" })).toBeNull();
   });
 
@@ -240,7 +240,7 @@ describe("TapsPanel kegs", () => {
     expect(art.querySelector('[data-part="liquid"]')?.getAttribute("fill")).toBe("#ffbf42");
     expect(within(lager).getByText("Lager")).toBeTruthy();
     expect(within(lager).getByText("Half barrel")).toBeTruthy();
-    expect(within(lager).getByText(new RegExp(formatGallons(58.67)))).toBeTruthy();
+    expect(within(lager).getByText(new RegExp(formatVolume(58.67, "us")))).toBeTruthy();
 
     fireEvent.click(within(deck).getByRole("button", { name: "Add keg" }));
     const form = screen.getByRole("form", { name: "Add keg" });
@@ -269,7 +269,7 @@ describe("TapsPanel levels", () => {
     fireEvent.click(within(item("Left")).getByRole("button", { name: "Pour" }));
     expect((within(item("Left")).getByLabelText("Pour (fl oz)") as HTMLInputElement).value).toBe("16");
     fireEvent.click(within(item("Left")).getByRole("button", { name: "Save pour" }));
-    expect(await within(item("Left")).findByText(new RegExp(formatGallons(11.87)))).toBeTruthy();
+    expect(await within(item("Left")).findByText(new RegExp(formatVolume(11.87, "us")))).toBeTruthy();
     expect(calls.find((c) => c.key === "POST /api/kegs/10/pours")?.body).toEqual({ amount_l: 0.47 });
     expect(within(item("Left")).queryByLabelText("Pour (fl oz)")).toBeNull();
   });
@@ -284,7 +284,7 @@ describe("TapsPanel levels", () => {
     fireEvent.change(input, { target: { value: "2.5" } });
     fireEvent.click(within(item("Left")).getByRole("button", { name: "Save level" }));
     await waitFor(() => expect(keys(calls)).toContain("PATCH /api/kegs/10"));
-    expect(calls.find((c) => c.key === "PATCH /api/kegs/10")?.body).toEqual({ remaining_l: gallonsToLitres(2.5) });
+    expect(calls.find((c) => c.key === "PATCH /api/kegs/10")?.body).toEqual({ remaining_l: volumeToLitres(2.5, "us") });
   });
 
   it("sends nothing when the level is saved unchanged", async () => {
@@ -317,7 +317,7 @@ describe("TapsPanel levels", () => {
     const glass = within(item("Left")).getByRole("img");
     expect(glass.getAttribute("data-vessel")).toBe("glass");
     expect(glass.getAttribute("aria-label")).toMatch(/25% left$/);
-    expect(within(item("Left")).getByText(new RegExp(formatGallons(18.93 / 4)))).toBeTruthy();
+    expect(within(item("Left")).getByText(new RegExp(formatVolume(18.93 / 4, "us")))).toBeTruthy();
     const deck = await screen.findByRole("region", { name: "On deck" });
     const kegArt = await within(deck).findByRole("img");
     expect(kegArt.getAttribute("data-keg-shape")).toBe("sanke");
@@ -428,5 +428,72 @@ describe("TapsPanel onKegsChanged", () => {
     fireEvent.click(within(item("Left")).getByRole("button", { name: "Disable" }));
     await waitFor(() => expect(keys(calls).filter((k) => k === "GET /api/taps")).toHaveLength(2));
     expect(onKegsChanged).not.toHaveBeenCalled();
+  });
+});
+
+describe("TapsPanel metric", () => {
+  const metricKeg = { ...tapped, size_l: 18.93, remaining_l: 12.5 };
+  const metricRoutes = (extra: Record<string, Reply> = {}) =>
+    routes([{ ...one, keg: metricKeg }, empty], extra);
+
+  it("shows levels in litres", async () => {
+    stubApi(metricRoutes());
+    render(<TapsPanel units="metric" onSignedOut={vi.fn()} />);
+    await screen.findByText("Stout");
+    expect(within(item("Left")).getByText("12.50 L of 18.93 L")).toBeTruthy();
+    expect(item("Left").textContent).not.toMatch(/\d\.\d\d gal/);
+  });
+
+  it("takes a pour in mL, prefilled 500, and sends litres", async () => {
+    const calls = stubApi(metricRoutes({ "POST /api/kegs/10/pours": { status: 200, body: metricKeg } }));
+    render(<TapsPanel units="metric" onSignedOut={vi.fn()} />);
+    await screen.findByText("Stout");
+    fireEvent.click(within(item("Left")).getByRole("button", { name: "Pour" }));
+    expect((within(item("Left")).getByLabelText("Pour (mL)") as HTMLInputElement).value).toBe("500");
+    fireEvent.click(within(item("Left")).getByRole("button", { name: "Save pour" }));
+    await waitFor(() => expect(keys(calls)).toContain("POST /api/kegs/10/pours"));
+    expect(calls.find((c) => c.key === "POST /api/kegs/10/pours")?.body).toEqual({ amount_l: 0.5 });
+  });
+
+  it("sets the level in litres", async () => {
+    const calls = stubApi(metricRoutes({ "PATCH /api/kegs/10": { status: 200, body: metricKeg } }));
+    render(<TapsPanel units="metric" onSignedOut={vi.fn()} />);
+    await screen.findByText("Stout");
+    fireEvent.click(within(item("Left")).getByRole("button", { name: "Set level" }));
+    const input = within(item("Left")).getByLabelText("Remaining (L)") as HTMLInputElement;
+    expect(input.value).toBe("12.50");
+    fireEvent.change(input, { target: { value: "10" } });
+    fireEvent.click(within(item("Left")).getByRole("button", { name: "Save level" }));
+    await waitFor(() => expect(keys(calls)).toContain("PATCH /api/kegs/10"));
+    expect(calls.find((c) => c.key === "PATCH /api/kegs/10")?.body).toEqual({ remaining_l: 10 });
+  });
+
+  it("shows US units when told so", async () => {
+    stubApi(metricRoutes());
+    render(<TapsPanel units="us" onSignedOut={vi.fn()} />);
+    await screen.findByText("Stout");
+    expect(within(item("Left")).getByText("3.30 gal of 5.00 gal")).toBeTruthy();
+  });
+
+  it("restarts an open keg form in the new units when the units change", async () => {
+    stubApi(metricRoutes({ "GET /api/beers": { status: 200, body: [beer({ id: 1, name: "Stout" })] } }));
+    const { rerender } = render(<TapsPanel units="us" onSignedOut={vi.fn()} />);
+    await screen.findByText("Stout");
+    fireEvent.click(within(item("Left")).getByRole("button", { name: "Edit keg" }));
+    const form = () => screen.getByRole("form", { name: "Edit keg of Stout" });
+    fireEvent.change(within(form()).getByLabelText("Remaining (gal)"), { target: { value: "1" } });
+    rerender(<TapsPanel units="metric" onSignedOut={vi.fn()} />);
+    expect((within(form()).getByLabelText("Size (L)") as HTMLInputElement).value).toBe("18.93");
+    expect((within(form()).getByLabelText("Remaining (L)") as HTMLInputElement).value).toBe("12.50");
+  });
+
+  it("restarts an open level form in the new units when the units change", async () => {
+    stubApi(metricRoutes());
+    const { rerender } = render(<TapsPanel units="us" onSignedOut={vi.fn()} />);
+    await screen.findByText("Stout");
+    fireEvent.click(within(item("Left")).getByRole("button", { name: "Set level" }));
+    fireEvent.change(within(item("Left")).getByLabelText("Remaining (gal)"), { target: { value: "1" } });
+    rerender(<TapsPanel units="metric" onSignedOut={vi.fn()} />);
+    expect((within(item("Left")).getByLabelText("Remaining (L)") as HTMLInputElement).value).toBe("12.50");
   });
 });

@@ -1,17 +1,17 @@
 import { useEffect, useState } from "react";
-import { apiFetch, errorMessage, isUnauthenticated, Keg, KegType } from "../api";
-import { formatGallons } from "../units";
+import { apiFetch, errorMessage, isUnauthenticated, Keg, KegType, Units } from "../api";
+import { formatVolume } from "../units";
 
 const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString() : "—");
 
 /**
  * KegHistory is the admin keg history: kicked kegs newest kicked first (GET
  * /api/kegs?state=kicked) with beer, the last tap's label, keg type (labels from GET
- * /api/keg-types), size in US gallons, and tapped and kicked dates, an em dash when a keg was
+ * /api/keg-types), size in `units` (US gallons or litres, default US), and tapped and kicked dates, an em dash when a keg was
  * never on a tap. A keg is deleted after a confirm prompt (DELETE /api/kegs/{id}) and the list
  * reloads. Any 401 calls `onSignedOut`.
  */
-export default function KegHistory({ onSignedOut }: { onSignedOut: () => void }) {
+export default function KegHistory({ onSignedOut, units = "us" }: { onSignedOut: () => void; units?: Units }) {
   const [kegs, setKegs] = useState<Keg[]>([]);
   const [types, setTypes] = useState<KegType[]>([]);
   const [error, setError] = useState("");
@@ -64,7 +64,7 @@ export default function KegHistory({ onSignedOut }: { onSignedOut: () => void })
               <td>{k.beer_name}</td>
               <td>{k.tap_label ?? "—"}</td>
               <td>{types.find((t) => t.type === k.type)?.label ?? k.type}</td>
-              <td>{formatGallons(k.size_l)}</td>
+              <td>{formatVolume(k.size_l, units)}</td>
               <td>{day(k.tapped_at)}</td>
               <td>{day(k.kicked_at)}</td>
               <td>

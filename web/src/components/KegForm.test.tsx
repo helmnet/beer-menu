@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { gallonsToLitres } from "../units";
+import { volumeToLitres } from "../units";
 import { beer, keg, kegTypes, Reply, stubApi } from "../testApi";
 import KegForm from "./KegForm";
 
@@ -80,7 +80,7 @@ describe("KegForm", () => {
     expect(calls.find((c) => c.key === "POST /api/kegs")?.body).toEqual({
       beer_id: 2,
       type: "corny_5_gal",
-      size_l: gallonsToLitres(4),
+      size_l: volumeToLitres(4, "us"),
     });
   });
 
@@ -110,7 +110,7 @@ describe("KegForm", () => {
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(2));
     expect(calls.filter((c) => c.key === "PATCH /api/kegs/7")[1].body).toEqual({
       beer_id: 2,
-      remaining_l: gallonsToLitres(2.5),
+      remaining_l: volumeToLitres(2.5, "us"),
     });
   });
 
@@ -168,5 +168,48 @@ describe("KegForm", () => {
     const onSignedOut = vi.fn();
     render(<KegForm onSaved={vi.fn()} onCancel={vi.fn()} onSignedOut={onSignedOut} />);
     await waitFor(() => expect(onSignedOut).toHaveBeenCalled());
+  });
+});
+
+describe("KegForm metric", () => {
+  it("labels volumes in litres and prefills a corny type in litres", async () => {
+    stubApi(routes());
+    render(<KegForm units="metric" onSaved={vi.fn()} onCancel={vi.fn()} onSignedOut={vi.fn()} />);
+    await screen.findByRole("option", { name: "Half barrel" });
+    expect(value("Size (L)")).toBe("18.93");
+    expect(value("Remaining (L)")).toBe("18.93");
+    type("Type", "corny_3_gal");
+    expect(value("Size (L)")).toBe("11.36");
+  });
+
+  it("sends typed litres", async () => {
+    const calls = stubApi(routes({ "POST /api/kegs": { status: 201, body: keg() } }));
+    const onSaved = vi.fn();
+    render(<KegForm units="metric" onSaved={onSaved} onCancel={vi.fn()} onSignedOut={vi.fn()} />);
+    await screen.findByRole("option", { name: "Half barrel" });
+    type("Beer", "1");
+    type("Size (L)", "19");
+    type("Remaining (L)", "12.345");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(calls.find((c) => c.key === "POST /api/kegs")?.body).toEqual({
+      beer_id: 1,
+      type: "corny_5_gal",
+      size_l: 19,
+      remaining_l: 12.35,
+    });
+  });
+
+  it("shows an edited keg in litres and keeps US labels with units us", async () => {
+    stubApi(routes());
+    const existing = keg({ id: 7, size_l: 30, remaining_l: 12.34 });
+    const { unmount } = render(
+      <KegForm units="metric" keg={existing} onSaved={vi.fn()} onCancel={vi.fn()} onSignedOut={vi.fn()} />,
+    );
+    expect(value("Size (L)")).toBe("30.00");
+    expect(value("Remaining (L)")).toBe("12.34");
+    unmount();
+    render(<KegForm units="us" keg={existing} onSaved={vi.fn()} onCancel={vi.fn()} onSignedOut={vi.fn()} />);
+    expect(value("Size (gal)")).toBe("7.93");
   });
 });

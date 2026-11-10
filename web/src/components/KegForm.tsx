@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useId, useState } from "react";
-import { ApiError, apiFetch, Beer, errorMessage, isUnauthenticated, Keg, KegType } from "../api";
-import { gallons, gallonsToLitres, inputToLitres } from "../units";
+import { ApiError, apiFetch, Beer, errorMessage, isUnauthenticated, Keg, KegType, Units } from "../api";
+import { inputToLitres, volumeText, volumeToLitres, volumeUnit } from "../units";
 
 type Field = "beer_id" | "type" | "size_l" | "remaining_l";
 type Values = Record<Field, string>;
@@ -9,7 +9,8 @@ type Values = Record<Field, string>;
  * KegForm adds a keg (POST /api/kegs), on tap `tapId` when given or waiting otherwise, or,
  * given `keg`, corrects it (PATCH /api/kegs/{id}). It loads the current beers (GET /api/beers)
  * and the keg type table (GET /api/keg-types) on mount. Size and remaining are shown and typed
- * in US gallons and sent in litres. On add, choosing a type prefills size and remaining
+ * in `units` (US gallons or litres, default US) and sent in litres; the form reads `units` once,
+ * so a caller changing it remounts the form. On add, choosing a type prefills size and remaining
  * from the type's size; on edit it changes only the type, keeping the size (FR-020). Volumes are sent only when they differ from what was
  * prefilled, so a keg saved without touching them keeps its stored litres exactly; on edit only
  * changed fields are sent and no change just calls `onCancel`. The API is the only validator:
@@ -19,12 +20,14 @@ type Values = Record<Field, string>;
 export default function KegForm({
   keg,
   tapId,
+  units = "us",
   onSaved,
   onCancel,
   onSignedOut,
 }: {
   keg?: Keg;
   tapId?: number;
+  units?: Units;
   onSaved: (keg: Keg) => void;
   onCancel: () => void;
   onSignedOut: () => void;
@@ -35,7 +38,7 @@ export default function KegForm({
   // base holds the values the user has not changed: the keg on edit, the type's prefill on add.
   const [base, setBase] = useState<Values>(() =>
     keg
-      ? { beer_id: String(keg.beer_id), type: keg.type, size_l: gallons(keg.size_l), remaining_l: gallons(keg.remaining_l) }
+      ? { beer_id: String(keg.beer_id), type: keg.type, size_l: volumeText(keg.size_l, units), remaining_l: volumeText(keg.remaining_l, units) }
       : { beer_id: "", type: "corny_5_gal", size_l: "", remaining_l: "" },
   );
   const [values, setValues] = useState(base);
@@ -65,7 +68,7 @@ export default function KegForm({
       setValues({ ...v, type });
       return;
     }
-    const size = gallons(t.size_l);
+    const size = volumeText(t.size_l, units);
     setValues({ ...v, type, size_l: size, remaining_l: size });
     setBase({ ...base, size_l: size, remaining_l: size });
   }
@@ -77,7 +80,7 @@ export default function KegForm({
     if (!keg || values.type !== base.type) body.type = values.type;
     if (!keg && tapId !== undefined) body.tap_id = tapId;
     for (const f of ["size_l", "remaining_l"] as const) {
-      if (values[f] !== base[f]) body[f] = inputToLitres(values[f], gallonsToLitres);
+      if (values[f] !== base[f]) body[f] = inputToLitres(values[f], (n) => volumeToLitres(n, units));
     }
     if (keg && Object.keys(body).length === 0) {
       onCancel();
@@ -149,8 +152,8 @@ export default function KegForm({
           ))}
         </select>
       ))}
-      {field("size_l", "Size (gal)", volume("size_l"))}
-      {field("remaining_l", "Remaining (gal)", volume("remaining_l"))}
+      {field("size_l", `Size (${volumeUnit(units)})`, volume("size_l"))}
+      {field("remaining_l", `Remaining (${volumeUnit(units)})`, volume("remaining_l"))}
       {error && <p role="alert">{error}</p>}
       <button type="submit" disabled={saving}>
         Save

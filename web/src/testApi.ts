@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import type { BatchSummary, Beer, BrewfatherStatus, ImportResult, Keg, KegType, Menu, Tap } from "./api";
+import type { BatchSummary, Beer, BrewfatherStatus, ImportResult, Keg, KegType, Menu, Settings, Tap } from "./api";
 
 /** Reply is one stubbed API response. */
 export interface Reply {
@@ -156,7 +156,12 @@ export const kegTypes: KegType[] = [
   { type: "euro_50_l", label: "Euro 50 L", size_l: 50, shape: "sanke" },
 ];
 
-/** menu returns a GET /api/menu body for stubs: no taps and nothing on deck, with overrides. */
+/** menu returns a GET /api/menu body for stubs: no taps, nothing on deck, default display. */
 export function menu(overrides: Partial<Menu> = {}): Menu {
-  return { taps: [], on_deck: [], ...overrides };
+  return { taps: [], on_deck: [], display: { title: "", theme: "dark", page_seconds: 15 }, ...overrides };
+}
+
+/** settings returns a GET /api/settings body for stubs: the defaults, with overrides. */
+export function settings(overrides: Partial<Settings> = {}): Settings {
+  return { title: "", theme: "dark", units: "us", page_seconds: 15, ...overrides };
 }

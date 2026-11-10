@@ -47,6 +47,8 @@ var routeFixtures = map[string]routeFixture{
 		connectFake(t, deps)
 		return "/api/brewfather/sync", ""
 	},
+	"GET /api/settings":   func(*testing.T, Deps) (string, string) { return "/api/settings", "" },
+	"PATCH /api/settings": func(*testing.T, Deps) (string, string) { return "/api/settings", `{"title":"Walk"}` },
 	"GET /api/srm-colors": func(*testing.T, Deps) (string, string) { return "/api/srm-colors", "" },
 	"GET /api/keg-types":  func(*testing.T, Deps) (string, string) { return "/api/keg-types", "" },
 	"GET /api/taps":       func(*testing.T, Deps) (string, string) { return "/api/taps", "" },

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Beer Menu API
-  version: 0.6.0
+  version: 0.7.0
   description: >
     REST API for the Beer Menu self-hosted tap list. Served under /api on the same
     origin as the admin app.
@@ -40,6 +40,8 @@ tags:
     description: The public menu the TV display shows
   - name: brewfather
     description: Brewfather account connection, batch import and sync
+  - name: settings
+    description: Display settings (TV title, theme and page interval; admin volume units)
 security:
   - session: []
   - bearer: []
@@ -929,7 +931,8 @@ paths:
       description: >
         Public on the LAN: no credential. Returns enabled taps in position order and the on-deck
         list, with only the fields the TV display draws. No ids, sizes, volumes or timestamps;
-        clients that need those use the credentialed tap and keg reads. Never cached
+        clients that need those use the credentialed tap and keg reads. `display` holds the
+        title, theme and page interval the TV uses; units are not public. Never cached
         (Cache-Control no-store).
       tags: [menu]
       security: []
@@ -956,6 +959,56 @@ paths:
                   - beer: { name: Saison, style: null, abv: null, ibu: null, color: null }
                     keg: null
                     status: fermenting
+                display: { title: Helm Taproom, theme: dark, page_seconds: 15 }
+
+  /api/settings:
+    get:
+      operationId: getSettings
+      summary: Read the display settings
+      description: >
+        Any admin session or token (read or write). Each setting is its stored value, or its
+        default when never set or when the stored value is not valid.
+      tags: [settings]
+      x-access: read
+      responses:
+        "200":
+          description: All display settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+              example: { title: "", theme: dark, units: us, page_seconds: 15 }
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    patch:
+      operationId: updateSettings
+      summary: Change some display settings
+      description: >
+        Merge patch: only the named settings change. Every named field is validated before any
+        is stored; an invalid field changes nothing and is named in `fields`. Null, unknown
+        fields and an empty object are refused. Returns all settings after the change.
+      tags: [settings]
+      x-access: write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettingsPatch"
+            example: { title: Helm Taproom, page_seconds: 20 }
+      responses:
+        "200":
+          description: All display settings after the change
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+        "400":
+          $ref: "#/components/responses/InvalidBeer"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /api/brewfather:
     get:
@@ -1653,8 +1706,10 @@ components:
     Menu:
       type: object
       additionalProperties: false
-      required: [taps, on_deck]
+      required: [taps, on_deck, display]
       properties:
+        display:
+          $ref: "#/components/schemas/MenuDisplay"
         taps:
           type: array
           description: Enabled taps in position order.
@@ -1730,6 +1785,53 @@ components:
           minimum: 0
           maximum: 1
           description: Fraction of the keg left. Not rounded.
+    Theme:
+      type: string
+      enum: [dark, light]
+      description: TV theme. Default dark. Does not change the admin app.
+    Units:
+      type: string
+      enum: [us, metric]
+      description: >
+        Admin-app volume units. us shows US gallons and takes pours in US fl oz; metric shows
+        litres and takes pours in mL. Volumes in the API are always litres.
+    Title:
+      type: string
+      maxLength: 60
+      description: >
+        TV title, trimmed; empty means no title row. At most 60 code points, no control
+        characters.
+    PageSeconds:
+      type: integer
+      minimum: 5
+      maximum: 300
+      description: Seconds each TV page shows before the next. Default 15.
+    Settings:
+      type: object
+      additionalProperties: false
+      required: [title, theme, units, page_seconds]
+      properties:
+        title: { $ref: "#/components/schemas/Title" }
+        theme: { $ref: "#/components/schemas/Theme" }
+        units: { $ref: "#/components/schemas/Units" }
+        page_seconds: { $ref: "#/components/schemas/PageSeconds" }
+    SettingsPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        title: { $ref: "#/components/schemas/Title" }
+        theme: { $ref: "#/components/schemas/Theme" }
+        units: { $ref: "#/components/schemas/Units" }
+        page_seconds: { $ref: "#/components/schemas/PageSeconds" }
+    MenuDisplay:
+      type: object
+      additionalProperties: false
+      required: [title, theme, page_seconds]
+      properties:
+        title: { $ref: "#/components/schemas/Title" }
+        theme: { $ref: "#/components/schemas/Theme" }
+        page_seconds: { $ref: "#/components/schemas/PageSeconds" }
     SyncInterval:
       type: string
       enum: ["off", 15m, 1h, 6h, 24h]

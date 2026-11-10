@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { Admin, apiFetch, errorMessage, isUnauthenticated } from "../api";
+import { Admin, apiFetch, errorMessage, isUnauthenticated, Units } from "../api";
 import AdminsPanel from "../components/AdminsPanel";
 import BeersPanel from "../components/BeersPanel";
 import BrewfatherPanel from "../components/BrewfatherPanel";
 import KegHistory from "../components/KegHistory";
 import LoginForm from "../components/LoginForm";
 import PasswordForm from "../components/PasswordForm";
+import SettingsPanel from "../components/SettingsPanel";
 import SetupForm from "../components/SetupForm";
 import TapsPanel from "../components/TapsPanel";
 import TokensPanel from "../components/TokensPanel";
@@ -20,10 +21,11 @@ type View =
 /**
  * AdminPage is the admin app at `/` and every non-display path. On load it asks
  * GET /api/setup and GET /api/session, then shows the first-admin setup form, the sign-in
- * form or the signed-in view with the taps, beer library, Brewfather, keg history, admins,
- * tokens and change-password sections. A keg change in the taps panel that can move a beer on or off a tap or
+ * form or the signed-in view with the taps, beer library, Brewfather, display settings, keg
+ * history, admins, tokens and change-password sections. A keg change in the taps panel that can move a beer on or off a tap or
  * into history (not a pour or level set) reloads the keg history and the beer library's artwork.
- * A Brewfather import or finished sync reloads the beer library. Any 401 from a later call, including the panels' calls, returns to the
+ * A Brewfather import or finished sync reloads the beer library. Volumes in the taps panel and
+ * keg history follow the units setting SettingsPanel loads and saves, US until it loads. Any 401 from a later call, including the panels' calls, returns to the
  * sign-in form.
  */
 export default function AdminPage() {
@@ -32,6 +34,7 @@ export default function AdminPage() {
   const [kegChanges, setKegChanges] = useState(0);
   // Bumped when BrewfatherPanel imports or syncs beers: BeersPanel re-fetches its list.
   const [beerChanges, setBeerChanges] = useState(0);
+  const [units, setUnits] = useState<Units>("us");
 
   useEffect(() => {
     let cancelled = false;
@@ -71,11 +74,12 @@ export default function AdminPage() {
           <button type="button" onClick={signOut}>
             Sign out
           </button>
-          <TapsPanel onSignedOut={toLogin} onKegsChanged={() => setKegChanges((n) => n + 1)} />
+          <TapsPanel units={units} onSignedOut={toLogin} onKegsChanged={() => setKegChanges((n) => n + 1)} />
           {/* Both counters only grow, so their sum changes whenever either does. */}
           <BeersPanel onSignedOut={toLogin} refresh={kegChanges + beerChanges} />
           <BrewfatherPanel onSignedOut={toLogin} onBeersChanged={() => setBeerChanges((n) => n + 1)} />
-          <KegHistory key={kegChanges} onSignedOut={toLogin} />
+          <SettingsPanel onSignedOut={toLogin} onChange={(s) => setUnits(s.units)} />
+          <KegHistory key={kegChanges} units={units} onSignedOut={toLogin} />
           <AdminsPanel me={view.admin} onSignedOut={toLogin} />
           <TokensPanel onSignedOut={toLogin} />
           <PasswordForm onSignedOut={toLogin} />

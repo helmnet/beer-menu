@@ -12,6 +12,7 @@ import (
 
 	"github.com/helmnet/beer-menu/api/internal/beers"
 	"github.com/helmnet/beer-menu/api/internal/secrets"
+	"github.com/helmnet/beer-menu/api/internal/settings"
 	"github.com/helmnet/beer-menu/api/internal/store"
 )
 
@@ -47,26 +48,6 @@ func newBox(t *testing.T) *secrets.Box {
 	return b
 }
 
-func TestSettings(t *testing.T) {
-	db := openDB(t)
-	if v, ok, err := GetSetting(db, "missing"); err != nil || ok || v != "" {
-		t.Fatalf("missing setting = %q %v (err %v)", v, ok, err)
-	}
-	if err := SetSetting(db, "a.b", "one", t0); err != nil {
-		t.Fatal(err)
-	}
-	if err := SetSetting(db, "a.b", "two", t0.Add(time.Hour)); err != nil {
-		t.Fatal(err)
-	}
-	var updated int64
-	if err := db.QueryRow("SELECT updated_at FROM settings WHERE key = 'a.b'").Scan(&updated); err != nil || updated != t0.Add(time.Hour).Unix() {
-		t.Fatalf("updated_at = %d (err %v)", updated, err)
-	}
-	if v, ok, err := GetSetting(db, "a.b"); err != nil || !ok || v != "two" {
-		t.Fatalf("setting = %q %v (err %v), want two", v, ok, err)
-	}
-}
-
 func TestInterval(t *testing.T) {
 	db := openDB(t)
 	if v, err := loadInterval(db); err != nil || v != "off" {
@@ -91,7 +72,7 @@ func TestInterval(t *testing.T) {
 	if got, _ := loadInterval(db); got != "1h" {
 		t.Fatalf("invalid save changed the interval to %q", got)
 	}
-	if err := SetSetting(db, intervalKey, "garbage", t0); err != nil {
+	if err := settings.Set(db, intervalKey, "garbage", t0); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := loadInterval(db); err != nil || got != "off" {

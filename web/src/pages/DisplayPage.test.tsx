@@ -509,3 +509,182 @@ describe("DisplayPage rotation", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+/** withDisplay returns a menu of n taps whose `display` is replaced by the given value. */
+const withDisplay = (n: number, display: unknown, onDeck = 0) =>
+  ({ ...menu({ taps: taps(n), on_deck: deck(onDeck) }), display }) as Menu;
+const shown = (title = "Helm Taproom", page_seconds = 20) => ({ title, theme: "dark", page_seconds });
+const title = () => screen.queryByRole("heading", { level: 1 });
+
+describe("DisplayPage title and page interval", () => {
+  it("shows the title on tap pages and on on-deck pages", async () => {
+    poll(good(withDisplay(3, shown("Helm Taproom", 15), 2)));
+    render(<DisplayPage reload={vi.fn()} />);
+    await tick(0);
+    expect(title()?.textContent).toBe("Helm Taproom");
+    expect(title()?.className).toBe("title");
+    expect(cards()).toEqual(range(1, 3, "Tap"));
+    await tick(15_000);
+    expect(screen.getByRole("heading", { name: "On deck" })).toBeTruthy();
+    expect(title()?.textContent).toBe("Helm Taproom");
+  });
+
+  it("renders no title element when the title is empty", async () => {
+    poll(good(withDisplay(3, shown(""))));
+    render(<DisplayPage reload={vi.fn()} />);
+    await tick(0);
+    expect(cards()).toEqual(range(1, 3, "Tap"));
+    expect(title()).toBeNull();
+    expect(document.querySelector(".title")).toBeNull();
+  });
+
+  it("shows markup in the title as literal text", async () => {
+    poll(good(withDisplay(3, shown("<b>x</b>"))));
+    render(<DisplayPage reload={vi.fn()} />);
+    await tick(0);
+    expect(title()?.textContent).toBe("<b>x</b>");
+    expect(document.querySelector("main b")).toBeNull();
+  });
+
+  it("turns the page every page_seconds", async () => {
+    poll(good(withDisplay(9, shown("", 20))));
+    render(<DisplayPage reload={vi.fn()} />);
+    await tick(0);
+    await tick(15_000);
+    expect(pager()).toBe("1 / 2");
+    await tick(4_999);
+    expect(pager()).toBe("1 / 2");
+    await tick(1);
+    expect(pager()).toBe("2 / 2");
+    await tick(20_000);
+    expect(pager()).toBe("1 / 2");
+  });
+
+  it("turns 5 s after a check that changes page_seconds from 20 to 5, then every 5 s", async () => {
+    const s = poll(good(withDisplay(9, shown("", 20))));
+    render(<DisplayPage reload={vi.fn()} />);
+    await tick(0);
+    s.next = good(withDisplay(9, shown("", 5)));
+    await tick(10_000);
+    expect(s.calls).toBe(2);
+    expect(pager()).toBe("1 / 2");
+    await tick(4_999);
+    expect(pager()).toBe("1 / 2");
+    await tick(1);
+    expect(pager()).toBe("2 / 2");
+    await tick(5_000);
+    expect(pager()).toBe("1 / 2");
+    await tick(5_000);
+    expect(pager()).toBe("2 / 2");
+  });
+
+  it("does not restart the page timer when a check has the same page_seconds", async () => {
+    const s = poll(good(withDisplay(9, shown("", 20))));
+    render(<DisplayPage reload={vi.fn()} />);
+    await tick(0);
+    await tick(10_000);
+    expect(s.calls).toBe(2);
+    await tick(9_999);
+    expect(pager()).toBe("1 / 2");
+    await tick(1);
+    expect(pager()).toBe("2 / 2");
+  });
+
+  it.each([
+    ["no display", undefined],
+    ["a null display", null],
+    ["a display that is a string", "x"],
+    ["a title that is not a string", { title: 5, theme: "dark", page_seconds: 15 }],
+    ["a title that is an object", { title: {}, theme: "dark", page_seconds: 15 }],
+    ["page_seconds 4", { ...shown(""), page_seconds: 4 }],
+    ["page_seconds 301", { ...shown(""), page_seconds: 301 }],
+    ["page_seconds 15.5", { ...shown(""), page_seconds: 15.5 }],
+    ['page_seconds "20"', { ...shown(""), page_seconds: "20" }],
+  ])("draws the menu with no title and 15 s pages given %s, never counting it as failed", async (_, display) => {
+    const body = withDisplay(9, display);
+    if (display === undefined) delete body.display;
+    const s = poll(good(body));
+    render(<DisplayPage reload={vi.fn()} />);
+    await tick(0);
+    expect(cards()).toEqual(range(1, 8, "Tap"));
+    expect(title()).toBeNull();
+    await tick(14_999);
+    expect(pager()).toBe("1 / 2");
+    await tick(1);
+    expect(pager()).toBe("2 / 2");
+    // 12 more checks with the same body: a failed one each would show offline.
+    for (let i = 0; i < 12; i++) await tick(10_000);
+    expect(s.calls).toBe(14);
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("falls back field by field", async () => {
+    const s = poll(good(withDisplay(9, { title: 5, theme: "dark", page_seconds: 20 })));
+    render(<DisplayPage reload={vi.fn()} />);
+    await tick(0);
+    expect(title()).toBeNull();
+    await tick(15_000);
+    expect(pager()).toBe("1 / 2");
+    await tick(5_000);
+    expect(pager()).toBe("2 / 2");
+    s.next = good(withDisplay(9, { title: "Helm Taproom", theme: "dark", page_seconds: 4 }));
+    await tick(10_000);
+    expect(title()?.textContent).toBe("Helm Taproom");
+  });
+
+  it.each([
+    ["network errors", networkDown],
+    ["error statuses", status500],
+    ["timeouts", hang],
+  ])("keeps the title and the 20 s pages through %s", async (_, bad) => {
+    const s = poll(good(withDisplay(9, shown("Helm Taproom", 20))));
+    render(<DisplayPage reload={vi.fn()} />);
+    await tick(0);
+    s.next = bad;
+    for (const want of ["2 / 2", "1 / 2", "2 / 2", "1 / 2", "2 / 2", "1 / 2", "2 / 2"]) {
+      await tick(19_999);
+      expect(pager()).not.toBe(want);
+      await tick(1);
+      expect(pager()).toBe(want);
+      expect(title()?.textContent).toBe("Helm Taproom");
+    }
+    expect(s.calls).toBeGreaterThan(7);
+  });
+});
+
+describe("DisplayPage theme", () => {
+  const main = () => document.querySelector("main") as HTMLElement;
+
+  it("adds the light class for the light theme", async () => {
+    poll(good(withDisplay(3, { ...shown(), theme: "light" })));
+    render(<DisplayPage reload={vi.fn()} />);
+    await tick(0);
+    expect(main().classList.contains("display")).toBe(true);
+    expect(main().classList.contains("light")).toBe(true);
+  });
+
+  it.each([
+    ["dark", shown()],
+    ["a missing theme", { title: "", page_seconds: 15 }],
+    ["an unknown theme", { ...shown(), theme: "blue" }],
+  ])("does not add the light class for %s", async (_, display) => {
+    poll(good(withDisplay(3, display)));
+    render(<DisplayPage reload={vi.fn()} />);
+    await tick(0);
+    expect(cards()).toEqual(range(1, 3, "Tap"));
+    expect(main().classList.contains("light")).toBe(false);
+  });
+
+  it("switches to light on a later check with no reload and never adds a style attribute", async () => {
+    const reload = vi.fn();
+    const s = poll(good(withDisplay(9, shown("Helm Taproom"), 2)));
+    render(<DisplayPage reload={reload} />);
+    await tick(0);
+    expect(main().classList.contains("light")).toBe(false);
+    s.next = good(withDisplay(9, { ...shown("Helm Taproom"), theme: "light" }, 2));
+    await tick(10_000);
+    expect(main().classList.contains("light")).toBe(true);
+    expect(reload).not.toHaveBeenCalled();
+    expect(document.querySelectorAll("[style]")).toHaveLength(0);
+  });
+});
