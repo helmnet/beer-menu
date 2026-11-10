@@ -173,6 +173,39 @@ style, ABV, IBU, color, keg shape) and the keg level as a fraction from 0 to 1: 
 volumes or timestamps. Home Assistant and scripts that need volumes use the credentialed
 `GET /api/kegs` and `GET /api/taps` with a token.
 
+## Brewfather import
+
+The admin app can connect one Brewfather account, list its batches, and import them as beers
+(endpoints under `/api/brewfather` in `api/openapi.yaml`). The Brewfather API key is stored
+encrypted in the database, and the API never returns it. The encryption key lives outside the
+database, so a copy of the database or a backup alone cannot reveal the Brewfather key.
+
+Generate the encryption key once:
+
+```sh
+openssl rand -base64 32 > beer-menu-secret-key
+chown "$PUID:$PGID" beer-menu-secret-key
+chmod 0600 beer-menu-secret-key
+```
+
+Give it to the API in one of two ways:
+
+| Variable | Meaning |
+| --- | --- |
+| `BEER_MENU_SECRET_KEY_FILE` | Path to a file holding the key, such as a compose secret (preferred; wins if both are set) |
+| `BEER_MENU_SECRET_KEY` | The key itself |
+
+Prefer the file: environment values show in `docker inspect` and in the process environment.
+`docker-compose.yaml` has a commented example that mounts the file as a compose secret. The key
+is standard base64 of exactly 32 bytes; a key that is set but unreadable or malformed stops the
+API at startup with an error naming the variable, never the value. With neither variable set,
+the API runs and the admin app says Brewfather import is not set up.
+
+Keep a copy of the key somewhere other than the data folder. Losing it, or changing it, loses
+only the Brewfather connection: the admin app shows "Reconnect needed" and you enter the
+Brewfather API key again. Imported beers are not affected. A restored backup needs the same
+encryption key to keep its connection.
+
 ## Restore from a backup
 
 Before it applies pending migrations, the API copies the database to
@@ -210,6 +243,9 @@ The API backs up the restored file and re-applies any migrations newer than `v<N
 A restore brings back admins, passwords and tokens as they were when the backup was taken.
 Tokens revoked since the backup must be revoked again, and admins removed or passwords
 changed since then must be removed or changed again.
+
+A restored connection to Brewfather opens only with the encryption key the API had when the
+backup was taken; otherwise reconnect (see Brewfather import).
 
 Backups hold password and token hashes. Keep them, like the database, at mode `0600` and
 owned by the container user.

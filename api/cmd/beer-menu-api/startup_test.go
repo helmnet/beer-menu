@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"log/slog"
 	"os"
@@ -316,5 +317,61 @@ func TestStartupWithoutAdminEnvCreatesNothing(t *testing.T) {
 	}
 	if adminCount(t, db) != 0 {
 		t.Fatal("admin created without env vars")
+	}
+}
+
+func TestLoadSecretKey(t *testing.T) {
+	key := make([]byte, 32)
+	rand.Read(key)
+	fileKey := make([]byte, 32)
+	rand.Read(fileKey)
+	enc, fileEnc := base64.StdEncoding.EncodeToString(key), base64.StdEncoding.EncodeToString(fileKey)
+	path := filepath.Join(t.TempDir(), "key")
+	if err := os.WriteFile(path, []byte(fileEnc+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := func(vars map[string]string) func(string) string { return func(k string) string { return vars[k] } }
+
+	got, err := loadSecretKey(env(map[string]string{"BEER_MENU_SECRET_KEY_FILE": path, "BEER_MENU_SECRET_KEY": enc}), os.ReadFile)
+	if err != nil || string(got) != string(fileKey) {
+		t.Fatalf("file and env set = %x (err %v), want the file's key", got, err)
+	}
+	got, err = loadSecretKey(env(map[string]string{"BEER_MENU_SECRET_KEY": " " + enc + "\n"}), os.ReadFile)
+	if err != nil || string(got) != string(key) {
+		t.Fatalf("env only = %x (err %v)", got, err)
+	}
+	got, err = loadSecretKey(env(nil), os.ReadFile)
+	if err != nil || got != nil {
+		t.Fatalf("neither set = %x (err %v), want nil", got, err)
+	}
+
+	short := base64.StdEncoding.EncodeToString(key[:16])
+	shortPath := filepath.Join(t.TempDir(), "short")
+	if err := os.WriteFile(shortPath, []byte(short), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	junk := "not-base64-" + rand.Text()
+	cases := []struct {
+		name, variable string
+		vars           map[string]string
+		secret         string
+	}{
+		{"missing file", "BEER_MENU_SECRET_KEY_FILE", map[string]string{"BEER_MENU_SECRET_KEY_FILE": filepath.Join(t.TempDir(), "nope"), "BEER_MENU_SECRET_KEY": enc}, enc},
+		{"short file", "BEER_MENU_SECRET_KEY_FILE", map[string]string{"BEER_MENU_SECRET_KEY_FILE": shortPath}, short},
+		{"junk env", "BEER_MENU_SECRET_KEY", map[string]string{"BEER_MENU_SECRET_KEY": junk}, junk},
+		{"short env", "BEER_MENU_SECRET_KEY", map[string]string{"BEER_MENU_SECRET_KEY": short}, short},
+	}
+	for _, c := range cases {
+		got, err := loadSecretKey(env(c.vars), os.ReadFile)
+		if err == nil || got != nil {
+			t.Errorf("%s: = %x, %v; want an error", c.name, got, err)
+			continue
+		}
+		if !strings.Contains(err.Error(), c.variable) {
+			t.Errorf("%s: error %q does not name %s", c.name, err, c.variable)
+		}
+		if strings.Contains(err.Error(), c.secret) {
+			t.Errorf("%s: error %q contains the value", c.name, err)
+		}
 	}
 }

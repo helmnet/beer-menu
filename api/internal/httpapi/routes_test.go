@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"maps"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -13,7 +15,7 @@ import (
 // contractProblems returns one line per way routes break the OpenAPI document spec: a route
 // whose method and path are not an operation, whose Access differs from the operation's
 // x-access, whose security is not [] exactly when it is public, or that is AccessRead without
-// being a GET.
+// being a GET; and an operation with no route, so the contract holds both ways.
 func contractProblems(t *testing.T, spec []byte, routes []Route) []string {
 	t.Helper()
 	type operation struct {
@@ -27,6 +29,17 @@ func contractProblems(t *testing.T, spec []byte, routes []Route) []string {
 		t.Fatalf("parse OpenAPI document: %v", err)
 	}
 	var problems []string
+	routed := map[string]bool{}
+	for _, r := range routes {
+		routed[r.Method+" "+r.Path] = true
+	}
+	for _, path := range slices.Sorted(maps.Keys(doc.Paths)) {
+		for _, method := range slices.Sorted(maps.Keys(doc.Paths[path])) {
+			if name := strings.ToUpper(method) + " " + path; !routed[name] {
+				problems = append(problems, name+": documented but not routed")
+			}
+		}
+	}
 	for _, r := range routes {
 		name := r.Method + " " + r.Path
 		if r.Access == AccessRead && r.Method != http.MethodGet {
@@ -104,6 +117,9 @@ paths:
   /api/e:
     get:
       x-access: public
+  /api/f:
+    delete:
+      x-access: admin
 `)
 	got := contractProblems(t, spec, []Route{
 		{Method: http.MethodGet, Path: "/api/a", Access: AccessWrite},
@@ -113,6 +129,7 @@ paths:
 		{Method: http.MethodGet, Path: "/api/e", Access: AccessPublic},
 	})
 	want := []string{
+		"DELETE /api/f: documented but not routed",
 		"GET /api/a: x-access read, route write",
 		"GET /api/b: x-access , route public",
 		"POST /api/c: AccessRead on a non-GET route",

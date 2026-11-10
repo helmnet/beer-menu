@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/helmnet/beer-menu/api/internal/auth"
+	"github.com/helmnet/beer-menu/api/internal/secrets"
 	"github.com/helmnet/beer-menu/api/internal/store"
 )
 
@@ -18,7 +19,7 @@ import (
 const keepBackups = 5
 
 // config is the runtime configuration read from the environment.
-// It holds the first-admin password, so it must never be logged.
+// It holds the first-admin password and the encryption key, so it must never be logged.
 type config struct {
 	DataDir      string
 	Port         string
@@ -27,6 +28,34 @@ type config struct {
 	// and no admin exists (research R9).
 	AdminUsername string
 	AdminPassword string
+	// SecretKey seals third-party credentials; nil means Brewfather import is not configured.
+	SecretKey []byte
+}
+
+// loadSecretKey reads the encryption key from the file named by BEER_MENU_SECRET_KEY_FILE,
+// which wins, or from BEER_MENU_SECRET_KEY: standard base64 of 32 bytes, surrounding
+// whitespace ignored. Neither set gives nil. A set variable whose file cannot be read or whose
+// value is not a valid key is an error naming the variable, never the value.
+func loadSecretKey(getenv func(string) string, readFile func(string) ([]byte, error)) ([]byte, error) {
+	if path := getenv("BEER_MENU_SECRET_KEY_FILE"); path != "" {
+		raw, err := readFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("read BEER_MENU_SECRET_KEY_FILE: %w", err)
+		}
+		key, err := secrets.ParseKey(string(raw))
+		if err != nil {
+			return nil, fmt.Errorf("BEER_MENU_SECRET_KEY_FILE: %w", err)
+		}
+		return key, nil
+	}
+	if v := getenv("BEER_MENU_SECRET_KEY"); v != "" {
+		key, err := secrets.ParseKey(v)
+		if err != nil {
+			return nil, fmt.Errorf("BEER_MENU_SECRET_KEY: %w", err)
+		}
+		return key, nil
+	}
+	return nil, nil
 }
 
 // startup prepares the database before the API serves requests: it checks the data folder

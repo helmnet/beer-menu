@@ -191,4 +191,64 @@ describe("BeersPanel", () => {
     await waitFor(() => expect(screen.queryByText("Pale")).toBeNull());
     expect(calls.map((c) => c.key)).toContain("DELETE /api/beers/1");
   });
+  describe("Brewfather beers", () => {
+    const sync = { synced_at: "2026-11-09T12:00:00Z", not_found: false, archive_pending: false };
+    const imported = beer({ id: 3, name: "Imported", source: "brewfather", source_ref: "b3", sync });
+
+    it("labels Brewfather beers and not manual ones", async () => {
+      stubApi({ "GET /api/beers": { status: 200, body: [pale, imported] } });
+      render(<BeersPanel onSignedOut={vi.fn()} />);
+      await screen.findByText("Imported");
+      expect(within(row("Imported")).getByText("Brewfather")).toBeTruthy();
+      expect(within(row("Pale")).queryByText("Brewfather")).toBeNull();
+    });
+
+    it("re-syncs a Brewfather beer and reloads; manual beers have no Re-sync", async () => {
+      const routes = {
+        "GET /api/beers": { status: 200, body: [pale, imported] as unknown[] },
+        "POST /api/beers/3/sync": { status: 200, body: { beer: { ...imported, abv: 6.1 }, adjusted: [] } },
+      };
+      const calls = stubApi(routes);
+      render(<BeersPanel onSignedOut={vi.fn()} />);
+      await screen.findByText("Imported");
+      expect(within(row("Pale")).queryByRole("button", { name: "Re-sync" })).toBeNull();
+      routes["GET /api/beers"] = { status: 200, body: [pale, { ...imported, abv: 6.1 }] };
+      fireEvent.click(within(row("Imported")).getByRole("button", { name: "Re-sync" }));
+      expect(await within(row("Imported")).findByText("6.1%")).toBeTruthy();
+      expect(calls.map((c) => c.key)).toEqual(["GET /api/beers", "POST /api/beers/3/sync", "GET /api/beers"]);
+    });
+
+    it("notes a beer whose batch Brewfather no longer has", async () => {
+      stubApi({ "GET /api/beers": { status: 200, body: [{ ...imported, sync: { ...sync, not_found: true } }] } });
+      render(<BeersPanel onSignedOut={vi.fn()} />);
+      await screen.findByText("Imported");
+      expect(within(row("Imported")).getByText("Not found in Brewfather")).toBeTruthy();
+    });
+
+    it("notes a beer whose batch was archived while it has a keg", async () => {
+      stubApi({ "GET /api/beers": { status: 200, body: [{ ...imported, sync: { ...sync, archive_pending: true } }] } });
+      render(<BeersPanel onSignedOut={vi.fn()} />);
+      await screen.findByText("Imported");
+      expect(within(row("Imported")).getByText("Archived in Brewfather; kick its keg to archive")).toBeTruthy();
+      expect(within(row("Imported")).queryByText("Not found in Brewfather")).toBeNull();
+    });
+
+    it("shows the retry time when Brewfather's rate limit is reached", async () => {
+      stubApi({
+        "GET /api/beers": { status: 200, body: [imported] },
+        "POST /api/beers/3/sync": {
+          status: 429,
+          body: { error: "provider_rate_limited", message: "x", retry_at: "2026-11-09T18:42:00Z" },
+          headers: { "Retry-After": "120" },
+        },
+      });
+      render(<BeersPanel onSignedOut={vi.fn()} />);
+      await screen.findByText("Imported");
+      const before = Date.now();
+      fireEvent.click(within(row("Imported")).getByRole("button", { name: "Re-sync" }));
+      const text = (await screen.findByRole("alert")).textContent ?? "";
+      const at = (ms: number) => new Date(ms).toLocaleTimeString();
+      expect([at(before + 120_000), at(Date.now() + 120_000)]).toContain(text.replace(/^Brewfather's rate limit is reached\. Try again after (.*)\.$/, "$1"));
+    });
+  });
 });

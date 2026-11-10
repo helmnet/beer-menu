@@ -21,6 +21,17 @@ const (
 	StatusReady        = "ready"
 )
 
+// Limits of the beer rules, shared by Normalize and Sanitize so they cannot drift.
+const (
+	maxNameLen        = 100
+	maxStyleLen       = 100
+	maxDescriptionLen = 2000
+	maxBrewerLen      = 100
+	maxABV            = 25.0
+	maxSRM            = 100.0
+	maxIBU            = 200
+)
+
 // ErrEmptyPatch means a PATCH body named no field, so there is nothing to change.
 var ErrEmptyPatch = errors.New("patch changes nothing")
 
@@ -71,12 +82,12 @@ func (in Input) Normalize() (Values, error) {
 	fe := FieldErrors{}
 	v := Values{
 		Name:        fe.name(in.Name),
-		Style:       fe.text("style", in.Style, 100, false),
-		ABV:         fe.decimal("abv", in.ABV, 25, "Must be 0 to 25 with at most one decimal place."),
+		Style:       fe.text("style", in.Style, maxStyleLen, false),
+		ABV:         fe.decimal("abv", in.ABV, maxABV, "Must be 0 to 25 with at most one decimal place."),
 		IBU:         fe.ibu(in.IBU),
-		SRM:         fe.decimal("srm", in.SRM, 100, "Must be 0 to 100 with at most one decimal place."),
-		Description: fe.text("description", in.Description, 2000, true),
-		Brewer:      fe.text("brewer", in.Brewer, 100, false),
+		SRM:         fe.decimal("srm", in.SRM, maxSRM, "Must be 0 to 100 with at most one decimal place."),
+		Description: fe.text("description", in.Description, maxDescriptionLen, true),
+		Brewer:      fe.text("brewer", in.Brewer, maxBrewerLen, false),
 		BrewDate:    fe.date(in.BrewDate),
 		Status:      StatusReady,
 	}
@@ -129,22 +140,22 @@ func (p Patch) Normalize() (map[string]any, error) {
 		fe["archived"] = "Must be true or false."
 	}
 	if p.Style.Set {
-		set["style"] = fe.text("style", p.Style.Value, 100, false)
+		set["style"] = fe.text("style", p.Style.Value, maxStyleLen, false)
 	}
 	if p.ABV.Set {
-		set["abv"] = fe.decimal("abv", p.ABV.Value, 25, "Must be 0 to 25 with at most one decimal place.")
+		set["abv"] = fe.decimal("abv", p.ABV.Value, maxABV, "Must be 0 to 25 with at most one decimal place.")
 	}
 	if p.IBU.Set {
 		set["ibu"] = fe.ibu(p.IBU.Value)
 	}
 	if p.SRM.Set {
-		set["srm"] = fe.decimal("srm", p.SRM.Value, 100, "Must be 0 to 100 with at most one decimal place.")
+		set["srm"] = fe.decimal("srm", p.SRM.Value, maxSRM, "Must be 0 to 100 with at most one decimal place.")
 	}
 	if p.Description.Set {
-		set["description"] = fe.text("description", p.Description.Value, 2000, true)
+		set["description"] = fe.text("description", p.Description.Value, maxDescriptionLen, true)
 	}
 	if p.Brewer.Set {
-		set["brewer"] = fe.text("brewer", p.Brewer.Value, 100, false)
+		set["brewer"] = fe.text("brewer", p.Brewer.Value, maxBrewerLen, false)
 	}
 	if p.BrewDate.Set {
 		set["brew_date"] = fe.date(p.BrewDate.Value)
@@ -163,7 +174,7 @@ func (fe FieldErrors) name(s string) string {
 	switch {
 	case s == "":
 		fe["name"] = "Name is required."
-	case utf8.RuneCountInString(s) > 100:
+	case utf8.RuneCountInString(s) > maxNameLen:
 		fe["name"] = "Must be at most 100 characters."
 	case hasControl(s, false):
 		fe["name"] = "Must not contain control characters."
@@ -206,7 +217,7 @@ func (fe FieldErrors) ibu(p *float64) *int64 {
 	if p == nil {
 		return nil
 	}
-	if *p < 0 || *p > 200 || *p != math.Trunc(*p) {
+	if *p < 0 || *p > maxIBU || *p != math.Trunc(*p) {
 		fe["ibu"] = "Must be a whole number from 0 to 200."
 		return nil
 	}
@@ -239,7 +250,11 @@ func (fe FieldErrors) status(s string) string {
 }
 
 func hasControl(s string, multiline bool) bool {
-	return strings.ContainsFunc(s, func(r rune) bool {
-		return unicode.IsControl(r) && !(multiline && (r == '\n' || r == '\t'))
-	})
+	return strings.ContainsFunc(s, func(r rune) bool { return isControl(r, multiline) })
+}
+
+// isControl reports whether r is a control character a text field refuses; multiline allows
+// newline and tab.
+func isControl(r rune, multiline bool) bool {
+	return unicode.IsControl(r) && !(multiline && (r == '\n' || r == '\t'))
 }

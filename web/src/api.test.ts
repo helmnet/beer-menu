@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiFetch } from "./api";
+import { ApiError, apiFetch, errorMessage } from "./api";
 
 function stubFetch(status: number, body?: unknown, headers: Record<string, string> = {}) {
   const fetchMock = vi.fn(async () =>
@@ -96,5 +96,32 @@ describe("apiFetch", () => {
     const err = await apiFetch("GET", "/api/setup").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect(err).toMatchObject({ status: 502, code: "unknown" });
+  });
+});
+
+describe("errorMessage", () => {
+  it("gives minutes to wait for a sign-in rate limit", () => {
+    expect(errorMessage(new ApiError(429, "too_many_attempts", "x", 840))).toBe(
+      "Too many failed attempts. Try again in 14 minutes.",
+    );
+  });
+
+  it("gives the local retry time for Brewfather's rate limit", () => {
+    vi.useFakeTimers({ now: new Date("2026-11-09T18:32:00Z") });
+    try {
+      const at = new Date("2026-11-09T18:42:00Z").toLocaleTimeString();
+      expect(errorMessage(new ApiError(429, "provider_rate_limited", "x", 600))).toBe(
+        `Brewfather's rate limit is reached. Try again after ${at}.`,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("uses the API's message otherwise, including a 429 without Retry-After", () => {
+    expect(errorMessage(new ApiError(429, "provider_rate_limited", "Try later."))).toBe("Try later.");
+    expect(errorMessage(new ApiError(502, "provider_unreachable", "Brewfather could not be reached; try again."))).toBe(
+      "Brewfather could not be reached; try again.",
+    );
   });
 });

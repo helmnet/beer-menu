@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { keg, owner, stubApi, tap, testPassword } from "../testApi";
+import { batch, brewfatherStatus, importResult, keg, owner, stubApi, tap, testPassword } from "../testApi";
 import AdminPage from "./AdminPage";
 
 afterEach(() => {
@@ -22,6 +22,7 @@ const panels = {
   "GET /api/beers": { status: 200, body: [] },
   "GET /api/admins": { status: 200, body: [] },
   "GET /api/tokens": { status: 200, body: [] },
+  "GET /api/brewfather": { status: 200, body: brewfatherStatus() },
 };
 
 function fillCredentials(password: string) {
@@ -141,6 +142,34 @@ describe("AdminPage", () => {
     render(<AdminPage />);
     fireEvent.click(await screen.findByRole("button", { name: "Put on tap" }));
     const libraries = () => calls.filter((c) => c.key === "GET /api/beers").length;
+    await waitFor(() => expect(libraries()).toBe(2));
+  });
+
+  it("shows the Brewfather panel when signed in", async () => {
+    stubApi({
+      "GET /api/setup": { status: 200, body: { needed: false } },
+      "GET /api/session": { status: 200, body: owner },
+      ...panels,
+    });
+    render(<AdminPage />);
+    expect(await screen.findByRole("heading", { name: "Brewfather" })).toBeTruthy();
+    expect(await screen.findByText("Not connected")).toBeTruthy();
+  });
+
+  it("reloads the beer library after a Brewfather import", async () => {
+    const calls = stubApi({
+      "GET /api/setup": { status: 200, body: { needed: false } },
+      "GET /api/session": { status: 200, body: owner },
+      ...panels,
+      "GET /api/brewfather": { status: 200, body: brewfatherStatus({ connected: true }) },
+      "GET /api/brewfather/batches": { status: 200, body: { fetched_at: "2026-11-09T12:00:00Z", batches: [batch()] } },
+      "POST /api/brewfather/imports": { status: 200, body: { results: [importResult()] } },
+    });
+    render(<AdminPage />);
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Import Pale Ale" }));
+    const libraries = () => calls.filter((c) => c.key === "GET /api/beers").length;
+    expect(libraries()).toBe(1);
+    fireEvent.click(screen.getByRole("button", { name: "Import selected" }));
     await waitFor(() => expect(libraries()).toBe(2));
   });
 

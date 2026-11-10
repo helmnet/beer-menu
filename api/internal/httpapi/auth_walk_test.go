@@ -1,12 +1,14 @@
 package httpapi
 
 import (
+	"crypto/rand"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/helmnet/beer-menu/api/internal/importer"
 	"github.com/helmnet/beer-menu/api/internal/kegs"
 )
 
@@ -21,6 +23,29 @@ var routeFixtures = map[string]routeFixture{
 	"GET /api/beers": func(*testing.T, Deps) (string, string) { return "/api/beers", "" },
 	"GET /api/beers/{id}": func(t *testing.T, deps Deps) (string, string) {
 		return "/api/beers/" + insertBeer(t, deps, "Pale"), ""
+	},
+	"GET /api/brewfather": func(*testing.T, Deps) (string, string) { return "/api/brewfather", "" },
+	"GET /api/brewfather/batches": func(t *testing.T, deps Deps) (string, string) {
+		connectFake(t, deps)
+		return "/api/brewfather/batches", ""
+	},
+	"POST /api/brewfather/imports": func(t *testing.T, deps Deps) (string, string) {
+		ref := "batch-" + rand.Text()
+		connectFake(t, deps).SetBatches(importer.Batch{Ref: ref, Name: "Imported", Status: "fermenting"})
+		return "/api/brewfather/imports", `{"batch_ids":["` + ref + `"]}`
+	},
+	"POST /api/beers/{id}/sync": func(t *testing.T, deps Deps) (string, string) {
+		ref := "batch-" + rand.Text()
+		connectFake(t, deps).SetBatches(importer.Batch{Ref: ref, Name: "Imported", Status: "fermenting"})
+		return "/api/beers/" + importFake(t, deps, ref) + "/sync", ""
+	},
+	// Each request starts a background sync. Wait for the last one so the next is not refused as
+	// running, and at cleanup so no sync changes data under another route's walk.
+	"POST /api/brewfather/sync": func(t *testing.T, deps Deps) (string, string) {
+		deps.Importer.Wait()
+		t.Cleanup(deps.Importer.Wait)
+		connectFake(t, deps)
+		return "/api/brewfather/sync", ""
 	},
 	"GET /api/srm-colors": func(*testing.T, Deps) (string, string) { return "/api/srm-colors", "" },
 	"GET /api/keg-types":  func(*testing.T, Deps) (string, string) { return "/api/keg-types", "" },
@@ -137,6 +162,8 @@ func dataTables(t *testing.T, deps Deps) string {
 // TestWritesRefuseWeakCredentials walks every AccessWrite route: no credential and a revoked
 // token give 401, a read token and a cross-site session request give 403, none of them change
 // any data, and a write token and a session each succeed on a fresh fixture (constitution IV).
+// The cross-site case is skipped for GET write routes: http.CrossOriginProtection never blocks
+// safe methods, and a GET changes nothing.
 func TestWritesRefuseWeakCredentials(t *testing.T) {
 	deps, _ := newTestDeps(t)
 	mux := NewMux(deps)
@@ -149,7 +176,9 @@ func TestWritesRefuseWeakCredentials(t *testing.T) {
 			wantError(t, do(mux, method, path, body), 401, "unauthenticated")
 			wantError(t, do(mux, method, path, body, c.read...), 403, "forbidden")
 			wantError(t, do(mux, method, path, body, c.revoked...), 401, "unauthenticated")
-			wantError(t, do(mux, method, path, body, c.crossSite...), 403, "forbidden")
+			if method != http.MethodGet {
+				wantError(t, do(mux, method, path, body, c.crossSite...), 403, "forbidden")
+			}
 			if after := dataTables(t, deps); after != before {
 				t.Fatalf("a refused request changed data:\n%s\n%s", before, after)
 			}

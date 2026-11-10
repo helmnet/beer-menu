@@ -351,3 +351,130 @@ func TestMigration0004FromVersion3(t *testing.T) {
 		t.Fatalf("kicked kegs with tap_id NULL after tap delete = %d (err %v), want 2", n, err)
 	}
 }
+
+// TestMigration0005FromVersion4 applies 0005_brewfather to a version 4 database holding two
+// manual beers (one with a kicked keg) and a tap, checks they survive with empty sync state,
+// the new tables exist with their columns and checks, and beers_source_ref allows one beer per
+// imported batch.
+func TestMigration0005FromVersion4(t *testing.T) {
+	ms, err := LoadMigrations(Migrations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ms) < 5 {
+		t.Fatal("migration 0005 missing")
+	}
+	db := openTemp(t)
+	if err := Apply(db, ms[:4]); err != nil {
+		t.Fatal(err)
+	}
+	mustExec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := db.Exec(q, args...); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	mustFail := func(q string, args ...any) {
+		t.Helper()
+		if _, err := db.Exec(q, args...); err == nil {
+			t.Fatalf("%s: want constraint error", q)
+		}
+	}
+	mustExec("INSERT INTO settings (key, value) VALUES ('title', 'kept')")
+	mustExec(`INSERT INTO beers (id, name, style, abv, ibu, srm, description, brewer, brew_date, status, archived_at, created_at, updated_at)
+		VALUES (1, 'Pale', 'APA', 5.5, 35, 6, 'Hoppy', 'Helm', '2026-10-01', 'fermenting', NULL, 4, 5)`)
+	mustExec("INSERT INTO beers (id, name, archived_at, created_at, updated_at) VALUES (2, 'Old', 9, 6, 7)")
+	mustExec("INSERT INTO kegs (id, beer_id, size_l, remaining_l, tap_id, kicked_at, created_at, updated_at) VALUES (1, 2, 19, 0, NULL, 8, 1, 1)")
+	if err := Apply(db, ms[4:5]); err != nil {
+		t.Fatal(err)
+	}
+	if v := mustVersion(t, db); v != 5 {
+		t.Fatalf("version = %d, want 5", v)
+	}
+
+	type row struct {
+		name, style, desc, brewer, date, status, source string
+		abv, srm                                        float64
+		ibu, created, updated                           int64
+	}
+	var got row
+	var archived, synced sql.NullInt64
+	var notFound, pending, batchArchived int64
+	if err := db.QueryRow(`SELECT name, style, description, brewer, brew_date, status, source, abv, srm, ibu, created_at, updated_at,
+		archived_at, synced_at, sync_not_found, sync_archive_pending, sync_batch_archived FROM beers WHERE id = 1`).Scan(
+		&got.name, &got.style, &got.desc, &got.brewer, &got.date, &got.status, &got.source, &got.abv, &got.srm, &got.ibu,
+		&got.created, &got.updated, &archived, &synced, &notFound, &pending, &batchArchived); err != nil {
+		t.Fatal(err)
+	}
+	if want := (row{"Pale", "APA", "Hoppy", "Helm", "2026-10-01", "fermenting", "manual", 5.5, 6, 35, 4, 5}); got != want || archived.Valid {
+		t.Fatalf("beer 1 = %+v archived %v, want %+v", got, archived, want)
+	}
+	if synced.Valid || notFound != 0 || pending != 0 || batchArchived != 0 {
+		t.Fatalf("beer 1 sync state = %v %d %d %d, want NULL 0 0 0", synced, notFound, pending, batchArchived)
+	}
+	var name string
+	if err := db.QueryRow("SELECT name, archived_at, synced_at, sync_not_found, sync_archive_pending, sync_batch_archived FROM beers WHERE id = 2").Scan(
+		&name, &archived, &synced, &notFound, &pending, &batchArchived); err != nil || name != "Old" || archived.Int64 != 9 ||
+		synced.Valid || notFound != 0 || pending != 0 || batchArchived != 0 {
+		t.Fatalf("beer 2 = %q %v %v %d %d %d (err %v)", name, archived, synced, notFound, pending, batchArchived, err)
+	}
+	var n int
+	if err := db.QueryRow("SELECT count(*) FROM kegs WHERE id = 1 AND beer_id = 2 AND kicked_at = 8").Scan(&n); err != nil || n != 1 {
+		t.Fatalf("kicked keg kept = %d (err %v)", n, err)
+	}
+	if err := db.QueryRow("SELECT count(*) FROM taps").Scan(&n); err != nil || n != 1 {
+		t.Fatalf("taps = %d (err %v), want 1", n, err)
+	}
+	var title string
+	if err := db.QueryRow("SELECT value FROM settings WHERE key = 'title'").Scan(&title); err != nil || title != "kept" {
+		t.Fatalf("settings row = %q (err %v), want kept", title, err)
+	}
+
+	wantColumns := map[string]string{
+		"settings":             "key,value,updated_at",
+		"provider_connections": "provider,user_id,api_key_sealed,connected_at",
+		"sync_runs":            "provider,started_at,finished_at,ok,message,updated,imported,not_found",
+		"import_dismissed":     "source,ref,dismissed_at",
+	}
+	for table, want := range wantColumns {
+		rows, err := db.Query("SELECT name FROM pragma_table_info(?) ORDER BY cid", table)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cols []string
+		for rows.Next() {
+			var c string
+			if err := rows.Scan(&c); err != nil {
+				t.Fatal(err)
+			}
+			cols = append(cols, c)
+		}
+		rows.Close()
+		if got := strings.Join(cols, ","); got != want {
+			t.Errorf("%s columns = %q, want %q", table, got, want)
+		}
+	}
+
+	mustExec("INSERT INTO settings (key, value, updated_at) VALUES ('brewfather.sync_interval', '1h', 10)")
+	mustExec("INSERT INTO provider_connections (provider, user_id, api_key_sealed, connected_at) VALUES ('brewfather', 'u', 'v1:x', 1)")
+	mustFail("INSERT INTO provider_connections (provider, user_id, api_key_sealed, connected_at) VALUES ('other', 'u', 'v1:x', 1)")
+	mustFail("INSERT INTO provider_connections (provider, user_id, api_key_sealed, connected_at) VALUES ('brewfather', 'u2', 'v1:y', 1)")
+	mustExec("INSERT INTO sync_runs (provider, started_at) VALUES ('brewfather', 1)")
+	if err := db.QueryRow("SELECT updated + imported + not_found FROM sync_runs").Scan(&n); err != nil || n != 0 {
+		t.Fatalf("sync_runs count defaults = %d (err %v), want 0", n, err)
+	}
+	mustExec("INSERT INTO import_dismissed (source, ref, dismissed_at) VALUES ('brewfather', 'b1', 1)")
+	mustFail("INSERT INTO import_dismissed (source, ref, dismissed_at) VALUES ('brewfather', 'b1', 2)")
+
+	mustExec("INSERT INTO beers (name, source, source_ref, created_at, updated_at) VALUES ('A', 'brewfather', 'batch-1', 1, 1)")
+	if _, err := db.Exec("INSERT INTO beers (name, source, source_ref, created_at, updated_at) VALUES ('B', 'brewfather', 'batch-1', 1, 1)"); err == nil || !strings.Contains(err.Error(), "UNIQUE") {
+		t.Fatalf("second beer for batch-1: err %v, want unique beers_source_ref", err)
+	}
+	mustExec("INSERT INTO beers (name, source, source_ref, created_at, updated_at) VALUES ('C', 'brewfather', 'batch-2', 1, 1)")
+	mustExec("INSERT INTO beers (name, source, created_at, updated_at) VALUES ('D', 'brewfather', 1, 1)")
+	mustExec("INSERT INTO beers (name, source, created_at, updated_at) VALUES ('E', 'brewfather', 1, 1)")
+	var idx string
+	if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'beers_source_ref'").Scan(&idx); err != nil {
+		t.Fatalf("index beers_source_ref: %v", err)
+	}
+}
