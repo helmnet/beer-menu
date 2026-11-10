@@ -78,6 +78,8 @@ var Routes = []Route{
 	{Method: http.MethodDelete, Path: "/api/kegs/{id}", Access: AccessWrite, Handler: deleteKeg},
 	{Method: http.MethodPost, Path: "/api/kegs/{id}/pours", Access: AccessWrite, Handler: pourKeg},
 	{Method: http.MethodGet, Path: "/api/keg-types", Access: AccessRead, Handler: listKegTypes},
+	{Method: http.MethodGet, Path: "/api/settings", Access: AccessRead, Handler: getSettings},
+	{Method: http.MethodPatch, Path: "/api/settings", Access: AccessWrite, Handler: updateSettings},
 	{Method: http.MethodGet, Path: "/api/brewfather", Access: AccessRead, Handler: getBrewfather},
 	{Method: http.MethodPut, Path: "/api/brewfather/connection", Access: AccessAdmin, Handler: connectBrewfather},
 	{Method: http.MethodDelete, Path: "/api/brewfather/connection", Access: AccessAdmin, Handler: disconnectBrewfather},

@@ -4,6 +4,45 @@
  * Sizes are in vh so a 1080p TV and a laptop preview look the same.
  */
 
+/*
+ * Colors are custom properties so the light theme (.display.light, research R6) only swaps
+ * values. WCAG contrast, text on card unless noted:
+ *   role                     dark                 light
+ *   text                     #f2f2f2 16.0:1       #141416 15.4:1 (on bg)
+ *   label, heading, nothing  #a9a9b0  7.7:1       #55555d  6.2:1
+ *   style, facts             #d2d2d8 11.9:1       #33333a 10.5:1
+ *   status                   #e0b04a  8.9:1       #7a4f00  6.0:1
+ *   pager                    #8c8c95  5.9:1       #5f5f68  5.3:1
+ *   offline                  #fff on #8b1e1e 9.1:1 in both
+ * The dark pager was #6f6f78 (3.95:1), below the 4.5:1 FR-011 requires.
+ */
+.display {
+  --bg: #0b0b0d;
+  --card: #17171b;
+  --text: #f2f2f2;
+  --muted: #a9a9b0;
+  --soft: #d2d2d8;
+  --accent: #e0b04a;
+  --dim: #8c8c95;
+}
+
+.display.light {
+  --bg: #ecebe6;
+  --card: #ffffff;
+  --text: #141416;
+  --muted: #55555d;
+  --soft: #33333a;
+  --accent: #7a4f00;
+  --dim: #5f5f68;
+}
+
+/* On the white card the cream foam alone is 1.2:1, so give it a darker cream and an edge. */
+.display.light .foam {
+  fill: #e9d8ac;
+  stroke: #b39a5e;
+  stroke-width: 1;
+}
+
 .display {
   position: fixed;
   inset: 0;
@@ -13,8 +52,8 @@
   gap: 2vh;
   padding: 2vh 2vw;
   box-sizing: border-box;
-  background: #0b0b0d;
-  color: #f2f2f2;
+  background: var(--bg);
+  color: var(--text);
   font-family: system-ui, sans-serif;
   line-height: 1.15;
 }
@@ -62,7 +101,7 @@
   padding: 1.5vh 1vw;
   overflow: hidden;
   text-align: center;
-  background: #17171b;
+  background: var(--card);
   border-radius: 1.5vh;
 }
 
@@ -109,7 +148,7 @@
 
 .display .label {
   font-size: 2.6vh;
-  color: #a9a9b0;
+  color: var(--muted);
 }
 
 .display .name {
@@ -120,7 +159,7 @@
 .display .style,
 .display .facts {
   font-size: 3vh;
-  color: #d2d2d8;
+  color: var(--soft);
 }
 
 .display .name,
@@ -138,13 +177,24 @@
 
 .display .status {
   font-size: 3vh;
-  color: #e0b04a;
+  color: var(--accent);
+}
+
+/* One line above the cards; flex: none so the cards keep the rest of the screen. */
+.display .title {
+  flex: none;
+  font-size: 5vh;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .display .heading {
   flex: none;
   font-size: 4vh;
-  color: #a9a9b0;
+  color: var(--muted);
 }
 
 /* Its own row under the cards, so it never covers one. */
@@ -153,7 +203,7 @@
   align-self: flex-end;
   margin-top: -1.5vh;
   font-size: 2vh;
-  color: #6f6f78;
+  color: var(--dim);
 }
 
 /* A corner notice: the last menu stays readable behind it. */
@@ -171,5 +221,5 @@
 .display .nothing {
   margin: auto;
   font-size: 6vh;
-  color: #a9a9b0;
+  color: var(--muted);
 }

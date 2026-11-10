@@ -197,10 +197,35 @@ export interface OnDeckItem {
   status: "fermenting" | "conditioning" | null;
 }
 
-/** Menu is the body of the public GET /api/menu: enabled taps in order, then on deck. */
+/** Theme is the TV's color theme. It never changes the admin app. */
+export type Theme = "dark" | "light";
+
+/** Units picks how the admin app shows and takes volumes; the API always speaks litres. */
+export type Units = "us" | "metric";
+
+/** Settings is the body of GET and PATCH /api/settings: every display setting. */
+export interface Settings {
+  title: string;
+  theme: Theme;
+  units: Units;
+  page_seconds: number;
+}
+
+/** MenuDisplay is the public subset of Settings the TV reads from the menu: no units. */
+export interface MenuDisplay {
+  title: string;
+  theme: Theme;
+  page_seconds: number;
+}
+
+/**
+ * Menu is the body of the public GET /api/menu: enabled taps in order, then on deck, and the
+ * TV's display settings. `display` is optional because an API older than feature 7 omits it.
+ */
 export interface Menu {
   taps: MenuTap[];
   on_deck: OnDeckItem[];
+  display?: MenuDisplay;
 }
 
 /**

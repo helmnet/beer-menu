@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useId, useState } from "react";
-import { apiFetch, errorMessage, isUnauthenticated, Keg, KegType, Tap } from "../api";
-import { flOzToLitres, formatGallons, gallons, gallonsToLitres, inputToLitres } from "../units";
+import { apiFetch, errorMessage, isUnauthenticated, Keg, KegType, Tap, Units } from "../api";
+import { formatVolume, inputToLitres, pourPrefill, pourToLitres, pourUnit, volumeText, volumeToLitres, volumeUnit } from "../units";
 import BeerArt from "./BeerArt";
 import KegForm from "./KegForm";
 
@@ -16,8 +16,8 @@ type Level = { kegId: number; kind: "pour" | "set" } | null;
  * /api/taps/{id}), moves one up or down by sending every id in the new order (PUT
  * /api/taps/order), and removes one after a confirm prompt (DELETE /api/taps/{id}). Each tap
  * shows its keg: the beer as a pint glass filled to the keg's level (remaining over size, also
- * in the drawing's label), beer name, keg type, and level in US gallons, with Pour (US fl oz, prefilled 16, so a pour is
- * two clicks; POST /api/kegs/{id}/pours), Set level (gallons; PATCH remaining_l, sent only when
+ * in the drawing's label), beer name, keg type, and level, with Pour (prefilled, so a pour is
+ * two clicks; POST /api/kegs/{id}/pours), Set level (PATCH remaining_l, sent only when
  * changed), Kick (after a confirm prompt; PATCH {"kicked": true}), Take off and Edit keg; an empty tap offers Add keg and, while kegs are
  * waiting, Put on tap. An On deck list shows waiting kegs (GET /api/kegs?state=waiting) in
  * their keg type's drawing, filled to their level, with the same keg actions but Take off, and Add keg for a waiting
@@ -26,13 +26,19 @@ type Level = { kegId: number; kind: "pour" | "set" } | null;
  * such as conflicts, are shown. Every successful keg change that can move a beer on or off a tap or into
  * keg history (create, edit, put on or take off a tap, kick) calls `onKegsChanged`, so keg
  * history and beer artwork can reload; pours, level sets and tap-only changes do not. Any 401 calls `onSignedOut`.
+ * Volumes follow `units` (default US): levels in US gallons or litres, pours in US fl oz
+ * (prefilled 16) or mL (prefilled 500), always sent in litres. KegForm is passed `units` and
+ * keyed by it, as is the inline level form, so a form open during a units change restarts in
+ * the new units.
  */
 export default function TapsPanel({
   onSignedOut,
   onKegsChanged,
+  units = "us",
 }: {
   onSignedOut: () => void;
   onKegsChanged?: () => void;
+  units?: Units;
 }) {
   const deckId = useId();
   const [taps, setTaps] = useState<Tap[]>([]);
@@ -103,12 +109,12 @@ export default function TapsPanel({
     e.preventDefault();
     const text = String(new FormData(e.currentTarget).get("amount") ?? "");
     if (level?.kind === "pour") {
-      change("POST", `/api/kegs/${k.id}/pours`, { amount_l: inputToLitres(text, flOzToLitres) });
-    } else if (text === gallons(k.remaining_l)) {
-      // An untouched level must not be resent: the gallons round trip would move it.
+      change("POST", `/api/kegs/${k.id}/pours`, { amount_l: inputToLitres(text, (n) => pourToLitres(n, units)) });
+    } else if (text === volumeText(k.remaining_l, units)) {
+      // An untouched level must not be resent: the two-decimal round trip would move it.
       setLevel(null);
     } else {
-      change("PATCH", `/api/kegs/${k.id}`, { remaining_l: inputToLitres(text, gallonsToLitres) });
+      change("PATCH", `/api/kegs/${k.id}`, { remaining_l: inputToLitres(text, (n) => volumeToLitres(n, units)) });
     }
   }
 
@@ -141,7 +147,7 @@ export default function TapsPanel({
       <p>{k.beer_name}</p>
       <p>{typeLabel(k)}</p>
       <p>
-        {formatGallons(k.remaining_l)} of {formatGallons(k.size_l)}
+        {formatVolume(k.remaining_l, units)} of {formatVolume(k.size_l, units)}
       </p>
       <button type="button" onClick={() => setLevel({ kegId: k.id, kind: "pour" })}>
         Pour
@@ -150,15 +156,15 @@ export default function TapsPanel({
         Set level
       </button>
       {level?.kegId === k.id && (
-        <form key={level.kind} onSubmit={(e) => saveLevel(k, e)}>
+        <form key={`${units}-${level.kind}`} onSubmit={(e) => saveLevel(k, e)}>
           <label>
-            {level.kind === "pour" ? "Pour (fl oz)" : "Remaining (gal)"}
+            {level.kind === "pour" ? `Pour (${pourUnit(units)})` : `Remaining (${volumeUnit(units)})`}
             <input
               name="amount"
               type="number"
               min="0"
               step="any"
-              defaultValue={level.kind === "pour" ? "16" : gallons(k.remaining_l)}
+              defaultValue={level.kind === "pour" ? pourPrefill(units) : volumeText(k.remaining_l, units)}
             />
           </label>
           <button type="submit">{level.kind === "pour" ? "Save pour" : "Save level"}</button>
@@ -258,9 +264,10 @@ export default function TapsPanel({
       </section>
       {editing.kind !== "none" && (
         <KegForm
-          key={editing.kind === "edit" ? editing.keg.id : `add-${editing.tapId}`}
+          key={`${units}-${editing.kind === "edit" ? editing.keg.id : `add-${editing.tapId}`}`}
           keg={editing.kind === "edit" ? editing.keg : undefined}
           tapId={editing.kind === "add" ? editing.tapId : undefined}
+          units={units}
           onSaved={saved}
           onCancel={() => setEditing({ kind: "none" })}
           onSignedOut={onSignedOut}

@@ -132,6 +132,8 @@ describe("BeerArt level", () => {
     expect(Math.min(...y)).toBe(56);
     expect(Math.max(...y)).toBe(90);
     expect(Math.max(...ys(foam?.getAttribute("d") ?? ""))).toBe(56);
+    // DisplayPage.css restyles .foam for the light theme.
+    expect(foam?.getAttribute("class")).toBe("foam");
   });
 
   it.each([

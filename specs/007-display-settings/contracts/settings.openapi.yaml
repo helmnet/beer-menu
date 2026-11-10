@@ -1,0 +1,118 @@
+# Contract delta for feature 7. Merged into api/openapi.yaml (info.version 0.6.0 -> 0.7.0).
+# Responses Invalid, Unauthenticated, Forbidden and the cookie/bearer security schemes already
+# exist in api/openapi.yaml and are referenced, not redefined.
+openapi: 3.1.0
+info:
+  title: Beer Menu API (feature 7 delta)
+  version: 0.7.0
+paths:
+  /api/settings:
+    get:
+      operationId: getSettings
+      summary: Read the display settings
+      description: >
+        Any admin session or token (read or write). Each setting is its stored value, or its
+        default when never set or when the stored value is not valid.
+      tags: [settings]
+      x-access: read
+      responses:
+        "200":
+          description: All display settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+              example: { title: "", theme: dark, units: us, page_seconds: 15 }
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    patch:
+      operationId: updateSettings
+      summary: Change some display settings
+      description: >
+        Merge patch: only the named settings change. Every named field is validated before any
+        is stored; an invalid field changes nothing and is named in `fields`. Null, unknown
+        fields and an empty object are refused. Returns all settings after the change.
+      tags: [settings]
+      x-access: write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettingsPatch"
+            example: { title: Helm Taproom, page_seconds: 20 }
+      responses:
+        "200":
+          description: All display settings after the change
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/menu:
+    get:
+      operationId: getMenu
+      description: >
+        (Existing route, x-access public, unchanged otherwise.) The menu gains `display`: the
+        title, theme and page interval the TV uses. Units are not public.
+components:
+  schemas:
+    Theme:
+      type: string
+      enum: [dark, light]
+      description: TV theme. Default dark. Does not change the admin app.
+    Units:
+      type: string
+      enum: [us, metric]
+      description: >
+        Admin-app volume units. us shows US gallons and takes pours in US fl oz; metric shows
+        litres and takes pours in mL. Volumes in the API are always litres.
+    Title:
+      type: string
+      maxLength: 60
+      description: >
+        TV title, trimmed; empty means no title row. At most 60 code points, no control
+        characters.
+    PageSeconds:
+      type: integer
+      minimum: 5
+      maximum: 300
+      description: Seconds each TV page shows before the next. Default 15.
+    Settings:
+      type: object
+      additionalProperties: false
+      required: [title, theme, units, page_seconds]
+      properties:
+        title: { $ref: "#/components/schemas/Title" }
+        theme: { $ref: "#/components/schemas/Theme" }
+        units: { $ref: "#/components/schemas/Units" }
+        page_seconds: { $ref: "#/components/schemas/PageSeconds" }
+    SettingsPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        title: { $ref: "#/components/schemas/Title" }
+        theme: { $ref: "#/components/schemas/Theme" }
+        units: { $ref: "#/components/schemas/Units" }
+        page_seconds: { $ref: "#/components/schemas/PageSeconds" }
+    MenuDisplay:
+      type: object
+      additionalProperties: false
+      required: [title, theme, page_seconds]
+      properties:
+        title: { $ref: "#/components/schemas/Title" }
+        theme: { $ref: "#/components/schemas/Theme" }
+        page_seconds: { $ref: "#/components/schemas/PageSeconds" }
+    Menu:
+      description: (Existing schema.) `display` is added to properties and to required.
+      type: object
+      additionalProperties: false
+      required: [taps, on_deck, display]
+      properties:
+        display: { $ref: "#/components/schemas/MenuDisplay" }

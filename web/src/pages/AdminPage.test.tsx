@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { batch, brewfatherStatus, importResult, keg, owner, stubApi, tap, testPassword } from "../testApi";
+import { batch, brewfatherStatus, importResult, keg, owner, settings, stubApi, tap, testPassword } from "../testApi";
 import AdminPage from "./AdminPage";
 
 afterEach(() => {
@@ -23,6 +23,7 @@ const panels = {
   "GET /api/admins": { status: 200, body: [] },
   "GET /api/tokens": { status: 200, body: [] },
   "GET /api/brewfather": { status: 200, body: brewfatherStatus() },
+  "GET /api/settings": { status: 200, body: settings() },
 };
 
 function fillCredentials(password: string) {
@@ -154,6 +155,67 @@ describe("AdminPage", () => {
     render(<AdminPage />);
     expect(await screen.findByRole("heading", { name: "Brewfather" })).toBeTruthy();
     expect(await screen.findByText("Not connected")).toBeTruthy();
+  });
+
+  it.each([
+    ["metric settings", { status: 200, body: settings({ units: "metric" }) }, "12.50 L of 18.93 L"],
+    ["us settings", { status: 200, body: settings() }, "3.30 gal of 5.00 gal"],
+    ["a failed settings read", { status: 500, body: { error: "internal", message: "boom" } }, "3.30 gal of 5.00 gal"],
+  ])("shows tap volumes in the units from %s", async (_, reply, want) => {
+    stubApi({
+      "GET /api/setup": { status: 200, body: { needed: false } },
+      "GET /api/session": { status: 200, body: owner },
+      ...panels,
+      "GET /api/taps": { status: 200, body: [tap({ keg: keg({ remaining_l: 12.5, tap_id: 1, state: "on_tap" }) })] },
+      "GET /api/settings": reply,
+    });
+    render(<AdminPage />);
+    expect(await screen.findByText(want)).toBeTruthy();
+    expect(screen.getByText("Signed in as owner")).toBeTruthy();
+  });
+
+  it("shows US units until the settings load", async () => {
+    let answer: (r: Response) => void = () => {};
+    const routes: Record<string, unknown> = {
+      "GET /api/setup": { needed: false },
+      "GET /api/session": owner,
+      "GET /api/taps": [tap({ keg: keg({ remaining_l: 12.5, tap_id: 1, state: "on_tap" }) })],
+      "GET /api/kegs?state=waiting": [],
+      "GET /api/kegs?state=kicked": [],
+      "GET /api/keg-types": [],
+      "GET /api/beers": [],
+      "GET /api/admins": [],
+      "GET /api/tokens": [],
+      "GET /api/brewfather": brewfatherStatus(),
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((path: string, init?: RequestInit) => {
+        const key = `${init?.method ?? "GET"} ${path}`;
+        if (key === "GET /api/settings") return new Promise<Response>((r) => (answer = r));
+        return Promise.resolve(new Response(JSON.stringify(routes[key]), { status: 200 }));
+      }),
+    );
+    render(<AdminPage />);
+    expect(await screen.findByText("3.30 gal of 5.00 gal")).toBeTruthy();
+    answer(new Response(JSON.stringify(settings({ units: "metric" })), { status: 200 }));
+    expect(await screen.findByText("12.50 L of 18.93 L")).toBeTruthy();
+  });
+
+  it("shows display settings between Brewfather and keg history", async () => {
+    stubApi({
+      "GET /api/setup": { status: 200, body: { needed: false } },
+      "GET /api/session": { status: 200, body: owner },
+      ...panels,
+    });
+    render(<AdminPage />);
+    await screen.findByRole("heading", { name: "Display settings" });
+    const names = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+    expect(names.slice(names.indexOf("Brewfather"), names.indexOf("Keg history") + 1)).toEqual([
+      "Brewfather",
+      "Display settings",
+      "Keg history",
+    ]);
   });
 
   it("reloads the beer library after a Brewfather import", async () => {

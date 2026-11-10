@@ -106,6 +106,7 @@ function Glass({ color, fill }: { color: string | null; fill: number }) {
       )}
       {color && fill > 0 && (
         <path
+          className="foam"
           d={`M${wallLeft(head)} ${head} L${wallLeft(top)} ${top} L${wallRight(top)} ${top} L${wallRight(head)} ${head} Z`}
           fill={foam}
         />
