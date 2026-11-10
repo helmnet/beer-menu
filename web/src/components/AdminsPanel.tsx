@@ -2,10 +2,10 @@ import { FormEvent, useEffect, useState } from "react";
 import { Admin, apiFetch, errorMessage, isUnauthenticated } from "../api";
 
 /**
- * AdminsPanel lists admins (GET /api/admins), adds one with a username and initial password
- * (POST /api/admins) and removes one after confirmation (DELETE /api/admins/{id}), showing the
- * server's message for a taken username or the last admin. Removing `me` ends this session, so
- * it then calls `onSignedOut`, as it does for any 401.
+ * AdminsPanel is the Admin Users page, one card: it lists admins (GET /api/admins), adds one with
+ * a username and initial password (POST /api/admins) and removes one after confirmation (DELETE
+ * /api/admins/{id}), showing the server's message for a taken username or the last admin. Removing
+ * `me` ends this session, so it then calls `onSignedOut`, as it does for any 401.
  */
 export default function AdminsPanel({ me, onSignedOut }: { me: Admin; onSignedOut: () => void }) {
   const [admins, setAdmins] = useState<Admin[]>([]);
@@ -50,19 +50,19 @@ export default function AdminsPanel({ me, onSignedOut }: { me: Admin; onSignedOu
   }
 
   return (
-    <section>
-      <h2>Admins</h2>
-      <ul>
+    <section className="card">
+      <h2>Admin Users</h2>
+      <ul className="plain-list">
         {admins.map((a) => (
           <li key={a.id}>
             <span>{a.username}</span> (added {new Date(a.created_at).toLocaleString()}){" "}
-            <button type="button" onClick={() => remove(a)}>
+            <button type="button" className="btn" onClick={() => remove(a)}>
               Remove
             </button>
           </li>
         ))}
       </ul>
-      <form onSubmit={add}>
+      <form className="stack-form" onSubmit={add}>
         <label>
           Username
           <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="off" required />
@@ -77,7 +77,9 @@ export default function AdminsPanel({ me, onSignedOut }: { me: Admin; onSignedOu
             required
           />
         </label>
-        <button type="submit">Add admin</button>
+        <button type="submit" className="btn btn-primary">
+          Add admin
+        </button>
       </form>
       {error && <p role="alert">{error}</p>}
     </section>

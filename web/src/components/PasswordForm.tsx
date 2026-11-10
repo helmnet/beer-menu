@@ -2,10 +2,10 @@ import { FormEvent, useState } from "react";
 import { apiFetch, errorMessage, isUnauthenticated } from "../api";
 
 /**
- * PasswordForm changes the signed-in admin's password with POST /api/password. It checks the
- * two new entries match before sending, shows the server's message for a wrong current
- * password, how long to wait when rate limited, and a success note (the API has ended the
- * admin's other sessions). Any 401 calls `onSignedOut`.
+ * PasswordForm is the Change Password page, one card form. It changes the signed-in admin's
+ * password with POST /api/password. It checks the two new entries match before sending, shows the
+ * server's message for a wrong current password, how long to wait when rate limited, and a success
+ * note (the API has ended the admin's other sessions). Any 401 calls `onSignedOut`.
  */
 export default function PasswordForm({ onSignedOut }: { onSignedOut: () => void }) {
   const [current, setCurrent] = useState("");
@@ -39,8 +39,8 @@ export default function PasswordForm({ onSignedOut }: { onSignedOut: () => void 
   }
 
   return (
-    <form onSubmit={submit}>
-      <h2>Change password</h2>
+    <form className="card stack-form" onSubmit={submit}>
+      <h2>Change Password</h2>
       <label>
         Current password
         <input
@@ -73,7 +73,7 @@ export default function PasswordForm({ onSignedOut }: { onSignedOut: () => void 
       </label>
       {error && <p role="alert">{error}</p>}
       {done && <p>Password changed. Your other sessions have ended.</p>}
-      <button type="submit" disabled={busy}>
+      <button type="submit" className="btn btn-primary" disabled={busy}>
         Change password
       </button>
     </form>

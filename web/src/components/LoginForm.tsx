@@ -26,7 +26,7 @@ export default function LoginForm({ onSignedIn }: { onSignedIn: (admin: Admin) =
   }
 
   return (
-    <form onSubmit={submit}>
+    <form className="stack-form" onSubmit={submit}>
       <h2>Sign in</h2>
       <label>
         Username
@@ -43,7 +43,7 @@ export default function LoginForm({ onSignedIn }: { onSignedIn: (admin: Admin) =
         />
       </label>
       {error && <p role="alert">{error}</p>}
-      <button type="submit" disabled={busy}>
+      <button type="submit" className="btn btn-primary" disabled={busy}>
         Sign in
       </button>
     </form>

@@ -7,12 +7,13 @@ type Values = Record<Field, string>;
 const text = (s: Settings): Values => ({ ...s, page_seconds: String(s.page_seconds) });
 
 /**
- * SettingsPanel edits the display settings: the TV title, the TV theme (Dark or Light), the
- * admin app's volume units (US or Metric) and the seconds each TV page shows (5 to 300). It
- * loads GET /api/settings on mount and calls `onChange` with the loaded settings, then on Save
- * sends PATCH /api/settings with only the changed fields and calls `onChange` with the reply;
- * with nothing changed Save sends nothing. The API is the only validator: its per-field
- * messages are shown beside each field and the typed values stay. A 401 calls `onSignedOut`.
+ * SettingsPanel is the Display Settings page, one card that edits the display settings: the TV
+ * title, the TV theme (Dark or Light), the admin app's volume units (US or Metric) and the seconds
+ * each TV page shows (5 to 300). It loads GET /api/settings on mount and calls `onChange` with the
+ * loaded settings, then on Save sends PATCH /api/settings with only the changed fields and calls
+ * `onChange` with the reply; with nothing changed Save sends nothing. The API is the only
+ * validator: its per-field messages are shown beside each field and the typed values stay. A 401
+ * calls `onSignedOut`.
  */
 export default function SettingsPanel({
   onSignedOut,
@@ -72,7 +73,7 @@ export default function SettingsPanel({
     const errId = `${id}-${name}-error`;
     const msg = fieldErrors[name];
     return (
-      <div>
+      <div className="field">
         <label>
           {label}
           {control({
@@ -82,14 +83,18 @@ export default function SettingsPanel({
             onChange: (e: { target: { value: string } }) => setValues({ ...values, [name]: e.target.value }),
           })}
         </label>
-        {msg && <span id={errId}>{msg}</span>}
+        {msg && (
+          <span id={errId} className="field-error">
+            {msg}
+          </span>
+        )}
       </div>
     );
   }
 
   return (
-    <section>
-      <h2>Display settings</h2>
+    <section className="card">
+      <h2>Display Settings</h2>
       <form onSubmit={submit} noValidate aria-label="Display settings">
         {field("title", "Title", (common) => <input {...common} />)}
         {field("theme", "Theme", (common) => (
@@ -106,7 +111,7 @@ export default function SettingsPanel({
         ))}
         {field("page_seconds", "Page seconds", (common) => <input {...common} type="number" min="5" max="300" step="1" />)}
         {error && <p role="alert">{error}</p>}
-        <button type="submit" disabled={saving || !base}>
+        <button type="submit" className="btn btn-primary" disabled={saving || !base}>
           Save
         </button>
       </form>

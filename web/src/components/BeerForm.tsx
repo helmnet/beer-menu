@@ -117,7 +117,7 @@ export default function BeerForm({
       onChange: (e: { target: { value: string } }) => setValues({ ...values, [field]: e.target.value }),
     };
     return (
-      <div>
+      <div className="field">
         <label>
           {label}
           {field === "description" ? (
@@ -134,13 +134,17 @@ export default function BeerForm({
             <input {...common} {...props} />
           )}
         </label>
-        {msg && <span id={errId}>{msg}</span>}
+        {msg && (
+          <span id={errId} className="field-error">
+            {msg}
+          </span>
+        )}
       </div>
     );
   }
 
   return (
-    <form onSubmit={submit} noValidate aria-label={beer ? `Edit ${beer.name}` : "Add beer"}>
+    <form className="inline-form" onSubmit={submit} noValidate aria-label={beer ? `Edit ${beer.name}` : "Add beer"}>
       <BeerArt
         onTap={beer?.on_tap ?? false}
         color={srm === null || Number.isNaN(srm) ? null : colorForSrm(colors, srm)}
@@ -157,12 +161,14 @@ export default function BeerForm({
       {input("brew_date", "Brew date", { type: "date" })}
       {input("status", "Status")}
       {error && <p role="alert">{error}</p>}
-      <button type="submit" disabled={saving}>
-        Save
-      </button>
-      <button type="button" onClick={onCancel}>
-        Cancel
-      </button>
+      <div className="btn-row">
+        <button type="submit" className="btn btn-primary" disabled={saving}>
+          Save
+        </button>
+        <button type="button" className="btn" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
     </form>
   );
 }

@@ -27,6 +27,14 @@ describe("App", () => {
     expect(screen.queryByRole("heading", { name: "Beer Menu" })).toBeNull();
   });
 
+  it("renders the display without the admin shell or styles", async () => {
+    window.history.pushState({}, "", "/display");
+    const { container } = render(<App />);
+    expect(await screen.findByText("Nothing on tap")).toBeTruthy();
+    expect(container.querySelector(".admin")).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Admin" })).toBeNull();
+  });
+
   it("renders the display below /display/", async () => {
     window.history.pushState({}, "", "/display/tv1");
     render(<App />);
