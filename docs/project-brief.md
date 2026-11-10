@@ -1,6 +1,6 @@
 # Beer Menu — Project Brief
 
-As of 2026-11-08
+As of 2026-11-10
 
 ## Overview
 
@@ -15,7 +15,7 @@ The MVP is done when a TV running Fully Kiosk shows a live tap list that is mana
 **MVP goals**
 
 - Display the current tap list on a TV through a browser, readable from across the room.
-- Manage beers, taps, keg levels and a "coming soon" list from a React admin app.
+- Manage beers, taps, keg levels and an "on deck" list from a React admin app.
 - Import brewed batches from Brewfather to avoid retyping beer details.
 - Expose every feature through a documented REST API with proper authentication and API tokens.
 - Run with a single `docker compose up` on TrueNAS, with data persisted in a volume.
@@ -46,7 +46,7 @@ The display must work unattended for days: it recovers from network drops and se
 
 ## Functional scope (MVP)
 
-The MVP covers five areas: the beer library, taps, keg levels, coming soon, and the display.
+The MVP covers five areas: the beer library, taps, keg levels, on deck, and the display.
 
 **Beer library**
 
@@ -66,9 +66,9 @@ The MVP covers five areas: the beer library, taps, keg levels, coming soon, and 
 - API should allow this to also be editable, for the eventual goal of having keg scales on each keg to be able to automatically update levels after each pour.
 - Show the level on the display as a fill gauge.
 
-**Coming soon**
+**On deck**
 
-- Beers that are fermenting or conditioning appear in a separate "on deck" section.
+- "On deck" (also called coming soon) lists kegs filled and waiting for a tap, then beers that are fermenting or conditioning and have no keg yet. The TV and the admin app show the same list.
 - Status can follow Brewfather batch status (Planning, Brewing, Fermenting, Conditioning, Completed).
 
 **Display**
@@ -78,6 +78,34 @@ The MVP covers five areas: the beer library, taps, keg levels, coming soon, and 
 - Dark theme by default; a light theme, title and page interval set from the admin app. No logo (no image uploads) and no custom colors.
 - Kegs on the "on deck" section should have artwork showing the type of keg (5 gallon corny keg by default) and the color of the beer inside
 - Beers on tap should have glassware artwork showing the beer's color that's on tap
+
+**Admin app (feature 8, after the MVP)**
+
+The admin app gets a full visual and layout overhaul. It must feel modern and be as easy to use on a phone at the kegerator as on a laptop.
+
+- Responsive layout for phones and computers.
+- Theme choice: light, dark, or follow the system setting (default: system). The choice is saved per browser. It is separate from the TV theme.
+- A royal blue accent color in both themes. The dark theme uses black or dark grey backgrounds; the accent stays blue.
+- A side panel for navigation. It is always visible on a laptop and resizable, with its width saved per browser. On a phone it sits behind a hamburger menu.
+- Each side panel item shows an icon and text. Only top-level items show at first. Selecting a top-level item opens its submenu and collapses any other open submenu.
+- Side panel items, and the cards each one shows:
+  - **Menu**
+    - Taps (the default page after sign-in)
+    - On Deck: waiting kegs plus fermenting and conditioning beers, matching the TV
+    - Keg History
+    - Beer Library
+    - Display Settings: TV title, TV theme, page interval and units
+  - **Administration**
+    - Admin Users
+    - API Tokens
+    - Change Password
+  - **Integrations**
+    - Brewfather: a connection and sync interval card, and a batches card
+- The bottom of the side panel shows the app version (from `GET /api/health`) and a Sign out button, so both are reachable from the phone menu.
+- Selecting a side panel item shows only that item's cards.
+- Forms open in modal dialogs: add keg (from Taps and On Deck), add and edit beer, add tap, and new API token. The owner will review this after trying it and may move some back inline.
+- Beer pickers are searchable: typing filters the existing beers (no new beers from the picker). Beers are listed newest first by date added, whether entered by hand or imported from Brewfather.
+- The component or CSS library is chosen in the plan, under the constitution's dependency rules.
 
 ## Architecture
 
@@ -211,11 +239,12 @@ Run `/speckit-constitution` once from this brief, then one `/speckit-specify` pe
 | 2 | Authentication and API tokens | 1 | First-run admin setup, add and remove admins, login and logout, token create, list and revoke, `read` and `write` scopes enforced |
 | 3 | Beer library | 2 | Beer CRUD in API and admin app, archive, SRM-colored glass and keg artwork |
 | 4 | Taps and kegs | 3 | Configure taps, put a keg on a tap, update and kick kegs, keg history |
-| 5 | TV display | 4 | Full-screen tap list with keg gauges and coming soon; live updates; works in Fully Kiosk on a Fire Stick. Adds a public `GET /api/menu` with only what the display shows; full beer reads need a credential |
-| 6 | Brewfather import | 3 | Connect account, list batches, import, re-sync and scheduled sync; status feeds coming soon |
+| 5 | TV display | 4 | Full-screen tap list with keg gauges and on deck; live updates; works in Fully Kiosk on a Fire Stick. Adds a public `GET /api/menu` with only what the display shows; full beer reads need a credential |
+| 6 | Brewfather import | 3 | Connect account, list batches, import, re-sync and scheduled sync; status feeds on deck |
 | 7 | Display settings | 5 | Title, theme (dark or light, TV only), units (US or metric, admin only) and the TV page rotation interval (default 15 s) editable from the admin app. No logo |
+| 8 | Admin app restyle | 7 | The admin app matches the "Admin app" section under Functional scope: side panel navigation, light, dark and system themes, royal blue accent, modal forms, searchable beer pickers, and an On Deck page matching the TV. Checked by screenshots at laptop and phone widths |
 
-Features 5 and 6 are independent and can run in either order. An OpenAPI spec is kept in the repo from feature 1 onward so later clients (APK, Home Assistant) have a contract.
+Features 5 and 6 are independent and can run in either order. Feature 8 follows the MVP (features 0 to 7) and runs before roadmap phase 2. An OpenAPI spec is kept in the repo from feature 1 onward so later clients (APK, Home Assistant) have a contract.
 
 ## Open questions
 
