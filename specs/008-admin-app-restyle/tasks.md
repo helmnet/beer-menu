@@ -198,7 +198,7 @@ keyboard pick works, no create option.
 - [X] T048 In the same script, fail on: any console error or `securitypolicyviolation` event; any axe-core `color-contrast` violation; `document.documentElement.scrollWidth > innerWidth` at 390 px; in a dialog, Escape not closing it, Tab leaving it, or focus not returning to the opener; at 390 px any visible `button`, `input`, `select`, `textarea`, nav item or `[role=option]` smaller than 44×44 CSS px (`getBoundingClientRect`, FR-028); after opening the drawer at 390 px and resizing to 1366 px, the side panel not shown as a column or the page content missing (spec edge case)
 - [X] T049 Screenshot `/display` at 1920×1080 on this branch and on `origin/main` (built per the upgrade recipe, same data) and compare (pixel diff or side by side); any difference fails (SC-003)
 - [X] T050 Run the gate (T047–T049) until it passes, then show the owner the screenshots (laptop and phone, both themes) against the mockup; record results in the PR
-- [ ] T051 Run quickstart.md §2, §3 and §5 by hand in the browser, including every action in research R10's FR-018 list once, and time adding a keg on a phone-width window by typing part of a beer name (SC-005: under 30 seconds); record the time
+- [X] T051 Run quickstart.md §2, §3 and §5 by hand in the browser, including every action in research R10's FR-018 list once, and time adding a keg on a phone-width window by typing part of a beer name (SC-005: under 30 seconds); record the time
 - [X] T052 Stop the stack (`docker compose -p <project> down`), delete scratch data and local `ghcr.io/helmnet/beer-menu-*:latest` images
 
 ## Dependencies & Execution Order
