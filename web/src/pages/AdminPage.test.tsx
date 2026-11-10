@@ -1,11 +1,12 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { batch, brewfatherStatus, importResult, keg, owner, settings, stubApi, tap, testPassword } from "../testApi";
+import { brewfatherStatus, keg, kegTypes, owner, Reply, settings, stubApi, tap, testPassword } from "../testApi";
 import AdminPage from "./AdminPage";
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  localStorage.clear();
 });
 
 const unauthenticated = {
@@ -13,9 +14,17 @@ const unauthenticated = {
   body: { error: "unauthenticated", message: "Sign in or send a valid API token." },
 };
 
-// The signed-in view's panels load these on mount.
-const panels = {
+const signedIn = {
+  "GET /api/setup": { status: 200, body: { needed: false } },
+  "GET /api/session": { status: 200, body: owner },
+};
+
+// The shell loads health and settings after sign-in; each page loads its own lists when shown.
+const panels: Record<string, Reply> = {
+  "GET /api/health": { status: 200, body: { status: "ok", version: "1.2.3", database: "ok" } },
+  "GET /api/settings": { status: 200, body: settings() },
   "GET /api/taps": { status: 200, body: [] },
+  "GET /api/kegs": { status: 200, body: [] },
   "GET /api/kegs?state=waiting": { status: 200, body: [] },
   "GET /api/kegs?state=kicked": { status: 200, body: [] },
   "GET /api/keg-types": { status: 200, body: [] },
@@ -23,16 +32,42 @@ const panels = {
   "GET /api/admins": { status: 200, body: [] },
   "GET /api/tokens": { status: 200, body: [] },
   "GET /api/brewfather": { status: 200, body: brewfatherStatus() },
-  "GET /api/settings": { status: 200, body: settings() },
 };
+
+// Nav group, page label and the page's h2, for every page.
+const pages: [string, string, string][] = [
+  ["Menu", "Taps", "Taps"],
+  ["Menu", "On Deck", "On Deck"],
+  ["Menu", "Keg History", "Keg History"],
+  ["Menu", "Beer Library", "Beer Library"],
+  ["Menu", "Display Settings", "Display Settings"],
+  ["Administration", "Admin Users", "Admin Users"],
+  ["Administration", "API Tokens", "API Tokens"],
+  ["Administration", "Change Password", "Change Password"],
+  ["Integrations", "Brewfather", "Brewfather"],
+];
 
 function fillCredentials(password: string) {
   fireEvent.change(screen.getByLabelText("Username"), { target: { value: "owner" } });
   fireEvent.change(screen.getByLabelText("Password"), { target: { value: password } });
 }
 
+const nav = () => screen.getByRole("navigation", { name: "Admin" });
+
+/** goTo opens page `label` from the side panel, opening its group first when collapsed. */
+function goTo(label: string) {
+  const [group] = pages.find(([, l]) => l === label) ?? [];
+  if (!within(nav()).queryByRole("button", { name: label })) {
+    fireEvent.click(within(nav()).getByRole("button", { name: group }));
+  }
+  fireEvent.click(within(nav()).getByRole("button", { name: label }));
+}
+
+const heading = (name: string) => screen.queryByRole("heading", { level: 2, name });
+const count = (calls: { key: string }[], key: string) => calls.filter((c) => c.key === key).length;
+
 describe("AdminPage", () => {
-  it("shows setup when needed, then the signed-in view", async () => {
+  it("shows setup when needed, then the Taps page", async () => {
     const calls = stubApi({
       "GET /api/setup": { status: 200, body: { needed: true } },
       "POST /api/setup": { status: 201, body: owner },
@@ -40,11 +75,12 @@ describe("AdminPage", () => {
     });
     render(<AdminPage />);
     await screen.findByRole("button", { name: "Create admin" });
+    expect(screen.queryByRole("navigation", { name: "Admin" })).toBeNull();
     const pw = testPassword();
     fillCredentials(pw);
     fireEvent.change(screen.getByLabelText("Confirm password"), { target: { value: pw } });
     fireEvent.click(screen.getByRole("button", { name: "Create admin" }));
-    expect(await screen.findByText("Signed in as owner")).toBeTruthy();
+    expect(await screen.findByRole("heading", { level: 2, name: "Taps" })).toBeTruthy();
     expect(calls.map((c) => c.key).slice(0, 2)).toEqual(["GET /api/setup", "POST /api/setup"]);
   });
 
@@ -63,98 +99,137 @@ describe("AdminPage", () => {
   });
 
   it("shows sign-in without a session, then signs in and out", async () => {
-    const routes = {
+    const calls = stubApi({
       "GET /api/setup": { status: 200, body: { needed: false } },
       "GET /api/session": unauthenticated,
       "POST /api/session": { status: 200, body: owner },
       "DELETE /api/session": { status: 204 },
       ...panels,
-    };
-    const calls = stubApi(routes);
-    render(<AdminPage />);
+    });
+    const { container } = render(<AdminPage />);
     await screen.findByRole("button", { name: "Sign in" });
+    expect(container.firstElementChild?.classList.contains("admin")).toBe(true);
+    expect(screen.queryByRole("navigation", { name: "Admin" })).toBeNull();
     fillCredentials(testPassword());
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
-    expect(await screen.findByText("Signed in as owner")).toBeTruthy();
+    expect(await screen.findByRole("heading", { level: 2, name: "Taps" })).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    fireEvent.click(within(nav()).getByRole("button", { name: "Sign out" }));
     expect(await screen.findByRole("button", { name: "Sign in" })).toBeTruthy();
     expect(calls.map((c) => c.key)).toContain("DELETE /api/session");
   });
 
-  it("shows the signed-in view for an existing session", async () => {
+  it("returns to Taps after signing in again", async () => {
     stubApi({
-      "GET /api/setup": { status: 200, body: { needed: false } },
-      "GET /api/session": { status: 200, body: owner },
+      ...signedIn,
       ...panels,
+      "DELETE /api/session": { status: 204 },
+      "POST /api/session": { status: 200, body: owner },
     });
     render(<AdminPage />);
-    expect(await screen.findByText("Signed in as owner")).toBeTruthy();
+    await screen.findByRole("heading", { level: 2, name: "Taps" });
+    goTo("API Tokens");
+    await screen.findByRole("heading", { level: 2, name: "API Tokens" });
+    fireEvent.click(within(nav()).getByRole("button", { name: "Sign out" }));
+    await screen.findByRole("button", { name: "Sign in" });
+    fillCredentials(testPassword());
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(await screen.findByRole("heading", { level: 2, name: "Taps" })).toBeTruthy();
+    expect(within(nav()).getByRole("button", { name: "Taps" }).getAttribute("aria-current")).toBe("page");
   });
 
-  it("shows the beer library when signed in", async () => {
+  it("shows only the Taps page for an existing session", async () => {
+    const calls = stubApi({ ...signedIn, ...panels });
+    render(<AdminPage />);
+    expect(await screen.findByRole("heading", { level: 2, name: "Taps" })).toBeTruthy();
+    expect(within(nav()).getByRole("button", { name: "Taps" }).getAttribute("aria-current")).toBe("page");
+    for (const name of ["Keg History", "Beer Library", "Brewfather", "Display Settings", "API Tokens"]) {
+      expect(heading(name)).toBeNull();
+    }
+    const keys = calls.map((c) => c.key);
+    for (const key of ["GET /api/kegs?state=kicked", "GET /api/beers", "GET /api/brewfather", "GET /api/admins", "GET /api/tokens"]) {
+      expect(keys).not.toContain(key);
+    }
+  });
+
+  it.each(pages)("shows only the %s group's %s page", async (_, label, title) => {
+    stubApi({ ...signedIn, ...panels });
+    render(<AdminPage />);
+    await screen.findByRole("heading", { level: 2, name: "Taps" });
+    const other = label === "Taps" ? "Keg History" : "Taps";
+    if (label === "Taps") {
+      goTo(other);
+      await screen.findByRole("heading", { level: 2, name: other });
+    }
+    goTo(label);
+    expect(await screen.findByRole("heading", { level: 2, name: title })).toBeTruthy();
+    expect(heading(other)).toBeNull();
+    expect(within(nav()).getByRole("button", { name: label }).getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("main")).toBeTruthy();
+  });
+
+  it("shows the page title and, on Taps only, Add tap in the phone top bar", async () => {
+    stubApi({ ...signedIn, ...panels });
+    render(<AdminPage />);
+    await screen.findByRole("heading", { level: 2, name: "Taps" });
+    const bar = screen.getByRole("banner");
+    expect(within(bar).getByText("Taps")).toBeTruthy();
+    expect(within(bar).getByRole("button", { name: "Add tap" })).toBeTruthy();
+    goTo("Keg History");
+    await screen.findByRole("heading", { level: 2, name: "Keg History" });
+    expect(within(bar).getByText("Keg History")).toBeTruthy();
+    expect(within(bar).queryByRole("button", { name: "Add tap" })).toBeNull();
+  });
+
+  it("fetches fresh data when a page is shown again", async () => {
+    const calls = stubApi({ ...signedIn, ...panels });
+    render(<AdminPage />);
+    await screen.findByRole("heading", { level: 2, name: "Taps" });
+    goTo("Keg History");
+    await waitFor(() => expect(count(calls, "GET /api/kegs?state=kicked")).toBe(1));
+    goTo("Taps");
+    await screen.findByRole("heading", { level: 2, name: "Taps" });
+    goTo("Keg History");
+    await waitFor(() => expect(count(calls, "GET /api/kegs?state=kicked")).toBe(2));
+  });
+
+  it("shows the On Deck page with its list and Add keg, in the shell's units", async () => {
     stubApi({
-      "GET /api/setup": { status: 200, body: { needed: false } },
-      "GET /api/session": { status: 200, body: owner },
+      ...signedIn,
       ...panels,
+      "GET /api/settings": { status: 200, body: settings({ units: "metric" }) },
+      "GET /api/kegs": { status: 200, body: [keg({ remaining_l: 12.5 })] },
+      "GET /api/keg-types": { status: 200, body: kegTypes },
     });
     render(<AdminPage />);
-    expect(await screen.findByRole("heading", { name: "Beer library" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Add beer" })).toBeTruthy();
+    await screen.findByRole("heading", { level: 2, name: "Taps" });
+    goTo("On Deck");
+    expect(await screen.findByRole("heading", { level: 2, name: "On Deck" })).toBeTruthy();
+    expect(await screen.findByText("12.50 L of 18.93 L")).toBeTruthy();
+    expect(within(screen.getByRole("main")).getByRole("button", { name: "Add keg" })).toBeTruthy();
   });
 
-  it("shows the taps and keg history when signed in", async () => {
-    stubApi({
-      "GET /api/setup": { status: 200, body: { needed: false } },
-      "GET /api/session": { status: 200, body: owner },
-      ...panels,
-    });
+  it("returns to sign-in on a 401 from GET /api/kegs on On Deck", async () => {
+    stubApi({ ...signedIn, ...panels, "GET /api/kegs": unauthenticated });
     render(<AdminPage />);
-    expect(await screen.findByRole("heading", { name: "Taps" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Keg history" })).toBeTruthy();
+    await screen.findByRole("heading", { level: 2, name: "Taps" });
+    goTo("On Deck");
+    expect(await screen.findByRole("button", { name: "Sign in" })).toBeTruthy();
   });
 
-  it("reloads the keg history after a kick", async () => {
-    const onTap = keg({ id: 10, beer_name: "Stout", tap_id: 1, state: "on_tap" });
-    const calls = stubApi({
-      "GET /api/setup": { status: 200, body: { needed: false } },
-      "GET /api/session": { status: 200, body: owner },
-      ...panels,
-      "GET /api/taps": { status: 200, body: [tap({ keg: onTap })] },
-      "PATCH /api/kegs/10": { status: 200, body: { ...onTap, state: "kicked" } },
-    });
-    vi.stubGlobal("confirm", () => true);
+  it("shows the version from the health check", async () => {
+    stubApi({ ...signedIn, ...panels });
     render(<AdminPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Kick" }));
-    const histories = () => calls.filter((c) => c.key === "GET /api/kegs?state=kicked").length;
-    await waitFor(() => expect(histories()).toBe(2));
+    await screen.findByRole("heading", { level: 2, name: "Taps" });
+    expect(await within(nav()).findByText("Version 1.2.3")).toBeTruthy();
   });
 
-  it("reloads the beer library after a keg goes on a tap", async () => {
-    const waiting = keg({ id: 11, beer_name: "Stout" });
-    const calls = stubApi({
-      "GET /api/setup": { status: 200, body: { needed: false } },
-      "GET /api/session": { status: 200, body: owner },
-      ...panels,
-      "GET /api/taps": { status: 200, body: [tap()] },
-      "GET /api/kegs?state=waiting": { status: 200, body: [waiting] },
-      "PATCH /api/kegs/11": { status: 200, body: { ...waiting, tap_id: 1, state: "on_tap" } },
-    });
+  it("shows an unknown version when the health check fails, with no error", async () => {
+    stubApi({ ...signedIn, ...panels, "GET /api/health": { status: 500, body: { error: "internal", message: "boom" } } });
     render(<AdminPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Put on tap" }));
-    const libraries = () => calls.filter((c) => c.key === "GET /api/beers").length;
-    await waitFor(() => expect(libraries()).toBe(2));
-  });
-
-  it("shows the Brewfather panel when signed in", async () => {
-    stubApi({
-      "GET /api/setup": { status: 200, body: { needed: false } },
-      "GET /api/session": { status: 200, body: owner },
-      ...panels,
-    });
-    render(<AdminPage />);
-    expect(await screen.findByRole("heading", { name: "Brewfather" })).toBeTruthy();
-    expect(await screen.findByText("Not connected")).toBeTruthy();
+    await screen.findByRole("heading", { level: 2, name: "Taps" });
+    expect(await within(nav()).findByText("Version unknown")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it.each([
@@ -163,15 +238,14 @@ describe("AdminPage", () => {
     ["a failed settings read", { status: 500, body: { error: "internal", message: "boom" } }, "3.30 gal of 5.00 gal"],
   ])("shows tap volumes in the units from %s", async (_, reply, want) => {
     stubApi({
-      "GET /api/setup": { status: 200, body: { needed: false } },
-      "GET /api/session": { status: 200, body: owner },
+      ...signedIn,
       ...panels,
       "GET /api/taps": { status: 200, body: [tap({ keg: keg({ remaining_l: 12.5, tap_id: 1, state: "on_tap" }) })] },
       "GET /api/settings": reply,
     });
     render(<AdminPage />);
     expect(await screen.findByText(want)).toBeTruthy();
-    expect(screen.getByText("Signed in as owner")).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: "Taps" })).toBeTruthy();
   });
 
   it("shows US units until the settings load", async () => {
@@ -179,14 +253,10 @@ describe("AdminPage", () => {
     const routes: Record<string, unknown> = {
       "GET /api/setup": { needed: false },
       "GET /api/session": owner,
+      "GET /api/health": { status: "ok", version: "1.2.3", database: "ok" },
       "GET /api/taps": [tap({ keg: keg({ remaining_l: 12.5, tap_id: 1, state: "on_tap" }) })],
       "GET /api/kegs?state=waiting": [],
-      "GET /api/kegs?state=kicked": [],
       "GET /api/keg-types": [],
-      "GET /api/beers": [],
-      "GET /api/admins": [],
-      "GET /api/tokens": [],
-      "GET /api/brewfather": brewfatherStatus(),
     };
     vi.stubGlobal(
       "fetch",
@@ -202,77 +272,98 @@ describe("AdminPage", () => {
     expect(await screen.findByText("12.50 L of 18.93 L")).toBeTruthy();
   });
 
-  it("shows display settings between Brewfather and keg history", async () => {
+  it("follows a units change saved in Display Settings", async () => {
     stubApi({
-      "GET /api/setup": { status: 200, body: { needed: false } },
-      "GET /api/session": { status: 200, body: owner },
+      ...signedIn,
       ...panels,
+      "GET /api/taps": { status: 200, body: [tap({ keg: keg({ remaining_l: 12.5, tap_id: 1, state: "on_tap" }) })] },
+      "PATCH /api/settings": { status: 200, body: settings({ units: "metric" }) },
     });
     render(<AdminPage />);
-    await screen.findByRole("heading", { name: "Display settings" });
-    const names = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
-    expect(names.slice(names.indexOf("Brewfather"), names.indexOf("Keg history") + 1)).toEqual([
-      "Brewfather",
-      "Display settings",
-      "Keg history",
-    ]);
+    await screen.findByText("3.30 gal of 5.00 gal");
+    goTo("Display Settings");
+    const form = await screen.findByRole("form", { name: "Display settings" });
+    await waitFor(() => expect((within(form).getByLabelText("Units") as HTMLSelectElement).value).toBe("us"));
+    fireEvent.change(within(form).getByLabelText("Units"), { target: { value: "metric" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect((within(form).getByLabelText("Units") as HTMLSelectElement).value).toBe("metric"));
+    goTo("Taps");
+    expect(await screen.findByText("12.50 L of 18.93 L")).toBeTruthy();
   });
 
-  it("reloads the beer library after a Brewfather import", async () => {
-    const calls = stubApi({
-      "GET /api/setup": { status: 200, body: { needed: false } },
-      "GET /api/session": { status: 200, body: owner },
-      ...panels,
-      "GET /api/brewfather": { status: 200, body: brewfatherStatus({ connected: true }) },
-      "GET /api/brewfather/batches": { status: 200, body: { fetched_at: "2026-11-09T12:00:00Z", batches: [batch()] } },
-      "POST /api/brewfather/imports": { status: 200, body: { results: [importResult()] } },
-    });
-    render(<AdminPage />);
-    fireEvent.click(await screen.findByRole("checkbox", { name: "Import Pale Ale" }));
-    const libraries = () => calls.filter((c) => c.key === "GET /api/beers").length;
-    expect(libraries()).toBe(1);
-    fireEvent.click(screen.getByRole("button", { name: "Import selected" }));
-    await waitFor(() => expect(libraries()).toBe(2));
-  });
+  it.each(["GET /api/settings", "GET /api/taps", "GET /api/kegs?state=waiting", "GET /api/keg-types"])(
+    "returns to sign-in on a 401 from %s",
+    async (key) => {
+      stubApi({ ...signedIn, ...panels, [key]: unauthenticated });
+      render(<AdminPage />);
+      expect(await screen.findByRole("button", { name: "Sign in" })).toBeTruthy();
+    },
+  );
 
-  it.each(Object.keys(panels))("returns to sign-in on a 401 from %s", async (key) => {
-    stubApi({
-      "GET /api/setup": { status: 200, body: { needed: false } },
-      "GET /api/session": { status: 200, body: owner },
-      ...panels,
-      [key]: unauthenticated,
-    });
+  it.each([
+    ["GET /api/kegs?state=kicked", "Keg History"],
+    ["GET /api/beers", "Beer Library"],
+    ["GET /api/admins", "Admin Users"],
+    ["GET /api/tokens", "API Tokens"],
+    ["GET /api/brewfather", "Brewfather"],
+  ])("returns to sign-in on a 401 from %s on %s", async (key, page) => {
+    stubApi({ ...signedIn, ...panels, [key]: unauthenticated });
     render(<AdminPage />);
+    await screen.findByRole("heading", { level: 2, name: "Taps" });
+    goTo(page);
     expect(await screen.findByRole("button", { name: "Sign in" })).toBeTruthy();
   });
 
   it("returns to sign-in when the session ended elsewhere", async () => {
-    stubApi({
-      "GET /api/setup": { status: 200, body: { needed: false } },
-      "GET /api/session": { status: 200, body: owner },
-      "DELETE /api/session": unauthenticated,
-      ...panels,
-    });
+    stubApi({ ...signedIn, ...panels, "DELETE /api/session": unauthenticated });
     render(<AdminPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
+    await screen.findByRole("heading", { level: 2, name: "Taps" });
+    fireEvent.click(within(nav()).getByRole("button", { name: "Sign out" }));
     expect(await screen.findByRole("button", { name: "Sign in" })).toBeTruthy();
   });
 
   it("returns to sign-in on a 401 from the password form", async () => {
-    stubApi({
-      "GET /api/setup": { status: 200, body: { needed: false } },
-      "GET /api/session": { status: 200, body: owner },
-      ...panels,
-      "POST /api/password": unauthenticated,
-    });
+    stubApi({ ...signedIn, ...panels, "POST /api/password": unauthenticated });
     render(<AdminPage />);
-    await screen.findByText("Signed in as owner");
+    await screen.findByRole("heading", { level: 2, name: "Taps" });
+    goTo("Change Password");
     const pw = testPassword();
-    fireEvent.change(screen.getByLabelText("Current password"), { target: { value: testPassword() } });
+    fireEvent.change(await screen.findByLabelText("Current password"), { target: { value: testPassword() } });
     fireEvent.change(screen.getByLabelText("New password"), { target: { value: pw } });
     fireEvent.change(screen.getByLabelText("Confirm new password"), { target: { value: pw } });
-    fireEvent.click(screen.getByRole("button", { name: "Change password" }));
+    fireEvent.click(within(screen.getByRole("main")).getByRole("button", { name: "Change password" }));
     expect(await screen.findByRole("button", { name: "Sign in" })).toBeTruthy();
+  });
+
+  it("uses the system theme when none is saved", async () => {
+    stubApi({ ...signedIn, ...panels });
+    const { container } = render(<AdminPage />);
+    await screen.findByRole("heading", { level: 2, name: "Taps" });
+    expect(container.firstElementChild?.classList.contains("theme-system")).toBe(true);
+    expect((within(nav()).getByRole("radio", { name: "System" }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("switches to dark and saves it in this browser only", async () => {
+    const calls = stubApi({ ...signedIn, ...panels });
+    const { container } = render(<AdminPage />);
+    await screen.findByRole("heading", { level: 2, name: "Taps" });
+    await waitFor(() => expect(count(calls, "GET /api/settings")).toBe(1));
+    fireEvent.click(within(nav()).getByRole("radio", { name: "Dark" }));
+    const root = container.firstElementChild!;
+    expect(root.classList.contains("theme-dark")).toBe(true);
+    expect(root.classList.contains("theme-system")).toBe(false);
+    expect(localStorage.getItem("beer-menu.admin.theme")).toBe("dark");
+    expect(calls.filter((c) => c.key.includes("/api/settings")).map((c) => c.key)).toEqual(["GET /api/settings"]);
+  });
+
+  it("applies a saved light theme on load and on the sign-in screen", async () => {
+    localStorage.setItem("beer-menu.admin.theme", "light");
+    stubApi({ "GET /api/setup": { status: 200, body: { needed: false } }, "GET /api/session": unauthenticated });
+    const { container } = render(<AdminPage />);
+    expect(container.firstElementChild?.classList.contains("theme-light")).toBe(true);
+    await screen.findByRole("button", { name: "Sign in" });
+    expect(container.firstElementChild?.classList.contains("theme-light")).toBe(true);
+    expect(screen.queryByRole("radiogroup", { name: "Theme" })).toBeNull();
   });
 
   it("shows an error when the API is unreachable", async () => {

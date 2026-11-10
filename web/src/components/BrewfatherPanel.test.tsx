@@ -15,8 +15,8 @@ const noBatches = { status: 200, body: { fetched_at: "2026-11-09T12:00:00Z", bat
 // fakeKey returns an obviously fake API key so no real-looking secret is in the repo.
 const fakeKey = () => `fake-key-${crypto.randomUUID()}`;
 
-function renderPanel(props: Partial<{ onSignedOut: () => void; onBeersChanged: () => void }> = {}) {
-  return render(<BrewfatherPanel onSignedOut={props.onSignedOut ?? vi.fn()} onBeersChanged={props.onBeersChanged ?? vi.fn()} />);
+function renderPanel(props: Partial<{ onSignedOut: () => void }> = {}) {
+  return render(<BrewfatherPanel onSignedOut={props.onSignedOut ?? vi.fn()} />);
 }
 
 function keyField() {
@@ -33,6 +33,31 @@ function row(name: string) {
 }
 
 describe("BrewfatherPanel connection", () => {
+  it("shows the Brewfather heading with a Connection card and, when connected, a Batches card", async () => {
+    stubApi({
+      "GET /api/brewfather": { status: 200, body: connected },
+      "GET /api/brewfather/batches": { status: 200, body: { fetched_at: "2026-11-09T12:00:00Z", batches: [batch()] } },
+    });
+    renderPanel();
+    expect(screen.getByRole("heading", { level: 2, name: "Brewfather" })).toBeTruthy();
+    const connection = await screen.findByRole("region", { name: "Connection" });
+    expect(within(connection).getByText("Connected")).toBeTruthy();
+    expect(within(connection).getByRole("button", { name: "Disconnect" })).toBeTruthy();
+    expect(within(connection).getByLabelText("Sync interval")).toBeTruthy();
+    expect(within(connection).getByRole("button", { name: "Sync now" })).toBeTruthy();
+    const batches = screen.getByRole("region", { name: "Batches" });
+    expect(await within(batches).findByRole("checkbox", { name: "Import Pale Ale" })).toBeTruthy();
+    expect(within(batches).getByRole("button", { name: "Refresh" })).toBeTruthy();
+    expect(within(batches).getByRole("button", { name: "Import selected" })).toBeTruthy();
+  });
+
+  it("shows no Batches card when not connected", async () => {
+    stubApi({ "GET /api/brewfather": { status: 200, body: brewfatherStatus() } });
+    renderPanel();
+    expect(await screen.findByRole("region", { name: "Connection" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Batches" })).toBeNull();
+  });
+
   it("says import is not set up, with no form, when the server has no encryption key", async () => {
     stubApi({ "GET /api/brewfather": { status: 200, body: brewfatherStatus({ configured: false }) } });
     renderPanel();
@@ -202,8 +227,7 @@ describe("BrewfatherPanel batch list", () => {
       "GET /api/beers?archived=true": { status: 200, body: [] },
     };
     const calls = stubApi(routes);
-    const onBeersChanged = vi.fn();
-    renderPanel({ onBeersChanged });
+    renderPanel();
     await screen.findByText("Lager");
     const importButton = screen.getByRole("button", { name: "Import selected" }) as HTMLButtonElement;
     expect(importButton.disabled).toBe(true);
@@ -221,7 +245,6 @@ describe("BrewfatherPanel batch list", () => {
     expect(calls.find((c) => c.key === "POST /api/brewfather/imports")?.body).toEqual({ batch_ids: ["b1", "b3"] });
     expect(within(results).getByText(/Pale Ale: Imported as Pale Ale/).textContent).toContain("Adjusted: abv");
     expect(within(results).getByText(/Lager: Archived in Brewfather/).textContent).toContain("Archived in Brewfather.");
-    await waitFor(() => expect(onBeersChanged).toHaveBeenCalledTimes(1));
     expect(await within(row("IPA")).findByRole("checkbox")).toBeTruthy();
     expect(await screen.findByText("Imported as Pale Ale")).toBeTruthy();
   });
@@ -276,8 +299,7 @@ describe("BrewfatherPanel schedule and sync", () => {
       "POST /api/brewfather/sync": { status: 202, body: { ...connected, sync_running: true } },
     };
     const calls = stubApi(routes);
-    const onBeersChanged = vi.fn();
-    renderPanel({ onBeersChanged });
+    renderPanel();
     await tick(0);
     fireEvent.click(screen.getByRole("button", { name: "Sync now" }));
     await tick(0);
@@ -291,12 +313,10 @@ describe("BrewfatherPanel schedule and sync", () => {
     expect(polls()).toBe(2);
     await tick(2000);
     expect(polls()).toBe(3);
-    expect(onBeersChanged).not.toHaveBeenCalled();
 
     routes["GET /api/brewfather"] = { status: 200, body: { ...connected, last_sync: lastSync } };
     await tick(2000);
     expect(polls()).toBe(4);
-    expect(onBeersChanged).toHaveBeenCalledTimes(1);
     expect(screen.queryByText("Sync running…")).toBeNull();
     const shown = screen.getByText(/Last sync/).textContent ?? "";
     expect(shown).toContain(new Date(lastSync.finished_at).toLocaleString());
@@ -324,8 +344,7 @@ describe("BrewfatherPanel schedule and sync", () => {
       "POST /api/brewfather/sync": { status: 409, body: { error: "sync_running", message: "A sync is already running." } },
     };
     const calls = stubApi(routes);
-    const onBeersChanged = vi.fn();
-    renderPanel({ onBeersChanged });
+    renderPanel();
     await tick(0);
     routes["GET /api/brewfather"] = { status: 200, body: { ...connected, sync_running: true } };
     fireEvent.click(screen.getByRole("button", { name: "Sync now" }));
@@ -340,7 +359,6 @@ describe("BrewfatherPanel schedule and sync", () => {
     routes["GET /api/brewfather"] = { status: 200, body: { ...connected, last_sync: lastSync } };
     await tick(2000);
     expect(polls()).toBe(4);
-    expect(onBeersChanged).toHaveBeenCalledTimes(1);
     expect(screen.getByText(/Last sync/).textContent).toContain("Updated 2 beers.");
   });
 
@@ -374,9 +392,8 @@ describe("BrewfatherPanel schedule and sync", () => {
       "GET /api/brewfather": { status: 200, body: { ...connected, sync_running: true } },
       "GET /api/brewfather/batches": noBatches,
     };
-    const onBeersChanged = vi.fn();
     stubApi(routes);
-    renderPanel({ onBeersChanged });
+    renderPanel();
     await tick(0);
     routes["GET /api/brewfather"] = { status: 502, body: { error: "unknown", message: "Bad gateway." } };
     await tick(2000);
@@ -384,7 +401,6 @@ describe("BrewfatherPanel schedule and sync", () => {
     routes["GET /api/brewfather"] = { status: 200, body: connected };
     await tick(2000);
     expect(screen.queryByText("Sync running…")).toBeNull();
-    expect(onBeersChanged).toHaveBeenCalledTimes(1);
   });
 
   it("stops polling on unmount", async () => {

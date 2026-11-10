@@ -48,7 +48,7 @@ export default function SetupForm({
   }
 
   return (
-    <form onSubmit={submit}>
+    <form className="stack-form" onSubmit={submit}>
       <h2>Create the first admin</h2>
       <label>
         Username
@@ -75,7 +75,7 @@ export default function SetupForm({
         />
       </label>
       {error && <p role="alert">{error}</p>}
-      <button type="submit" disabled={busy}>
+      <button type="submit" className="btn btn-primary" disabled={busy}>
         Create admin
       </button>
     </form>

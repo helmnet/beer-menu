@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { volumeToLitres } from "../units";
 import { beer, keg, kegTypes, Reply, stubApi } from "../testApi";
@@ -28,6 +28,13 @@ function type(label: string, v: string) {
   fireEvent.change(screen.getByLabelText(label), { target: { value: v } });
 }
 
+/** pick chooses the beer named name through the Beer combobox, by typing part of it. */
+function pick(name: string) {
+  const beerInput = screen.getByRole("combobox", { name: "Beer" });
+  fireEvent.change(beerInput, { target: { value: name.slice(0, 3) } });
+  fireEvent.click(screen.getByRole("option", { name }));
+}
+
 /** errorFor returns the error text linked to the input labelled label, or null. */
 function errorFor(label: string): string | null {
   const id = screen.getByLabelText(label).getAttribute("aria-describedby");
@@ -39,7 +46,9 @@ describe("KegForm", () => {
     const calls = stubApi(routes());
     render(<KegForm onSaved={vi.fn()} onCancel={vi.fn()} onSignedOut={vi.fn()} />);
     expect(await screen.findByRole("option", { name: "Half barrel" })).toBeTruthy();
-    expect(screen.getByRole("option", { name: "Stout" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("combobox", { name: "Beer" }));
+    const list = screen.getByRole("listbox", { name: "Beers" });
+    expect(within(list).getAllByRole("option").map((o) => o.textContent)).toEqual(["Stout", "Pale"]);
     expect(value("Type")).toBe("corny_5_gal");
     expect(value("Size (gal)")).toBe("5.00");
     expect(value("Remaining (gal)")).toBe("5.00");
@@ -61,7 +70,7 @@ describe("KegForm", () => {
     const onSaved = vi.fn();
     render(<KegForm tapId={2} onSaved={onSaved} onCancel={vi.fn()} onSignedOut={vi.fn()} />);
     await screen.findByRole("option", { name: "Half barrel" });
-    type("Beer", "1");
+    pick("Pale");
     type("Type", "sanke_half");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(created));
@@ -73,7 +82,7 @@ describe("KegForm", () => {
     const onSaved = vi.fn();
     render(<KegForm onSaved={onSaved} onCancel={vi.fn()} onSignedOut={vi.fn()} />);
     await screen.findByRole("option", { name: "Half barrel" });
-    type("Beer", "2");
+    pick("Stout");
     type("Size (gal)", "4");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
@@ -91,7 +100,7 @@ describe("KegForm", () => {
     const onCancel = vi.fn();
     render(<KegForm keg={existing} onSaved={onSaved} onCancel={onCancel} onSignedOut={vi.fn()} />);
     await screen.findByRole("option", { name: "Half barrel" });
-    expect(value("Beer")).toBe("1");
+    expect(value("Beer")).toBe("Pale");
     expect(value("Type")).toBe("euro_30_l");
     expect(value("Size (gal)")).toBe("7.93");
     expect(value("Remaining (gal)")).toBe("3.26");
@@ -100,7 +109,7 @@ describe("KegForm", () => {
     expect(onCancel).toHaveBeenCalled();
     expect(calls.map((c) => c.key)).not.toContain("PATCH /api/kegs/7");
 
-    type("Beer", "2");
+    pick("Stout");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
     expect(calls.find((c) => c.key === "PATCH /api/kegs/7")?.body).toEqual({ beer_id: 2 });
@@ -158,7 +167,7 @@ describe("KegForm", () => {
     const onSignedOut = vi.fn();
     render(<KegForm onSaved={vi.fn()} onCancel={vi.fn()} onSignedOut={onSignedOut} />);
     await screen.findByRole("option", { name: "Half barrel" });
-    type("Beer", "1");
+    pick("Pale");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(onSignedOut).toHaveBeenCalled());
   });
@@ -187,7 +196,7 @@ describe("KegForm metric", () => {
     const onSaved = vi.fn();
     render(<KegForm units="metric" onSaved={onSaved} onCancel={vi.fn()} onSignedOut={vi.fn()} />);
     await screen.findByRole("option", { name: "Half barrel" });
-    type("Beer", "1");
+    pick("Pale");
     type("Size (L)", "19");
     type("Remaining (L)", "12.345");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));

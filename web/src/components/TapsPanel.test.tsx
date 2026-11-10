@@ -23,54 +23,155 @@ function routes(taps: unknown[], extra: Record<string, Reply> = {}): Record<stri
   };
 }
 
-/** item returns the list item of the tap labelled label. */
+/** item returns the card of the tap labelled label. */
 function item(label: string) {
-  return within(screen.getByRole("list", { name: "Taps" })).getByRole("listitem", { name: label });
+  return within(screen.getByRole("list", { name: "Taps" })).getByRole("article", { name: label });
 }
 
 function keys(calls: { key: string }[]) {
   return calls.map((c) => c.key);
 }
 
+/** pickBeer chooses the beer named name through the keg form's Beer combobox inside container. */
+async function pickBeer(container: HTMLElement, name: string) {
+  const input = within(container).getByRole("combobox", { name: "Beer" });
+  fireEvent.change(input, { target: { value: name } });
+  fireEvent.click(await within(container).findByRole("option", { name }));
+}
+
 describe("TapsPanel taps", () => {
   it("lists taps in position order with labels and a disabled marker", async () => {
     stubApi(routes([one, two, three]));
     render(<TapsPanel onSignedOut={vi.fn()} />);
-    await screen.findByRole("listitem", { name: "Left" });
-    const items = within(screen.getByRole("list", { name: "Taps" })).getAllByRole("listitem");
-    expect(items.map((li) => li.getAttribute("aria-label"))).toEqual(["Left", "Middle", "Right"]);
+    await screen.findByRole("article", { name: "Left" });
+    expect(screen.getByRole("heading", { level: 2, name: "Taps" })).toBeTruthy();
+    const cards = within(screen.getByRole("list", { name: "Taps" })).getAllByRole("article");
+    expect(cards.map((c) => c.getAttribute("aria-label"))).toEqual(["Left", "Middle", "Right"]);
     expect(within(item("Left")).getByRole("heading").textContent).toBe("1. Left");
     expect(within(item("Middle")).getByRole("heading").textContent).toBe("2. Middle (disabled)");
   });
 
-  it("adds a tap and reloads", async () => {
+  it("adds a tap from the Add tap dialog with no label, sending {}, then reloads", async () => {
     const r = routes([one], { "POST /api/taps": { status: 201, body: tap({ id: 4, position: 2, label: "Tap 2" }) } });
     const calls = stubApi(r);
     render(<TapsPanel onSignedOut={vi.fn()} />);
-    await screen.findByRole("listitem", { name: "Left" });
+    await screen.findByRole("article", { name: "Left" });
     r["GET /api/taps"] = { status: 200, body: [one, tap({ id: 4, position: 2, label: "Tap 2" })] };
     fireEvent.click(screen.getByRole("button", { name: "Add tap" }));
-    expect(await screen.findByRole("listitem", { name: "Tap 2" })).toBeTruthy();
+    const dialog = screen.getByRole("dialog", { name: "Add tap" });
+    expect((within(dialog).getByLabelText("Label") as HTMLInputElement).value).toBe("");
+    expect(keys(calls)).not.toContain("POST /api/taps");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("article", { name: "Tap 2" })).toBeTruthy();
     expect(calls.find((c) => c.key === "POST /api/taps")?.body).toEqual({});
+    expect(screen.queryByRole("dialog", { name: "Add tap" })).toBeNull();
+  });
+
+  it("sends the label typed in the Add tap dialog", async () => {
+    const r = routes([one], { "POST /api/taps": { status: 201, body: tap({ id: 4, position: 2, label: "Guest" }) } });
+    const calls = stubApi(r);
+    render(<TapsPanel onSignedOut={vi.fn()} />);
+    await screen.findByRole("article", { name: "Left" });
+    fireEvent.click(screen.getByRole("button", { name: "Add tap" }));
+    const dialog = screen.getByRole("dialog", { name: "Add tap" });
+    fireEvent.change(within(dialog).getByLabelText("Label"), { target: { value: "Guest" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add tap" })).toBeNull());
+    expect(calls.find((c) => c.key === "POST /api/taps")?.body).toEqual({ label: "Guest" });
+  });
+
+  it("keeps the Add tap dialog open with the field error on a 400", async () => {
+    const calls = stubApi(
+      routes([one], {
+        "POST /api/taps": {
+          status: 400,
+          body: { error: "invalid", message: "Some fields are invalid.", fields: { label: "Must be 1 to 50 characters." } },
+        },
+      }),
+    );
+    render(<TapsPanel onSignedOut={vi.fn()} />);
+    await screen.findByRole("article", { name: "Left" });
+    fireEvent.click(screen.getByRole("button", { name: "Add tap" }));
+    const dialog = screen.getByRole("dialog", { name: "Add tap" });
+    fireEvent.change(within(dialog).getByLabelText("Label"), { target: { value: "x".repeat(51) } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(await within(dialog).findByText("Must be 1 to 50 characters.")).toBeTruthy();
+    expect(within(dialog).getByLabelText("Label").getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getByRole("dialog", { name: "Add tap" })).toBe(dialog);
+    expect(keys(calls).filter((k) => k === "GET /api/taps")).toHaveLength(1);
+  });
+
+  it("closes the Add tap dialog on Cancel or Escape without a request", async () => {
+    const calls = stubApi(routes([one]));
+    render(<TapsPanel onSignedOut={vi.fn()} />);
+    await screen.findByRole("article", { name: "Left" });
+    fireEvent.click(screen.getByRole("button", { name: "Add tap" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Add tap" })).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog", { name: "Add tap" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Add tap" }));
+    fireEvent(screen.getByRole("dialog", { name: "Add tap" }), new Event("cancel", { cancelable: true }));
+    expect(screen.queryByRole("dialog", { name: "Add tap" })).toBeNull();
+    expect(keys(calls).filter((k) => !k.startsWith("GET"))).toEqual([]);
+  });
+
+  it("opens the same Add tap dialog from the top bar slot it is given", async () => {
+    const r = routes([one], { "POST /api/taps": { status: 201, body: tap({ id: 4, position: 2, label: "Tap 2" }) } });
+    const calls = stubApi(r);
+    const slot = document.createElement("div");
+    document.body.appendChild(slot);
+    render(<TapsPanel onSignedOut={vi.fn()} actionSlot={slot} />);
+    await screen.findByRole("article", { name: "Left" });
+    expect(screen.getAllByRole("button", { name: "Add tap" })).toHaveLength(2);
+    r["GET /api/taps"] = { status: 200, body: [one, tap({ id: 4, position: 2, label: "Tap 2" })] };
+    fireEvent.click(within(slot).getByRole("button", { name: "Add tap" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Add tap" })).getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("article", { name: "Tap 2" })).toBeTruthy();
+    expect(calls.find((c) => c.key === "POST /api/taps")?.body).toEqual({});
+    slot.remove();
   });
 
   it("renames a tap", async () => {
     const r = routes([one], { "PATCH /api/taps/1": { status: 200, body: { ...one, label: "Pils" } } });
     const calls = stubApi(r);
     render(<TapsPanel onSignedOut={vi.fn()} />);
-    await screen.findByRole("listitem", { name: "Left" });
+    await screen.findByRole("article", { name: "Left" });
     r["GET /api/taps"] = { status: 200, body: [{ ...one, label: "Pils" }] };
-    fireEvent.change(within(item("Left")).getByLabelText("Label"), { target: { value: "Pils" } });
+    expect(within(item("Left")).queryByLabelText("Label")).toBeNull();
     fireEvent.click(within(item("Left")).getByRole("button", { name: "Rename" }));
-    expect(await screen.findByRole("listitem", { name: "Pils" })).toBeTruthy();
+    const form = within(item("Left")).getByRole("form", { name: "Rename Left" });
+    fireEvent.change(within(form).getByLabelText("Label"), { target: { value: "Pils" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("article", { name: "Pils" })).toBeTruthy();
     expect(calls.find((c) => c.key === "PATCH /api/taps/1")?.body).toEqual({ label: "Pils" });
+    expect(screen.queryByRole("form", { name: "Rename Pils" })).toBeNull();
+  });
+
+  it("closes the rename form on Cancel or an unchanged label, sending nothing", async () => {
+    const calls = stubApi(routes([one]));
+    render(<TapsPanel onSignedOut={vi.fn()} />);
+    await screen.findByRole("article", { name: "Left" });
+    fireEvent.click(within(item("Left")).getByRole("button", { name: "Rename" }));
+    fireEvent.click(within(item("Left")).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("form", { name: "Rename Left" })).toBeNull();
+    fireEvent.click(within(item("Left")).getByRole("button", { name: "Rename" }));
+    fireEvent.click(within(item("Left")).getByRole("button", { name: "Save" }));
+    expect(screen.queryByRole("form", { name: "Rename Left" })).toBeNull();
+    expect(keys(calls).filter((k) => !k.startsWith("GET"))).toEqual([]);
+  });
+
+  it("summarizes the taps under the heading", async () => {
+    stubApi(routes([{ ...one, keg: keg({ tap_id: 1, state: "on_tap" }) }, three], {
+      "GET /api/kegs?state=waiting": { status: 200, body: [keg({ id: 2 })] },
+    }));
+    render(<TapsPanel onSignedOut={vi.fn()} />);
+    expect(await screen.findByText("2 taps, 1 with a keg, 1 keg waiting")).toBeTruthy();
   });
 
   it("moves a tap up by sending the full reordered id list", async () => {
     const r = routes([one, two, three], { "PUT /api/taps/order": { status: 200, body: [] } });
     const calls = stubApi(r);
     render(<TapsPanel onSignedOut={vi.fn()} />);
-    await screen.findByRole("listitem", { name: "Left" });
+    await screen.findByRole("article", { name: "Left" });
     fireEvent.click(within(item("Middle")).getByRole("button", { name: "Move up" }));
     await waitFor(() => expect(keys(calls)).toContain("PUT /api/taps/order"));
     expect(calls.find((c) => c.key === "PUT /api/taps/order")?.body).toEqual({ ids: [2, 1, 3] });
@@ -79,7 +180,7 @@ describe("TapsPanel taps", () => {
   it("offers no Move up on the first tap and no Move down on the last", async () => {
     stubApi(routes([one, two, three]));
     render(<TapsPanel onSignedOut={vi.fn()} />);
-    await screen.findByRole("listitem", { name: "Left" });
+    await screen.findByRole("article", { name: "Left" });
     expect(within(item("Left")).queryByRole("button", { name: "Move up" })).toBeNull();
     expect(within(item("Left")).getByRole("button", { name: "Move down" })).toBeTruthy();
     expect(within(item("Right")).getByRole("button", { name: "Move up" })).toBeTruthy();
@@ -94,7 +195,7 @@ describe("TapsPanel taps", () => {
       }),
     );
     render(<TapsPanel onSignedOut={vi.fn()} />);
-    await screen.findByRole("listitem", { name: "Left" });
+    await screen.findByRole("article", { name: "Left" });
     fireEvent.click(within(item("Left")).getByRole("button", { name: "Disable" }));
     await waitFor(() => expect(keys(calls)).toContain("PATCH /api/taps/1"));
     expect(calls.find((c) => c.key === "PATCH /api/taps/1")?.body).toEqual({ enabled: false });
@@ -109,7 +210,7 @@ describe("TapsPanel taps", () => {
     const confirm = vi.fn(() => false);
     vi.stubGlobal("confirm", confirm);
     render(<TapsPanel onSignedOut={vi.fn()} />);
-    await screen.findByRole("listitem", { name: "Right" });
+    await screen.findByRole("article", { name: "Right" });
     fireEvent.click(within(item("Right")).getByRole("button", { name: "Remove" }));
     expect(confirm).toHaveBeenCalledWith("Remove Right?");
     expect(keys(calls)).not.toContain("DELETE /api/taps/3");
@@ -117,7 +218,7 @@ describe("TapsPanel taps", () => {
     confirm.mockReturnValue(true);
     r["GET /api/taps"] = { status: 200, body: [one] };
     fireEvent.click(within(item("Right")).getByRole("button", { name: "Remove" }));
-    await waitFor(() => expect(screen.queryByRole("listitem", { name: "Right" })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("article", { name: "Right" })).toBeNull());
     expect(keys(calls)).toContain("DELETE /api/taps/3");
   });
 
@@ -129,7 +230,7 @@ describe("TapsPanel taps", () => {
     );
     vi.stubGlobal("confirm", () => true);
     render(<TapsPanel onSignedOut={vi.fn()} />);
-    await screen.findByRole("listitem", { name: "Left" });
+    await screen.findByRole("article", { name: "Left" });
     fireEvent.click(within(item("Left")).getByRole("button", { name: "Remove" }));
     expect((await screen.findByRole("alert")).textContent).toBe("The last tap cannot be removed.");
   });
@@ -176,23 +277,51 @@ describe("TapsPanel kegs", () => {
     expect(within(item("Left")).queryByRole("button", { name: "Add keg" })).toBeNull();
   });
 
-  it("offers Add keg on an empty tap, opening the keg form for that tap", async () => {
-    const calls = stubApi(
-      kegRoutes([], {
-        "GET /api/beers": { status: 200, body: [beer({ id: 1, name: "Pale" })] },
-        "POST /api/kegs": { status: 201, body: keg({ tap_id: 2, state: "on_tap" }) },
-      }),
-    );
+  it("offers Add keg on an empty tap, opening the Add keg dialog for that tap", async () => {
+    const r = kegRoutes([], {
+      "GET /api/beers": { status: 200, body: [beer({ id: 1, name: "Pale" })] },
+      "POST /api/kegs": { status: 201, body: keg({ tap_id: 2, state: "on_tap" }) },
+    });
+    const calls = stubApi(r);
     render(<TapsPanel onSignedOut={vi.fn()} />);
     await screen.findByText("Stout");
     expect(within(item("Right")).queryByRole("button", { name: "Put on tap" })).toBeNull();
     fireEvent.click(within(item("Right")).getByRole("button", { name: "Add keg" }));
-    const form = screen.getByRole("form", { name: "Add keg" });
-    await within(form).findByRole("option", { name: "Pale" });
-    fireEvent.change(within(form).getByLabelText("Beer"), { target: { value: "1" } });
-    fireEvent.click(within(form).getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(screen.queryByRole("form", { name: "Add keg" })).toBeNull());
+    const dialog = screen.getByRole("dialog", { name: "Add keg" });
+    await pickBeer(dialog, "Pale");
+    r["GET /api/taps"] = { status: 200, body: [withKeg, { ...empty, keg: keg({ id: 12, beer_name: "Pale", tap_id: 2, state: "on_tap" }) }] };
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add keg" })).toBeNull());
     expect(calls.find((c) => c.key === "POST /api/kegs")?.body).toEqual({ beer_id: 1, type: "corny_5_gal", tap_id: 2 });
+    expect(await within(item("Right")).findByText("Pale")).toBeTruthy();
+    expect(keys(calls).filter((k) => k === "GET /api/taps")).toHaveLength(2);
+  });
+
+  it("closes the Add keg dialog on Cancel without a request", async () => {
+    const calls = stubApi(kegRoutes([], { "GET /api/beers": { status: 200, body: [beer({ id: 1, name: "Pale" })] } }));
+    render(<TapsPanel onSignedOut={vi.fn()} />);
+    await screen.findByText("Stout");
+    fireEvent.click(within(item("Right")).getByRole("button", { name: "Add keg" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Add keg" })).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog", { name: "Add keg" })).toBeNull();
+    expect(keys(calls).filter((k) => !k.startsWith("GET"))).toEqual([]);
+  });
+
+  it("returns to sign-in when the session ends while saving from the Add keg dialog", async () => {
+    stubApi(
+      kegRoutes([], {
+        "GET /api/beers": { status: 200, body: [beer({ id: 1, name: "Pale" })] },
+        "POST /api/kegs": { status: 401, body: { error: "unauthenticated", message: "x" } },
+      }),
+    );
+    const onSignedOut = vi.fn();
+    render(<TapsPanel onSignedOut={onSignedOut} />);
+    await screen.findByText("Stout");
+    fireEvent.click(within(item("Right")).getByRole("button", { name: "Add keg" }));
+    const dialog = screen.getByRole("dialog", { name: "Add keg" });
+    await pickBeer(dialog, "Pale");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onSignedOut).toHaveBeenCalled());
   });
 
   it("puts a waiting keg on an empty tap", async () => {
@@ -221,34 +350,15 @@ describe("TapsPanel kegs", () => {
     render(<TapsPanel onSignedOut={vi.fn()} />);
     await screen.findByText("Stout");
     fireEvent.click(within(item("Left")).getByRole("button", { name: "Edit keg" }));
-    expect(screen.getByRole("form", { name: "Edit keg of Stout" })).toBeTruthy();
+    expect(within(item("Left")).getByRole("form", { name: "Edit keg of Stout" })).toBeTruthy();
   });
 
-  it("lists waiting kegs on deck in their keg's shape, with Add keg without a tap", async () => {
-    const calls = stubApi(
-      kegRoutes([half], {
-        "GET /api/beers": { status: 200, body: [beer({ id: 1, name: "Pale" })] },
-        "POST /api/kegs": { status: 201, body: keg() },
-      }),
-    );
+  it("shows no on-deck list (it has its own page)", async () => {
+    stubApi(kegRoutes([half]));
     render(<TapsPanel onSignedOut={vi.fn()} />);
-    const deck = await screen.findByRole("region", { name: "On deck" });
-    const lager = await within(deck).findByRole("listitem");
-    const art = within(lager).getByRole("img");
-    expect(art.getAttribute("data-vessel")).toBe("keg");
-    expect(art.getAttribute("data-keg-shape")).toBe("sanke");
-    expect(art.querySelector('[data-part="liquid"]')?.getAttribute("fill")).toBe("#ffbf42");
-    expect(within(lager).getByText("Lager")).toBeTruthy();
-    expect(within(lager).getByText("Half barrel")).toBeTruthy();
-    expect(within(lager).getByText(new RegExp(formatVolume(58.67, "us")))).toBeTruthy();
-
-    fireEvent.click(within(deck).getByRole("button", { name: "Add keg" }));
-    const form = screen.getByRole("form", { name: "Add keg" });
-    await within(form).findByRole("option", { name: "Pale" });
-    fireEvent.change(within(form).getByLabelText("Beer"), { target: { value: "1" } });
-    fireEvent.click(within(form).getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(keys(calls)).toContain("POST /api/kegs"));
-    expect(calls.find((c) => c.key === "POST /api/kegs")?.body).toEqual({ beer_id: 1, type: "corny_5_gal" });
+    await screen.findByText("Stout");
+    expect(screen.queryByRole("region", { name: "On deck" })).toBeNull();
+    expect(screen.queryByText("Half barrel")).toBeNull();
   });
 
   it("reports a 401 from the keg types as signed out", async () => {
@@ -297,31 +407,15 @@ describe("TapsPanel levels", () => {
     expect(keys(calls).filter((k) => !k.startsWith("GET"))).toEqual([]);
   });
 
-  it("pours from a waiting keg on deck", async () => {
-    const calls = stubApi(kegRoutes([half], { "POST /api/kegs/11/pours": { status: 200, body: half } }));
-    render(<TapsPanel onSignedOut={vi.fn()} />);
-    const deck = await screen.findByRole("region", { name: "On deck" });
-    fireEvent.click(await within(deck).findByRole("button", { name: "Pour" }));
-    fireEvent.change(within(deck).getByLabelText("Pour (fl oz)"), { target: { value: "12" } });
-    fireEvent.click(within(deck).getByRole("button", { name: "Save pour" }));
-    await waitFor(() => expect(keys(calls)).toContain("POST /api/kegs/11/pours"));
-    expect(calls.find((c) => c.key === "POST /api/kegs/11/pours")?.body).toEqual({ amount_l: 0.35 });
-  });
-
   it("draws each keg's level as its filled artwork, with gallons and no meter or inline style", async () => {
     const quarter = { ...tapped, remaining_l: 18.93 / 4 };
-    const waiting = { ...half, remaining_l: 58.67 * 0.3 };
-    stubApi(routes([{ ...one, keg: quarter }, empty], { "GET /api/kegs?state=waiting": { status: 200, body: [waiting] } }));
+    stubApi(routes([{ ...one, keg: quarter }, empty]));
     const { container } = render(<TapsPanel onSignedOut={vi.fn()} />);
     await screen.findByText("Stout");
     const glass = within(item("Left")).getByRole("img");
     expect(glass.getAttribute("data-vessel")).toBe("glass");
     expect(glass.getAttribute("aria-label")).toMatch(/25% left$/);
     expect(within(item("Left")).getByText(new RegExp(formatVolume(18.93 / 4, "us")))).toBeTruthy();
-    const deck = await screen.findByRole("region", { name: "On deck" });
-    const kegArt = await within(deck).findByRole("img");
-    expect(kegArt.getAttribute("data-keg-shape")).toBe("sanke");
-    expect(kegArt.getAttribute("aria-label")).toBe("Lager, keg, 30% left");
     expect(screen.queryAllByRole("meter")).toHaveLength(0);
     expect(container.querySelectorAll("[style]")).toHaveLength(0);
   });
@@ -333,81 +427,39 @@ describe("TapsPanel kick", () => {
     const calls = stubApi(r);
     const confirm = vi.fn(() => false);
     vi.stubGlobal("confirm", confirm);
-    const onKegsChanged = vi.fn();
-    render(<TapsPanel onSignedOut={vi.fn()} onKegsChanged={onKegsChanged} />);
+    render(<TapsPanel onSignedOut={vi.fn()} />);
     await screen.findByText("Stout");
     fireEvent.click(within(item("Left")).getByRole("button", { name: "Kick" }));
     expect(confirm).toHaveBeenCalledWith("Kick the Stout keg? It moves to keg history.");
     expect(keys(calls).filter((k) => !k.startsWith("GET"))).toEqual([]);
-    expect(onKegsChanged).not.toHaveBeenCalled();
 
     confirm.mockReturnValue(true);
     r["GET /api/taps"] = { status: 200, body: [one, empty] };
     fireEvent.click(within(item("Left")).getByRole("button", { name: "Kick" }));
     expect(await within(item("Left")).findByRole("button", { name: "Add keg" })).toBeTruthy();
     expect(calls.find((c) => c.key === "PATCH /api/kegs/10")?.body).toEqual({ kicked: true });
-    expect(onKegsChanged).toHaveBeenCalledTimes(1);
   });
 });
 
-describe("TapsPanel onKegsChanged", () => {
-  it("fires after putting a waiting keg on a tap", async () => {
-    stubApi(kegRoutes([half], { "PATCH /api/kegs/11": { status: 200, body: { ...half, tap_id: 2 } } }));
-    const onKegsChanged = vi.fn();
-    render(<TapsPanel onSignedOut={vi.fn()} onKegsChanged={onKegsChanged} />);
-    await screen.findByText("Stout");
-    fireEvent.click(within(item("Right")).getByRole("button", { name: "Put on tap" }));
-    await waitFor(() => expect(onKegsChanged).toHaveBeenCalledTimes(1));
-  });
-
-  it("fires after taking a keg off its tap", async () => {
-    stubApi(kegRoutes([], { "PATCH /api/kegs/10": { status: 200, body: { ...tapped, tap_id: null } } }));
-    const onKegsChanged = vi.fn();
-    render(<TapsPanel onSignedOut={vi.fn()} onKegsChanged={onKegsChanged} />);
-    await screen.findByText("Stout");
-    fireEvent.click(within(item("Left")).getByRole("button", { name: "Take off" }));
-    await waitFor(() => expect(onKegsChanged).toHaveBeenCalledTimes(1));
-  });
-
-  it("fires after creating a keg", async () => {
-    stubApi(
-      kegRoutes([], {
-        "GET /api/beers": { status: 200, body: [beer({ id: 1, name: "Pale" })] },
-        "POST /api/kegs": { status: 201, body: keg({ tap_id: 2, state: "on_tap" }) },
-      }),
-    );
-    const onKegsChanged = vi.fn();
-    render(<TapsPanel onSignedOut={vi.fn()} onKegsChanged={onKegsChanged} />);
-    await screen.findByText("Stout");
-    fireEvent.click(within(item("Right")).getByRole("button", { name: "Add keg" }));
-    const form = screen.getByRole("form", { name: "Add keg" });
-    await within(form).findByRole("option", { name: "Pale" });
-    fireEvent.change(within(form).getByLabelText("Beer"), { target: { value: "1" } });
-    fireEvent.click(within(form).getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(onKegsChanged).toHaveBeenCalledTimes(1));
-  });
-
-  it("does not fire after a failed keg change", async () => {
+describe("TapsPanel reloads", () => {
+  it("shows the server message for a failed keg change", async () => {
     stubApi(
       kegRoutes([], { "PATCH /api/kegs/10": { status: 409, body: { error: "conflict", message: "Try again." } } }),
     );
-    const onKegsChanged = vi.fn();
-    render(<TapsPanel onSignedOut={vi.fn()} onKegsChanged={onKegsChanged} />);
+    render(<TapsPanel onSignedOut={vi.fn()} />);
     await screen.findByText("Stout");
     fireEvent.click(within(item("Left")).getByRole("button", { name: "Take off" }));
     expect((await screen.findByRole("alert")).textContent).toBe("Try again.");
-    expect(onKegsChanged).not.toHaveBeenCalled();
   });
 
-  it("does not fire after a pour or a level set", async () => {
+  it("reloads the taps after a pour and a level set", async () => {
     const calls = stubApi(
       kegRoutes([], {
         "POST /api/kegs/10/pours": { status: 200, body: tapped },
         "PATCH /api/kegs/10": { status: 200, body: tapped },
       }),
     );
-    const onKegsChanged = vi.fn();
-    render(<TapsPanel onSignedOut={vi.fn()} onKegsChanged={onKegsChanged} />);
+    render(<TapsPanel onSignedOut={vi.fn()} />);
     await screen.findByText("Stout");
     fireEvent.click(within(item("Left")).getByRole("button", { name: "Pour" }));
     fireEvent.click(within(item("Left")).getByRole("button", { name: "Save pour" }));
@@ -417,17 +469,14 @@ describe("TapsPanel onKegsChanged", () => {
     fireEvent.click(within(item("Left")).getByRole("button", { name: "Save level" }));
     await waitFor(() => expect(keys(calls).filter((k) => k === "GET /api/taps")).toHaveLength(3));
     expect(keys(calls)).toContain("PATCH /api/kegs/10");
-    expect(onKegsChanged).not.toHaveBeenCalled();
   });
 
-  it("does not fire after a tap-only change", async () => {
+  it("reloads the taps after a tap-only change", async () => {
     const calls = stubApi(kegRoutes([], { "PATCH /api/taps/1": { status: 200, body: { ...withKeg, enabled: false } } }));
-    const onKegsChanged = vi.fn();
-    render(<TapsPanel onSignedOut={vi.fn()} onKegsChanged={onKegsChanged} />);
+    render(<TapsPanel onSignedOut={vi.fn()} />);
     await screen.findByText("Stout");
     fireEvent.click(within(item("Left")).getByRole("button", { name: "Disable" }));
     await waitFor(() => expect(keys(calls).filter((k) => k === "GET /api/taps")).toHaveLength(2));
-    expect(onKegsChanged).not.toHaveBeenCalled();
   });
 });
 

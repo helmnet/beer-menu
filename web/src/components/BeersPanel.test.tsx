@@ -27,7 +27,7 @@ describe("BeersPanel", () => {
     expect(within(row("Stout")).getByText("fermenting")).toBeTruthy();
   });
 
-  it("adds a beer through the form", async () => {
+  it("adds a beer through the Add beer dialog, then closes it and reloads", async () => {
     const routes = {
       "GET /api/beers": { status: 200, body: [pale] as unknown[] },
       "GET /api/srm-colors": { status: 200, body: { colors: [] } },
@@ -36,15 +36,16 @@ describe("BeersPanel", () => {
     const calls = stubApi(routes);
     render(<BeersPanel onSignedOut={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "Add beer" }));
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Stout" } });
+    const dialog = screen.getByRole("dialog", { name: "Add beer" });
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Stout" } });
     routes["GET /api/beers"] = { status: 200, body: [pale, stout] };
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     expect(await screen.findByText("Stout")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Add beer" })).toBeNull();
     expect(calls.find((c) => c.key === "POST /api/beers")?.body).toEqual({ name: "Stout", status: "ready" });
   });
 
-  it("opens the form with the beer's values to edit", async () => {
+  it("opens the Edit dialog filled with the beer's values", async () => {
     stubApi({
       "GET /api/beers": { status: 200, body: [pale] },
       "GET /api/srm-colors": { status: 200, body: { colors: [] } },
@@ -52,8 +53,62 @@ describe("BeersPanel", () => {
     render(<BeersPanel onSignedOut={vi.fn()} />);
     await screen.findByText("Pale");
     fireEvent.click(within(row("Pale")).getByRole("button", { name: "Edit" }));
-    expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Pale");
-    expect((screen.getByLabelText("ABV") as HTMLInputElement).value).toBe("5.2");
+    const dialog = screen.getByRole("dialog", { name: "Edit Pale" });
+    expect((within(dialog).getByLabelText("Name") as HTMLInputElement).value).toBe("Pale");
+    expect((within(dialog).getByLabelText("ABV") as HTMLInputElement).value).toBe("5.2");
+  });
+
+  it("saves an edit, closes the dialog and reloads", async () => {
+    const routes = {
+      "GET /api/beers": { status: 200, body: [pale] as unknown[] },
+      "GET /api/srm-colors": { status: 200, body: { colors: [] } },
+      "PATCH /api/beers/1": { status: 200, body: { ...pale, abv: 5.5 } },
+    };
+    const calls = stubApi(routes);
+    render(<BeersPanel onSignedOut={vi.fn()} />);
+    await screen.findByText("Pale");
+    fireEvent.click(within(row("Pale")).getByRole("button", { name: "Edit" }));
+    const dialog = screen.getByRole("dialog", { name: "Edit Pale" });
+    fireEvent.change(within(dialog).getByLabelText("ABV"), { target: { value: "5.5" } });
+    routes["GET /api/beers"] = { status: 200, body: [{ ...pale, abv: 5.5 }] };
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(await within(row("Pale")).findByText("5.5%")).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: "Edit Pale" })).toBeNull();
+    expect(calls.find((c) => c.key === "PATCH /api/beers/1")?.body).toEqual({ abv: 5.5 });
+  });
+
+  it("keeps the dialog open with field errors on a 400", async () => {
+    const calls = stubApi({
+      "GET /api/beers": { status: 200, body: [pale] },
+      "GET /api/srm-colors": { status: 200, body: { colors: [] } },
+      "POST /api/beers": {
+        status: 400,
+        body: { error: "invalid", message: "Some fields are invalid.", fields: { name: "Name is required." } },
+      },
+    });
+    render(<BeersPanel onSignedOut={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add beer" }));
+    const dialog = screen.getByRole("dialog", { name: "Add beer" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(await within(dialog).findByText("Name is required.")).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Add beer" })).toBe(dialog);
+    expect(calls.filter((c) => c.key === "GET /api/beers")).toHaveLength(1);
+  });
+
+  it("closes the dialog on Cancel or Escape and sends nothing", async () => {
+    const calls = stubApi({
+      "GET /api/beers": { status: 200, body: [pale] },
+      "GET /api/srm-colors": { status: 200, body: { colors: [] } },
+    });
+    render(<BeersPanel onSignedOut={vi.fn()} />);
+    await screen.findByText("Pale");
+    fireEvent.click(screen.getByRole("button", { name: "Add beer" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Add beer" })).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(within(row("Pale")).getByRole("button", { name: "Edit" }));
+    fireEvent(screen.getByRole("dialog", { name: "Edit Pale" }), new Event("cancel", { cancelable: true }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(calls.map((c) => c.key).filter((k) => !k.startsWith("GET"))).toEqual([]);
   });
 
   it("reports a 401 as signed out", async () => {
@@ -103,38 +158,6 @@ describe("BeersPanel", () => {
 
     fireEvent.click(screen.getByLabelText("Show archived"));
     expect(await screen.findByText("Pale")).toBeTruthy();
-  });
-
-  it("reloads the shown list when refresh changes, keeping the archived view", async () => {
-    const old = beer({ id: 9, name: "Old Ale", archived_at: "2026-11-01T12:00:00Z" });
-    const routes = {
-      "GET /api/beers": { status: 200, body: [pale] },
-      "GET /api/beers?archived=true": { status: 200, body: [old] },
-    };
-    const calls = stubApi(routes);
-    const { rerender } = render(<BeersPanel onSignedOut={vi.fn()} refresh={0} />);
-    await screen.findByText("Pale");
-    fireEvent.click(screen.getByLabelText("Show archived"));
-    await screen.findByText("Old Ale");
-    expect(within(row("Old Ale")).getByRole("img").getAttribute("data-vessel")).toBe("keg");
-
-    routes["GET /api/beers?archived=true"] = { status: 200, body: [{ ...old, on_tap: true }] };
-    rerender(<BeersPanel onSignedOut={vi.fn()} refresh={1} />);
-    await waitFor(() => expect(within(row("Old Ale")).getByRole("img").getAttribute("data-vessel")).toBe("glass"));
-    expect((screen.getByLabelText("Show archived") as HTMLInputElement).checked).toBe(true);
-    expect(calls.map((c) => c.key)).toEqual(["GET /api/beers", "GET /api/beers?archived=true", "GET /api/beers?archived=true"]);
-  });
-
-  it("keeps an open form when refresh changes", async () => {
-    const routes = { "GET /api/beers": { status: 200, body: [pale] } };
-    stubApi(routes);
-    const { rerender } = render(<BeersPanel onSignedOut={vi.fn()} refresh={0} />);
-    await screen.findByText("Pale");
-    fireEvent.click(screen.getByRole("button", { name: "Add beer" }));
-    routes["GET /api/beers"] = { status: 200, body: [{ ...pale, on_tap: true }] };
-    rerender(<BeersPanel onSignedOut={vi.fn()} refresh={1} />);
-    await waitFor(() => expect(within(row("Pale")).getByRole("img").getAttribute("data-vessel")).toBe("glass"));
-    expect(screen.queryByRole("button", { name: "Add beer" })).toBeNull();
   });
 
   it("archives a current beer", async () => {

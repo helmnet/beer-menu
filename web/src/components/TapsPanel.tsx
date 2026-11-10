@@ -1,51 +1,48 @@
+import { ArrowDown, ArrowUp, GlassWater, Pencil, Plus, Power, Trash2 } from "lucide-react";
 import { FormEvent, useEffect, useId, useState } from "react";
-import { apiFetch, errorMessage, isUnauthenticated, Keg, KegType, Tap, Units } from "../api";
-import { formatVolume, inputToLitres, pourPrefill, pourToLitres, pourUnit, volumeText, volumeToLitres, volumeUnit } from "../units";
-import BeerArt from "./BeerArt";
+import { createPortal } from "react-dom";
+import { ApiError, apiFetch, errorMessage, isUnauthenticated, Keg, KegType, Tap, Units } from "../api";
+import KegCard from "./KegCard";
 import KegForm from "./KegForm";
+import Modal from "./Modal";
 
-/** Editing is the open keg form: none, add (on tap `tapId` or waiting), or edit one keg. */
-type Editing = { kind: "none" } | { kind: "add"; tapId?: number } | { kind: "edit"; keg: Keg };
-
-/** Level is the open inline level form of one keg: a pour or a set level. */
-type Level = { kegId: number; kind: "pour" | "set" } | null;
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /**
- * TapsPanel is the admin taps panel. It lists taps in position order (GET /api/taps), adds a
- * tap at the end (POST /api/taps), renames and enables or disables one (PATCH
- * /api/taps/{id}), moves one up or down by sending every id in the new order (PUT
- * /api/taps/order), and removes one after a confirm prompt (DELETE /api/taps/{id}). Each tap
- * shows its keg: the beer as a pint glass filled to the keg's level (remaining over size, also
- * in the drawing's label), beer name, keg type, and level, with Pour (prefilled, so a pour is
- * two clicks; POST /api/kegs/{id}/pours), Set level (PATCH remaining_l, sent only when
- * changed), Kick (after a confirm prompt; PATCH {"kicked": true}), Take off and Edit keg; an empty tap offers Add keg and, while kegs are
- * waiting, Put on tap. An On deck list shows waiting kegs (GET /api/kegs?state=waiting) in
- * their keg type's drawing, filled to their level, with the same keg actions but Take off, and Add keg for a waiting
- * keg. Keg labels and drawings come from GET /api/keg-types, loaded once. Keg changes go to
- * PATCH /api/kegs/{id} or KegForm. Everything reloads after every change and server messages,
- * such as conflicts, are shown. Every successful keg change that can move a beer on or off a tap or into
- * keg history (create, edit, put on or take off a tap, kick) calls `onKegsChanged`, so keg
- * history and beer artwork can reload; pours, level sets and tap-only changes do not. Any 401 calls `onSignedOut`.
- * Volumes follow `units` (default US): levels in US gallons or litres, pours in US fl oz
- * (prefilled 16) or mL (prefilled 500), always sent in litres. KegForm is passed `units` and
- * keyed by it, as is the inline level form, so a form open during a units change restarts in
- * the new units.
+ * TapsPanel is the Taps page. Its header has the "Taps" heading, a summary (taps, how many
+ * have a keg, kegs waiting) and "Add tap", which opens the "Add tap" dialog: an optional Label
+ * (1 to 50 characters) and Save, which adds a tap at the end (POST /api/taps, body `{}` when the
+ * label is empty so the API names it, else `{"label"}`); a server error keeps it open.
+ * Taps (GET /api/taps) show in position order as a grid of cards, each named by its label,
+ * headed "<position>. <label>" (plus "(disabled)") with icon buttons: Rename (reveals an
+ * inline label form; PATCH /api/taps/{id}, sent only when changed), Move up and Move down
+ * (PUT /api/taps/order with every id in the new order; absent at the ends), Disable or Enable
+ * (PATCH enabled) and Remove (after a confirm prompt; DELETE /api/taps/{id}). A tap with a keg
+ * shows it in KegCard (pour, set level, edit, take off, kick). An empty tap shows "Empty tap",
+ * Add keg (KegForm for this tap in the "Add keg" dialog) and, while kegs wait (GET
+ * /api/kegs?state=waiting), a "Waiting keg" select with Put on tap (PATCH /api/kegs/{id}
+ * {"tap_id"}). Keg labels come from GET /api/keg-types, loaded once. Everything reloads after
+ * every change, and server messages, such as conflicts, are shown. Volumes follow `units`
+ * (default US); KegForm is keyed by it so an open form restarts in new units. Any 401 calls
+ * `onSignedOut`. Waiting kegs themselves are managed on the On Deck page. Given `actionSlot`
+ * (the phone top bar's slot), a second Add tap is portaled there; CSS shows one of the two.
  */
 export default function TapsPanel({
   onSignedOut,
-  onKegsChanged,
   units = "us",
+  actionSlot,
 }: {
   onSignedOut: () => void;
-  onKegsChanged?: () => void;
   units?: Units;
+  actionSlot?: HTMLElement | null;
 }) {
-  const deckId = useId();
   const [taps, setTaps] = useState<Tap[]>([]);
   const [waiting, setWaiting] = useState<Keg[]>([]);
   const [types, setTypes] = useState<KegType[]>([]);
-  const [editing, setEditing] = useState<Editing>({ kind: "none" });
-  const [level, setLevel] = useState<Level>(null);
+  // The tap whose Add keg dialog or rename form is open, if any.
+  const [addingTo, setAddingTo] = useState<number | null>(null);
+  const [addingTap, setAddingTap] = useState(false);
+  const [renaming, setRenaming] = useState<number | null>(null);
   const [error, setError] = useState("");
 
   async function run(action: () => Promise<void>) {
@@ -74,12 +71,11 @@ export default function TapsPanel({
     });
   }, []);
 
-  /** change sends one write, reports it when `kegsChanged`, then closes any level form and reloads. */
-  function change(method: string, path: string, body?: unknown, kegsChanged = false) {
+  /** change sends one write, then reloads. */
+  function change(method: string, path: string, body?: unknown, after?: () => void) {
     run(async () => {
       await apiFetch(method, path, body);
-      if (kegsChanged) onKegsChanged?.();
-      setLevel(null);
+      after?.();
       await load();
     });
   }
@@ -87,7 +83,8 @@ export default function TapsPanel({
   function rename(t: Tap, e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const label = String(new FormData(e.currentTarget).get("label") ?? "");
-    if (label !== t.label) change("PATCH", `/api/taps/${t.id}`, { label });
+    if (label === t.label) setRenaming(null);
+    else change("PATCH", `/api/taps/${t.id}`, { label }, () => setRenaming(null));
   }
 
   function move(i: number, by: -1 | 1) {
@@ -102,178 +99,219 @@ export default function TapsPanel({
 
   function putOnTap(t: Tap, e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    change("PATCH", `/api/kegs/${new FormData(e.currentTarget).get("keg")}`, { tap_id: t.id }, true);
-  }
-
-  function saveLevel(k: Keg, e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const text = String(new FormData(e.currentTarget).get("amount") ?? "");
-    if (level?.kind === "pour") {
-      change("POST", `/api/kegs/${k.id}/pours`, { amount_l: inputToLitres(text, (n) => pourToLitres(n, units)) });
-    } else if (text === volumeText(k.remaining_l, units)) {
-      // An untouched level must not be resent: the two-decimal round trip would move it.
-      setLevel(null);
-    } else {
-      change("PATCH", `/api/kegs/${k.id}`, { remaining_l: inputToLitres(text, (n) => volumeToLitres(n, units)) });
-    }
-  }
-
-  function kick(k: Keg) {
-    if (window.confirm(`Kick the ${k.beer_name} keg? It moves to keg history.`)) {
-      change("PATCH", `/api/kegs/${k.id}`, { kicked: true }, true);
-    }
+    change("PATCH", `/api/kegs/${new FormData(e.currentTarget).get("keg")}`, { tap_id: t.id });
   }
 
   function saved() {
-    setEditing({ kind: "none" });
-    onKegsChanged?.();
+    setAddingTo(null);
+    setAddingTap(false);
     run(load);
   }
 
-  const typeOf = (k: Keg) => types.find((t) => t.type === k.type);
-  const typeLabel = (k: Keg) => typeOf(k)?.label ?? k.type;
-
-  /** kegView is a keg's artwork, beer, type and level, then its actions. */
-  const kegView = (k: Keg) => (
-    <div>
-      <BeerArt
-        onTap={k.state === "on_tap"}
-        kegShape={typeOf(k)?.shape}
-        color={k.beer_color}
-        name={k.beer_name}
-        level={k.remaining_l / k.size_l}
-        height={64}
-      />
-      <p>{k.beer_name}</p>
-      <p>{typeLabel(k)}</p>
-      <p>
-        {formatVolume(k.remaining_l, units)} of {formatVolume(k.size_l, units)}
-      </p>
-      <button type="button" onClick={() => setLevel({ kegId: k.id, kind: "pour" })}>
-        Pour
-      </button>
-      <button type="button" onClick={() => setLevel({ kegId: k.id, kind: "set" })}>
-        Set level
-      </button>
-      {level?.kegId === k.id && (
-        <form key={`${units}-${level.kind}`} onSubmit={(e) => saveLevel(k, e)}>
-          <label>
-            {level.kind === "pour" ? `Pour (${pourUnit(units)})` : `Remaining (${volumeUnit(units)})`}
-            <input
-              name="amount"
-              type="number"
-              min="0"
-              step="any"
-              defaultValue={level.kind === "pour" ? pourPrefill(units) : volumeText(k.remaining_l, units)}
-            />
-          </label>
-          <button type="submit">{level.kind === "pour" ? "Save pour" : "Save level"}</button>
-          <button type="button" onClick={() => setLevel(null)}>
-            Cancel
-          </button>
-        </form>
-      )}
-      <button type="button" onClick={() => kick(k)}>
-        Kick
-      </button>
-      {k.state === "on_tap" && (
-        <button type="button" onClick={() => change("PATCH", `/api/kegs/${k.id}`, { tap_id: null }, true)}>
-          Take off
-        </button>
-      )}
-      <button type="button" onClick={() => setEditing({ kind: "edit", keg: k })}>
-        Edit keg
-      </button>
-    </div>
+  const addTap = (
+    <button type="button" className="btn btn-primary page-action" onClick={() => setAddingTap(true)}>
+      <Plus aria-hidden="true" />
+      Add tap
+    </button>
   );
 
+  const typeLabel = (k: Keg) => types.find((t) => t.type === k.type)?.label ?? k.type;
+  const withKeg = taps.filter((t) => t.keg).length;
+
   return (
-    <section>
-      <h2>Taps</h2>
-      <ol aria-label="Taps">
+    <section className="page">
+      <div className="page-header">
+        <div>
+          <h2>Taps</h2>
+          <p className="muted">
+            {plural(taps.length, "tap", "taps")}, {withKeg} with a keg, {plural(waiting.length, "keg", "kegs")} waiting
+          </p>
+        </div>
+        {addTap}
+      </div>
+      {actionSlot && createPortal(addTap, actionSlot)}
+      {error && <p role="alert">{error}</p>}
+      <ol className="tap-grid" aria-label="Taps">
         {taps.map((t, i) => (
-          <li key={t.id} aria-label={t.label}>
-            <h3>
-              {t.position}. {t.label}
-              {!t.enabled && " (disabled)"}
-            </h3>
-            {/* Keyed by label so a reload after a rename resets the input. */}
-            <form key={t.label} onSubmit={(e) => rename(t, e)}>
-              <label>
-                Label
-                <input name="label" defaultValue={t.label} />
-              </label>
-              <button type="submit">Rename</button>
-            </form>
-            <button type="button" onClick={() => change("PATCH", `/api/taps/${t.id}`, { enabled: !t.enabled })}>
-              {t.enabled ? "Disable" : "Enable"}
-            </button>
-            {i > 0 && (
-              <button type="button" onClick={() => move(i, -1)}>
-                Move up
-              </button>
-            )}
-            {i < taps.length - 1 && (
-              <button type="button" onClick={() => move(i, 1)}>
-                Move down
-              </button>
-            )}
-            <button type="button" onClick={() => remove(t)}>
-              Remove
-            </button>
-            {t.keg ? (
-              kegView(t.keg)
-            ) : (
-              <div>
-                <button type="button" onClick={() => setEditing({ kind: "add", tapId: t.id })}>
-                  Add keg
-                </button>
-                {waiting.length > 0 && (
-                  <form onSubmit={(e) => putOnTap(t, e)}>
-                    <label>
-                      Waiting keg
-                      <select name="keg">
-                        {waiting.map((k) => (
-                          <option key={k.id} value={k.id}>
-                            {k.beer_name}, {typeLabel(k)}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <button type="submit">Put on tap</button>
-                  </form>
-                )}
+          <li key={t.id}>
+            <article className="card tap-card" aria-label={t.label}>
+              <div className="tap-head">
+                <h3>
+                  {t.position}. {t.label}
+                  {!t.enabled && " (disabled)"}
+                </h3>
+                <div className="tap-tools">
+                  <IconButton label="Rename" onClick={() => setRenaming(renaming === t.id ? null : t.id)}>
+                    <Pencil aria-hidden="true" />
+                  </IconButton>
+                  {i > 0 && (
+                    <IconButton label="Move up" onClick={() => move(i, -1)}>
+                      <ArrowUp aria-hidden="true" />
+                    </IconButton>
+                  )}
+                  {i < taps.length - 1 && (
+                    <IconButton label="Move down" onClick={() => move(i, 1)}>
+                      <ArrowDown aria-hidden="true" />
+                    </IconButton>
+                  )}
+                  <IconButton
+                    label={t.enabled ? "Disable" : "Enable"}
+                    onClick={() => change("PATCH", `/api/taps/${t.id}`, { enabled: !t.enabled })}
+                  >
+                    <Power aria-hidden="true" />
+                  </IconButton>
+                  <IconButton label="Remove" onClick={() => remove(t)}>
+                    <Trash2 aria-hidden="true" />
+                  </IconButton>
+                </div>
               </div>
-            )}
+              {renaming === t.id && (
+                <form className="inline-form" aria-label={`Rename ${t.label}`} onSubmit={(e) => rename(t, e)}>
+                  <label>
+                    Label
+                    <input name="label" defaultValue={t.label} />
+                  </label>
+                  <div className="btn-row">
+                    <button type="submit" className="btn btn-primary">
+                      Save
+                    </button>
+                    <button type="button" className="btn" onClick={() => setRenaming(null)}>
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+              {t.keg ? (
+                <KegCard
+                  key={t.keg.id}
+                  keg={t.keg}
+                  types={types}
+                  units={units}
+                  onChanged={() => run(load)}
+                  onSignedOut={onSignedOut}
+                />
+              ) : (
+                <div className="empty-tap">
+                  <div className="empty-glass" aria-hidden="true">
+                    <GlassWater />
+                  </div>
+                  <p className="muted">Empty tap</p>
+                  <div className="btn-row">
+                    <button type="button" className="btn btn-primary" onClick={() => setAddingTo(t.id)}>
+                      Add keg
+                    </button>
+                  </div>
+                  {waiting.length > 0 && (
+                    <form className="inline-form put-on-tap" onSubmit={(e) => putOnTap(t, e)}>
+                      <label>
+                        Waiting keg
+                        <select name="keg">
+                          {waiting.map((k) => (
+                            <option key={k.id} value={k.id}>
+                              {k.beer_name}, {typeLabel(k)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <button type="submit" className="btn">
+                        Put on tap
+                      </button>
+                    </form>
+                  )}
+                </div>
+              )}
+            </article>
           </li>
         ))}
       </ol>
-      <button type="button" onClick={() => change("POST", "/api/taps", {})}>
-        Add tap
-      </button>
-      <section aria-labelledby={deckId}>
-        <h3 id={deckId}>On deck</h3>
-        <ul>
-          {waiting.map((k) => (
-            <li key={k.id}>{kegView(k)}</li>
-          ))}
-        </ul>
-        <button type="button" onClick={() => setEditing({ kind: "add" })}>
-          Add keg
-        </button>
-      </section>
-      {editing.kind !== "none" && (
-        <KegForm
-          key={`${units}-${editing.kind === "edit" ? editing.keg.id : `add-${editing.tapId}`}`}
-          keg={editing.kind === "edit" ? editing.keg : undefined}
-          tapId={editing.kind === "add" ? editing.tapId : undefined}
-          units={units}
-          onSaved={saved}
-          onCancel={() => setEditing({ kind: "none" })}
-          onSignedOut={onSignedOut}
-        />
+      {addingTo !== null && (
+        <Modal title="Add keg" onClose={() => setAddingTo(null)}>
+          <KegForm
+            key={units}
+            tapId={addingTo}
+            units={units}
+            onSaved={saved}
+            onCancel={() => setAddingTo(null)}
+            onSignedOut={onSignedOut}
+          />
+        </Modal>
       )}
-      {error && <p role="alert">{error}</p>}
+      {addingTap && (
+        <Modal title="Add tap" onClose={() => setAddingTap(false)}>
+          <AddTapForm onSaved={saved} onCancel={() => setAddingTap(false)} onSignedOut={onSignedOut} />
+        </Modal>
+      )}
     </section>
+  );
+}
+
+/**
+ * AddTapForm is the Add tap dialog's form: an optional Label (1 to 50 characters; the API is
+ * the validator and its field message shows under it) and Save, which sends POST /api/taps with
+ * `{}` when the label is blank, so the API names the tap "Tap N", else `{"label"}`. Success calls
+ * `onSaved`, a 401 `onSignedOut`.
+ */
+function AddTapForm({ onSaved, onCancel, onSignedOut }: { onSaved: () => void; onCancel: () => void; onSignedOut: () => void }) {
+  const id = useId();
+  const [label, setLabel] = useState("");
+  const [fieldError, setFieldError] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setError("");
+    setFieldError("");
+    setSaving(true);
+    try {
+      await apiFetch("POST", "/api/taps", label.trim() ? { label } : {});
+      onSaved();
+    } catch (err) {
+      if (isUnauthenticated(err)) onSignedOut();
+      else if (err instanceof ApiError && err.fields?.label) setFieldError(err.fields.label);
+      else setError(errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form className="inline-form" onSubmit={submit} noValidate aria-label="Add tap">
+      <div className="field">
+        <label>
+          Label
+          <input
+            value={label}
+            maxLength={50}
+            aria-invalid={fieldError ? true : undefined}
+            aria-describedby={fieldError ? `${id}-label-error` : undefined}
+            onChange={(e) => setLabel(e.target.value)}
+          />
+        </label>
+        {fieldError && (
+          <span id={`${id}-label-error`} className="field-error">
+            {fieldError}
+          </span>
+        )}
+      </div>
+      {error && <p role="alert">{error}</p>}
+      <div className="btn-row">
+        <button type="submit" className="btn btn-primary" disabled={saving}>
+          Save
+        </button>
+        <button type="button" className="btn" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** IconButton is a square icon-only button named by `label` (also its tooltip). */
+function IconButton({ label, onClick, children }: { label: string; onClick: () => void; children: JSX.Element }) {
+  return (
+    <button type="button" className="icon-btn" aria-label={label} title={label} onClick={onClick}>
+      {children}
+    </button>
   );
 }

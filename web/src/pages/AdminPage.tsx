@@ -1,15 +1,21 @@
+import { Beer } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Admin, apiFetch, errorMessage, isUnauthenticated, Units } from "../api";
+import { Admin, apiFetch, errorMessage, isUnauthenticated, Settings, Units } from "../api";
 import AdminsPanel from "../components/AdminsPanel";
 import BeersPanel from "../components/BeersPanel";
 import BrewfatherPanel from "../components/BrewfatherPanel";
 import KegHistory from "../components/KegHistory";
 import LoginForm from "../components/LoginForm";
+import OnDeckPanel from "../components/OnDeckPanel";
 import PasswordForm from "../components/PasswordForm";
 import SettingsPanel from "../components/SettingsPanel";
 import SetupForm from "../components/SetupForm";
+import SideNav, { GroupKey, groupOf, PageKey } from "../components/SideNav";
 import TapsPanel from "../components/TapsPanel";
+import ThemeControl from "../components/ThemeControl";
 import TokensPanel from "../components/TokensPanel";
+import { loadTheme, saveTheme, Theme } from "../prefs";
+import "./AdminPage.css";
 
 type View =
   | { kind: "loading" }
@@ -19,22 +25,33 @@ type View =
   | { kind: "error"; message: string };
 
 /**
- * AdminPage is the admin app at `/` and every non-display path. On load it asks
- * GET /api/setup and GET /api/session, then shows the first-admin setup form, the sign-in
- * form or the signed-in view with the taps, beer library, Brewfather, display settings, keg
- * history, admins, tokens and change-password sections. A keg change in the taps panel that can move a beer on or off a tap or
- * into history (not a pour or level set) reloads the keg history and the beer library's artwork.
- * A Brewfather import or finished sync reloads the beer library. Volumes in the taps panel and
- * keg history follow the units setting SettingsPanel loads and saves, US until it loads. Any 401 from a later call, including the panels' calls, returns to the
- * sign-in form.
+ * AdminPage is the admin app at `/` and every non-display path, rendered inside one
+ * `div.admin.theme-<light|dark|system>` root that scopes all admin styles. The theme is this
+ * browser's saved choice (prefs; default system, which follows the device through CSS),
+ * applied on every view, sign-in and setup included; ThemeControl at the bottom of the side
+ * panel changes and saves it, with no server request. On load it asks GET /api/setup and
+ * GET /api/session, then shows the first-admin setup form, the sign-in form, a loading note or
+ * an error, each in a centered card with no side panel. Signed in, it is a shell: SideNav (side
+ * panel, or top bar and drawer on a phone) and a `main` that mounts only the current page, Taps
+ * after every sign-in. The page's primary action (Taps: Add tap) is also portaled into the
+ * top bar's slot. Since a page mounts when shown, it fetches fresh data each time and pages need
+ * not refresh each other.
+ *
+ * After each sign-in it reads GET /api/health once for the version (a failure or empty
+ * version shows "unknown", with no error) and GET /api/settings once for the volume units,
+ * which Display Settings' saves update too; units stay US until then or if that read fails.
+ * Any 401, from those reads or from a page, returns to the sign-in form.
  */
 export default function AdminPage() {
   const [view, setView] = useState<View>({ kind: "loading" });
-  // Bumped when TapsPanel reports a keg change: KegHistory remounts and BeersPanel re-fetches its list.
-  const [kegChanges, setKegChanges] = useState(0);
-  // Bumped when BrewfatherPanel imports or syncs beers: BeersPanel re-fetches its list.
-  const [beerChanges, setBeerChanges] = useState(0);
+  const [theme, setTheme] = useState<Theme>(loadTheme);
+  const [page, setPage] = useState<PageKey>("taps");
+  const [openGroup, setOpenGroup] = useState<GroupKey | null>("menu");
   const [units, setUnits] = useState<Units>("us");
+  // null until the health check answers, so "unknown" never flashes before the real version.
+  const [version, setVersion] = useState<string | null>(null);
+  // The phone top bar's element for the page's primary action, set once SideNav mounts.
+  const [actionSlot, setActionSlot] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,7 +63,34 @@ export default function AdminPage() {
     };
   }, []);
 
-  const signedIn = (admin: Admin) => setView({ kind: "signedIn", admin });
+  const isSignedIn = view.kind === "signedIn";
+  useEffect(() => {
+    if (!isSignedIn) return;
+    let cancelled = false;
+    apiFetch<{ version?: string }>("GET", "/api/health")
+      .then((h) => {
+        if (!cancelled) setVersion(h.version ?? "");
+      })
+      .catch(() => {
+        if (!cancelled) setVersion("");
+      });
+    apiFetch<Settings>("GET", "/api/settings")
+      .then((s) => {
+        if (!cancelled) setUnits(s.units);
+      })
+      .catch((err) => {
+        if (!cancelled && isUnauthenticated(err)) toLogin();
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isSignedIn]);
+
+  function signedIn(admin: Admin) {
+    setPage("taps");
+    setOpenGroup("menu");
+    setView({ kind: "signedIn", admin });
+  }
   const toLogin = () => setView({ kind: "login" });
 
   async function signOut() {
@@ -61,32 +105,85 @@ export default function AdminPage() {
     toLogin();
   }
 
+  function changeTheme(t: Theme) {
+    setTheme(t);
+    saveTheme(t);
+  }
+
+  function select(p: PageKey) {
+    setPage(p);
+    setOpenGroup(groupOf(p));
+  }
+
+  if (view.kind !== "signedIn") {
+    return (
+      <div className={`admin theme-${theme}`}>
+        <main className="auth">
+          <div className="card auth-card">
+            <h1 className="brand">
+              <Beer aria-hidden="true" />
+              Beer Menu
+            </h1>
+            {view.kind === "loading" && <p className="muted">Loading…</p>}
+            {view.kind === "error" && <p role="alert">{view.message}</p>}
+            {view.kind === "setup" && <SetupForm onCreated={signedIn} onSetupDone={toLogin} />}
+            {view.kind === "login" && <LoginForm onSignedIn={signedIn} />}
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
-    <main>
-      <h1>Beer Menu</h1>
-      {view.kind === "loading" && <p>Loading…</p>}
-      {view.kind === "error" && <p role="alert">{view.message}</p>}
-      {view.kind === "setup" && <SetupForm onCreated={signedIn} onSetupDone={toLogin} />}
-      {view.kind === "login" && <LoginForm onSignedIn={signedIn} />}
-      {view.kind === "signedIn" && (
-        <section>
-          <p>Signed in as {view.admin.username}</p>
-          <button type="button" onClick={signOut}>
-            Sign out
-          </button>
-          <TapsPanel units={units} onSignedOut={toLogin} onKegsChanged={() => setKegChanges((n) => n + 1)} />
-          {/* Both counters only grow, so their sum changes whenever either does. */}
-          <BeersPanel onSignedOut={toLogin} refresh={kegChanges + beerChanges} />
-          <BrewfatherPanel onSignedOut={toLogin} onBeersChanged={() => setBeerChanges((n) => n + 1)} />
-          <SettingsPanel onSignedOut={toLogin} onChange={(s) => setUnits(s.units)} />
-          <KegHistory key={kegChanges} units={units} onSignedOut={toLogin} />
-          <AdminsPanel me={view.admin} onSignedOut={toLogin} />
-          <TokensPanel onSignedOut={toLogin} />
-          <PasswordForm onSignedOut={toLogin} />
-        </section>
-      )}
-    </main>
+    <div className={`admin theme-${theme}`}>
+      <div className="shell">
+        <SideNav
+          page={page}
+          openGroup={openGroup}
+          onGroup={(g) => setOpenGroup(openGroup === g ? null : g)}
+          onSelect={select}
+          version={version}
+          onSignOut={signOut}
+          theme={<ThemeControl theme={theme} onChange={changeTheme} />}
+          actionSlot={setActionSlot}
+        />
+        <main className="content">
+          {pageView(page, view.admin, units, actionSlot, toLogin, (s) => setUnits(s.units))}
+        </main>
+      </div>
+    </div>
   );
+}
+
+/** pageView is the one page component shown for `page`. */
+function pageView(
+  page: PageKey,
+  me: Admin,
+  units: Units,
+  actionSlot: HTMLElement | null,
+  toLogin: () => void,
+  onSettings: (s: Settings) => void,
+) {
+  switch (page) {
+    case "taps":
+      return <TapsPanel units={units} actionSlot={actionSlot} onSignedOut={toLogin} />;
+    case "on-deck":
+      return <OnDeckPanel units={units} onSignedOut={toLogin} />;
+    case "keg-history":
+      return <KegHistory units={units} onSignedOut={toLogin} />;
+    case "beers":
+      return <BeersPanel onSignedOut={toLogin} />;
+    case "display":
+      return <SettingsPanel onSignedOut={toLogin} onChange={onSettings} />;
+    case "admins":
+      return <AdminsPanel me={me} onSignedOut={toLogin} />;
+    case "tokens":
+      return <TokensPanel onSignedOut={toLogin} />;
+    case "password":
+      return <PasswordForm onSignedOut={toLogin} />;
+    case "brewfather":
+      return <BrewfatherPanel onSignedOut={toLogin} />;
+  }
 }
 
 /** loadView picks the first view from the setup state and the current session. */

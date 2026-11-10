@@ -1,14 +1,16 @@
 import { FormEvent, useEffect, useId, useState } from "react";
 import { ApiError, apiFetch, Beer, errorMessage, isUnauthenticated, Keg, KegType, Units } from "../api";
 import { inputToLitres, volumeText, volumeToLitres, volumeUnit } from "../units";
+import BeerPicker from "./BeerPicker";
 
 type Field = "beer_id" | "type" | "size_l" | "remaining_l";
 type Values = Record<Field, string>;
 
 /**
  * KegForm adds a keg (POST /api/kegs), on tap `tapId` when given or waiting otherwise, or,
- * given `keg`, corrects it (PATCH /api/kegs/{id}). It loads the current beers (GET /api/beers)
- * and the keg type table (GET /api/keg-types) on mount. Size and remaining are shown and typed
+ * given `keg`, corrects it (PATCH /api/kegs/{id}). It loads the current beers (GET /api/beers),
+ * chosen by typing in BeerPicker (newest first), and the keg type table (GET /api/keg-types) on
+ * mount. Size and remaining are shown and typed
  * in `units` (US gallons or litres, default US) and sent in litres; the form reads `units` once,
  * so a caller changing it remounts the form. On add, choosing a type prefills size and remaining
  * from the type's size; on edit it changes only the type, keeping the size (FR-020). Volumes are sent only when they differ from what was
@@ -107,7 +109,7 @@ export default function KegForm({
     const errId = `${id}-${name}-error`;
     const msg = fieldErrors[name];
     return (
-      <div>
+      <div className="field">
         <label>
           {label}
           {control({
@@ -116,7 +118,11 @@ export default function KegForm({
             "aria-describedby": msg ? errId : undefined,
           })}
         </label>
-        {msg && <span id={errId}>{msg}</span>}
+        {msg && (
+          <span id={errId} className="field-error">
+            {msg}
+          </span>
+        )}
       </div>
     );
   }
@@ -132,17 +138,20 @@ export default function KegForm({
   );
 
   return (
-    <form onSubmit={submit} noValidate aria-label={keg ? `Edit keg of ${keg.beer_name}` : "Add keg"}>
-      {field("beer_id", "Beer", (common) => (
-        <select {...common} onChange={(e) => setValues({ ...values, beer_id: e.target.value })}>
-          <option value="">Choose a beer</option>
-          {beers.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-            </option>
-          ))}
-        </select>
-      ))}
+    <form className="inline-form" onSubmit={submit} noValidate aria-label={keg ? `Edit keg of ${keg.beer_name}` : "Add keg"}>
+      <div className="field">
+        <BeerPicker
+          beers={beers}
+          value={values.beer_id ? Number(values.beer_id) : null}
+          onChange={(beerId) => setValues({ ...values, beer_id: String(beerId) })}
+          errorId={fieldErrors.beer_id ? `${id}-beer_id-error` : undefined}
+        />
+        {fieldErrors.beer_id && (
+          <span id={`${id}-beer_id-error`} className="field-error">
+            {fieldErrors.beer_id}
+          </span>
+        )}
+      </div>
       {field("type", "Type", (common) => (
         <select {...common} onChange={(e) => prefill(types, e.target.value, values)}>
           {types.map((t) => (
@@ -155,12 +164,14 @@ export default function KegForm({
       {field("size_l", `Size (${volumeUnit(units)})`, volume("size_l"))}
       {field("remaining_l", `Remaining (${volumeUnit(units)})`, volume("remaining_l"))}
       {error && <p role="alert">{error}</p>}
-      <button type="submit" disabled={saving}>
-        Save
-      </button>
-      <button type="button" onClick={onCancel}>
-        Cancel
-      </button>
+      <div className="btn-row">
+        <button type="submit" className="btn btn-primary" disabled={saving}>
+          Save
+        </button>
+        <button type="button" className="btn" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
     </form>
   );
 }

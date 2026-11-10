@@ -1,0 +1,974 @@
+/*
+ * Admin app styles. Vite bundles every stylesheet into one file that also loads on /display,
+ * so every rule sits under .admin (research R1); the only exception is the body:has rule,
+ * which cannot match on /display. No style attributes anywhere (CSP has no style-src): the
+ * side panel width arrives as --nav-width, set through CSSOM by SideNav (research R8).
+ *
+ * Royal blue (--accent) marks things, never words: fills, bars, rings, strokes. Text always
+ * uses --text or --muted (research R7). Light contrast, text on card: --text 16.9:1,
+ * --muted 6.3:1 on --bg; white on --accent 4.85:1.
+ */
+.admin {
+  --bg: #f4f6fb;
+  --surface: #ffffff;
+  --side: #ffffff;
+  --text: #1a1d24;
+  --muted: #555b6a;
+  --border: #dfe3ec;
+  --accent: #4169e1;
+  --accent-tint: rgba(65, 105, 225, 0.12);
+  --track: #e3e7f0;
+  --scrim: rgba(11, 12, 15, 0.55);
+  --danger: #c0352b;
+  --nav-width: 256px;
+  --radius: 12px;
+
+  color-scheme: light;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+body:has(> #root > .admin) {
+  margin: 0;
+  background: var(--bg);
+}
+
+/*
+ * Dark tokens (research R7): for theme-dark, and for theme-system while the device prefers
+ * dark, so System follows the device live with no script (FR-011). The accent stays the same.
+ * Dark contrast: --text 14.6:1, --muted 7.4:1.
+ */
+.admin.theme-dark {
+  --bg: #0b0c0f;
+  --surface: #17191f;
+  --side: #111317;
+  --text: #e8eaf0;
+  --muted: #a3a8b5;
+  --border: #2a2e37;
+  --accent-tint: rgba(65, 105, 225, 0.22);
+  --track: #2a2e37;
+  --danger: #e5534b;
+
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  .admin.theme-system {
+    --bg: #0b0c0f;
+    --surface: #17191f;
+    --side: #111317;
+    --text: #e8eaf0;
+    --muted: #a3a8b5;
+    --border: #2a2e37;
+    --accent-tint: rgba(65, 105, 225, 0.22);
+    --track: #2a2e37;
+    --danger: #e5534b;
+
+    color-scheme: dark;
+  }
+}
+
+.admin *,
+.admin *::before,
+.admin *::after {
+  box-sizing: border-box;
+}
+
+.admin h1,
+.admin h2,
+.admin h3 {
+  margin: 0;
+  line-height: 1.25;
+}
+
+.admin h2 {
+  font-size: 1.35rem;
+}
+
+.admin h3 {
+  font-size: 1.05rem;
+}
+
+.admin p {
+  margin: 0.25rem 0;
+}
+
+.admin .muted {
+  color: var(--muted);
+}
+
+/* Visually hidden but read by screen readers (used for legends and labels). */
+.admin .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Cards */
+
+.admin .card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.admin .card + .card {
+  margin-top: 16px;
+}
+
+.admin .card > h2,
+.admin .card > h3 {
+  margin-bottom: 12px;
+}
+
+/* Buttons */
+
+.admin button {
+  font: inherit;
+  color: inherit;
+}
+
+.admin .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.admin .btn:hover {
+  border-color: var(--muted);
+}
+
+.admin .btn:disabled,
+.admin .icon-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.admin .btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+.admin .btn-primary:hover {
+  border-color: var(--accent);
+  filter: brightness(1.08);
+}
+
+.admin .btn svg,
+.admin .icon-btn svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+
+.admin .icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.admin .icon-btn:hover {
+  background: var(--accent-tint);
+  color: var(--text);
+}
+
+.admin .btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* Form fields */
+
+.admin label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-weight: 500;
+}
+
+.admin label:has(> input[type="checkbox"]),
+.admin label:has(> input[type="radio"]) {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin input,
+.admin select,
+.admin textarea {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-height: 40px;
+  padding: 0 10px;
+  width: 100%;
+  font-weight: 400;
+}
+
+.admin textarea {
+  padding: 8px 10px;
+}
+
+.admin input[type="checkbox"],
+.admin input[type="radio"] {
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+.admin .field {
+  margin-bottom: 12px;
+}
+
+.admin .field-error,
+.admin [role="alert"] {
+  display: block;
+  margin-top: 4px;
+  padding-left: 8px;
+  border-left: 3px solid var(--danger);
+  color: var(--text);
+}
+
+.admin form > button,
+.admin form > .btn-row {
+  margin-top: 4px;
+}
+
+/* Tables scroll inside their card, never the page (FR-009). */
+
+.admin .table-wrap {
+  overflow-x: auto;
+}
+
+.admin table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.admin th,
+.admin td {
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.admin th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.admin td .btn + .btn {
+  margin-left: 6px;
+}
+
+/* Focus ring: accent outline on every focusable control. */
+
+.admin :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Sign-in and setup: one centered card (FR-013). */
+
+.admin .auth {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 16px;
+}
+
+.admin .auth-card {
+  width: min(420px, 100%);
+}
+
+.admin .brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  font-size: 1.5rem;
+}
+
+.admin .brand svg,
+.admin .side-brand svg {
+  stroke: var(--accent);
+}
+
+.admin .stack-form {
+  display: grid;
+  gap: 12px;
+  max-width: 480px;
+}
+
+.admin .stack-form > h2 {
+  margin-bottom: 0;
+}
+
+.admin .stack-form > button {
+  justify-self: start;
+}
+
+/* Shell: side panel column and main area (laptop, 768 px and wider). */
+
+.admin .shell {
+  display: grid;
+  grid-template-columns: var(--nav-width) minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+/* The top bar and drawer backdrop exist only on phones (see the media query below). */
+.admin .topbar,
+.admin .nav-backdrop {
+  display: none;
+}
+
+.admin .side-nav {
+  min-width: 0;
+  background: var(--side);
+  border-right: 1px solid var(--border);
+}
+
+/*
+ * The nav stretches with the grid row, so its background runs the full page height; this
+ * inner column sticks to the viewport so brand, tree and bottom block stay in view while the
+ * main area scrolls. It also anchors the resize handle to the visible height.
+ */
+.admin .side-inner {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  padding: 16px 12px;
+}
+
+.admin .nav-tree {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.admin .side-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 12px 16px;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.admin .nav-tree,
+.admin .nav-pages {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin .nav-pages {
+  padding: 2px 0 6px 14px;
+}
+
+.admin .nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.admin .nav-item svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  stroke: var(--muted);
+}
+
+.admin .nav-item:hover {
+  background: var(--accent-tint);
+}
+
+.admin .nav-group {
+  font-weight: 600;
+}
+
+/* Current page: accent bar and tint, accent icon stroke; the text stays neutral. */
+.admin .nav-page[aria-current="page"] {
+  background: var(--accent-tint);
+  box-shadow: inset 3px 0 0 var(--accent);
+  font-weight: 600;
+}
+
+.admin .nav-page[aria-current="page"] svg {
+  stroke: var(--accent);
+}
+
+.admin .nav-bottom {
+  display: grid;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+/*
+ * Theme control: a segmented radio group. Each native radio is transparent and covers its
+ * segment, so the whole segment is the click and touch target; the selected one is filled
+ * with the accent and white text.
+ */
+.admin .theme-control {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+  margin: 0;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.admin .theme-control .theme-option {
+  position: relative;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 0 4px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.admin .theme-control .theme-option input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.admin .theme-control .theme-option svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.admin .theme-control .theme-option.selected {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.admin .theme-control .theme-option:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.admin .nav-version {
+  padding: 0 12px;
+  font-size: 0.85rem;
+}
+
+.admin .resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.admin .resize-handle:hover,
+.admin .resize-handle:focus-visible {
+  background: var(--border);
+}
+
+.admin .resize-handle.dragging {
+  background: var(--accent);
+}
+
+.admin .content {
+  min-width: 0;
+  padding: 24px;
+}
+
+/* Page header: title and summary on the left, primary action on the right. */
+
+.admin .page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.admin .card > .page-header {
+  margin-bottom: 12px;
+}
+
+.admin .page-title {
+  margin-bottom: 16px;
+}
+
+.admin .plain-list {
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.admin .plain-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+/*
+ * Dialogs (native <dialog>, rendered inside .admin so these rules reach it). The backdrop
+ * gets a fallback because older browsers do not let ::backdrop inherit custom properties.
+ */
+.admin dialog.modal {
+  position: fixed;
+  width: calc(100% - 32px);
+  max-width: 480px;
+  max-height: calc(100% - 32px);
+  margin: auto;
+  padding: 20px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.admin dialog.modal::backdrop {
+  background: var(--scrim, rgba(11, 12, 15, 0.55));
+}
+
+.admin dialog.modal > h2 {
+  margin: 0 52px 16px 0;
+}
+
+.admin dialog.modal .modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+}
+
+.admin dialog.modal .inline-form {
+  margin-top: 0;
+}
+
+/*
+ * Beer picker (combobox): a search icon inside the field, the list inline below it (so a
+ * dialog's scroll area never clips it), the active option tinted with neutral text.
+ */
+.admin .beer-picker {
+  display: grid;
+  gap: 4px;
+}
+
+.admin .beer-picker > label {
+  display: block;
+}
+
+.admin .picker-field {
+  position: relative;
+}
+
+.admin .picker-field svg {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  width: 16px;
+  height: 16px;
+  transform: translateY(-50%);
+  stroke: var(--muted);
+  pointer-events: none;
+}
+
+.admin .picker-field input {
+  padding-left: 34px;
+}
+
+.admin .beer-picker [role="listbox"] {
+  max-height: 240px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.admin .beer-picker [role="listbox"]:empty {
+  display: none;
+}
+
+.admin .beer-picker [role="option"] {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.admin .beer-picker [role="option"]:hover,
+.admin .beer-picker [role="option"].active {
+  background: var(--accent-tint);
+}
+
+.admin .beer-picker [role="option"][aria-selected="true"] {
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.admin .picker-empty {
+  padding: 4px 10px;
+}
+
+.admin .secret-box {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.admin .secret-box code {
+  display: block;
+  margin: 8px 0;
+  word-break: break-all;
+}
+
+/* Taps: two-column card grid. */
+
+.admin .tap-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin .tap-grid > li {
+  display: flex;
+}
+
+.admin .tap-card {
+  flex: 1;
+  min-width: 0;
+}
+
+.admin .tap-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.admin .tap-tools {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+
+.admin .inline-form {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.admin .inline-form .field {
+  margin-bottom: 0;
+}
+
+.admin .inline-form .btn-row {
+  margin-top: 4px;
+}
+
+.admin .put-on-tap {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+}
+
+.admin .empty-tap {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  text-align: center;
+}
+
+.admin .empty-tap .put-on-tap,
+.admin .empty-tap .inline-form {
+  justify-self: stretch;
+  text-align: left;
+}
+
+.admin .empty-glass {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 72px;
+  border: 2px dashed var(--border);
+  border-radius: 6px 6px 14px 14px;
+}
+
+.admin .empty-glass svg {
+  width: 24px;
+  height: 24px;
+  stroke: var(--muted);
+}
+
+/* KegCard */
+
+.admin .keg-summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.admin .keg-facts {
+  flex: 1;
+  min-width: 0;
+}
+
+.admin .keg-beer {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.admin .level-bar {
+  display: block;
+  width: 100%;
+  height: 8px;
+  margin: 6px 0 2px;
+  border: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--track);
+  appearance: none;
+}
+
+.admin .level-bar::-webkit-progress-bar {
+  background: var(--track);
+}
+
+.admin .level-bar::-webkit-progress-value {
+  background: var(--accent);
+}
+
+.admin .level-bar::-moz-progress-bar {
+  background: var(--accent);
+}
+
+/*
+ * Phones (below 768 px): the side panel becomes an off-canvas drawer behind the top bar's
+ * menu button, cards stack in one column, nothing scrolls sideways except tables inside their
+ * card (FR-009), and every control is at least 44 x 44 px (FR-028).
+ */
+@media (max-width: 767.98px) {
+  body:has(> #root > .admin) {
+    overflow-x: hidden;
+  }
+
+  .admin .shell {
+    display: block;
+  }
+
+  .admin .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 60px;
+    padding: 0 8px;
+    background: var(--side);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .admin .topbar-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 1.05rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .admin .topbar .icon-btn {
+    color: var(--text);
+  }
+
+  /* Hidden, not just moved, while closed so its items cannot take keyboard focus. */
+  .admin .side-nav {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 40;
+    width: 300px;
+    max-width: 85vw;
+    height: auto;
+    visibility: hidden;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+  }
+
+  .admin .side-nav.nav-open {
+    visibility: visible;
+    transform: none;
+  }
+
+  .admin .side-inner {
+    position: static;
+    height: 100%;
+  }
+
+  .admin .nav-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    display: block;
+    background: var(--scrim);
+  }
+
+  .admin .resize-handle {
+    display: none;
+  }
+
+  .admin .content {
+    padding: 16px;
+  }
+
+  /*
+   * The top bar shows the page title, so the page's h2 is hidden visually but stays in the
+   * accessibility tree as the main area's heading. Dialog titles stay visible.
+   */
+  .admin .content h2:not(dialog h2) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* The top bar shows the page's primary action, so the header copy is hidden: it appears once. */
+  .admin .page-header .page-action {
+    display: none;
+  }
+
+  .admin .tap-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin .keg-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .admin .keg-actions .btn {
+    padding: 0 6px;
+  }
+
+  .admin button,
+  .admin .btn,
+  .admin .nav-item,
+  .admin input,
+  .admin select {
+    min-height: 44px;
+  }
+
+  .admin textarea {
+    min-height: 88px;
+  }
+
+  .admin .icon-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .admin input[type="checkbox"],
+  .admin input[type="radio"] {
+    width: 44px;
+    height: 44px;
+  }
+
+  .admin .theme-control .theme-option {
+    min-height: 44px;
+  }
+
+  .admin .beer-picker [role="option"] {
+    min-height: 44px;
+  }
+
+  .admin .theme-control .theme-option input {
+    width: 100%;
+    height: 100%;
+  }
+}

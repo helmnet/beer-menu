@@ -1,24 +1,28 @@
+import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { apiFetch, Beer, errorMessage, isUnauthenticated } from "../api";
 import BeerArt from "./BeerArt";
 import BeerForm from "./BeerForm";
+import Modal from "./Modal";
 
-/** Editing is which form is open: none, the add form, or the edit form for one beer. */
+/** Editing is which dialog is open: none, Add beer, or Edit for one beer. */
 type Editing = { kind: "none" } | { kind: "add" } | { kind: "edit"; beer: Beer };
 
 /**
- * BeersPanel is the admin beer library: it lists current beers (GET /api/beers) with their
- * artwork, drawn from each beer's `color` with no extra request as a pint glass when `on_tap`
- * and a corny keg otherwise, name, style, ABV and status, and opens BeerForm to add a beer or edit one. "Show archived" switches to the
- * archived beers (GET /api/beers?archived=true); current beers can be archived and archived
- * ones restored (PATCH {"archived": ...}), and any beer deleted after a confirm prompt
- * (DELETE /api/beers/{id}). Beers imported from Brewfather are labelled "Brewfather", with
- * a note when Brewfather no longer has their batch or archived it while a keg is current, and
- * have a Re-sync button (POST /api/beers/{id}/sync). The list reloads after every change, and
- * whenever `refresh` changes (kegs changed or Brewfather imported or synced elsewhere), keeping
- * the view and any open form. Any 401 calls `onSignedOut`.
+ * BeersPanel is the Beer Library page, one card with "Add beer" in its header: it lists current
+ * beers (GET /api/beers) with their artwork, drawn from each beer's `color` with no extra request
+ * as a pint glass when `on_tap` and a corny keg otherwise, name, style, ABV and status. "Add beer"
+ * and each beer's "Edit" open BeerForm in a dialog titled "Add beer" or "Edit <name>"; a server
+ * error keeps it open with the field messages, and a save closes it and reloads the list. "Show archived" switches to the archived beers (GET
+ * /api/beers?archived=true); current beers can be archived and archived ones restored (PATCH
+ * {"archived": ...}), and any beer deleted after a confirm prompt (DELETE /api/beers/{id}). Beers
+ * imported from Brewfather are labelled "Brewfather", with a note when Brewfather no longer has
+ * their batch or archived it while a keg is current, and have a Re-sync button (POST
+ * /api/beers/{id}/sync). The list sits in a sideways-scrolling wrapper and reloads after every
+ * change; the page mounts fresh each time it is shown, so changes made on other pages show then.
+ * Any 401 calls `onSignedOut`.
  */
-export default function BeersPanel({ onSignedOut, refresh }: { onSignedOut: () => void; refresh?: number }) {
+export default function BeersPanel({ onSignedOut }: { onSignedOut: () => void }) {
   const [beers, setBeers] = useState<Beer[]>([]);
   const [editing, setEditing] = useState<Editing>({ kind: "none" });
   const [error, setError] = useState("");
@@ -39,7 +43,7 @@ export default function BeersPanel({ onSignedOut, refresh }: { onSignedOut: () =
   const load = async () => setBeers(await fetchList(archived));
 
   useEffect(() => {
-    // A late answer for the view just left, or an older refresh, must not replace the newer list.
+    // A late answer for the view just left must not replace the newer list.
     let stale = false;
     run(async () => {
       const list = await fetchList(archived);
@@ -48,7 +52,7 @@ export default function BeersPanel({ onSignedOut, refresh }: { onSignedOut: () =
     return () => {
       stale = true;
     };
-  }, [archived, refresh]);
+  }, [archived]);
 
   function setArchivedState(b: Beer, value: boolean) {
     run(async () => {
@@ -78,96 +82,103 @@ export default function BeersPanel({ onSignedOut, refresh }: { onSignedOut: () =
   }
 
   return (
-    <section>
-      <h2>Beer library</h2>
+    <section className="card">
+      <div className="page-header">
+        <h2>Beer Library</h2>
+        <button type="button" className="btn btn-primary" onClick={() => setEditing({ kind: "add" })}>
+          <Plus aria-hidden="true" />
+          Add beer
+        </button>
+      </div>
       <label>
         <input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} />
         Show archived
       </label>
-      <table>
-        <thead>
-          <tr>
-            <th>Artwork</th>
-            <th>Name</th>
-            <th>Style</th>
-            <th>ABV</th>
-            <th>Status</th>
-            <th>Source</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {beers.map((b) => (
-            <tr key={b.id}>
-              <td>
-                <BeerArt onTap={b.on_tap} color={b.color} name={b.name} height={64} />
-              </td>
-              <td>{b.name}</td>
-              <td>{b.style}</td>
-              <td>{b.abv === null ? "" : `${b.abv}%`}</td>
-              <td>
-                {b.status}
-                {b.archived_at && (
-                  <>
-                    {" "}
-                    <span>archived</span>
-                  </>
-                )}
-              </td>
-              <td>
-                {b.source === "brewfather" && <span>Brewfather</span>}
-                {b.sync?.not_found && (
-                  <>
-                    {" "}
-                    <span>Not found in Brewfather</span>
-                  </>
-                )}
-                {b.sync?.archive_pending && (
-                  <>
-                    {" "}
-                    <span>Archived in Brewfather; kick its keg to archive</span>
-                  </>
-                )}
-              </td>
-              <td>
-                <button type="button" onClick={() => setEditing({ kind: "edit", beer: b })}>
-                  Edit
-                </button>
-                {b.source === "brewfather" && (
-                  <button type="button" onClick={() => resync(b)}>
-                    Re-sync
-                  </button>
-                )}
-                {b.archived_at ? (
-                  <button type="button" onClick={() => setArchivedState(b, false)}>
-                    Restore
-                  </button>
-                ) : (
-                  <button type="button" onClick={() => setArchivedState(b, true)}>
-                    Archive
-                  </button>
-                )}
-                <button type="button" onClick={() => remove(b)}>
-                  Delete
-                </button>
-              </td>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Artwork</th>
+              <th>Name</th>
+              <th>Style</th>
+              <th>ABV</th>
+              <th>Status</th>
+              <th>Source</th>
+              <th>Actions</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      {editing.kind === "none" && (
-        <button type="button" onClick={() => setEditing({ kind: "add" })}>
-          Add beer
-        </button>
-      )}
+          </thead>
+          <tbody>
+            {beers.map((b) => (
+              <tr key={b.id}>
+                <td>
+                  <BeerArt onTap={b.on_tap} color={b.color} name={b.name} height={64} />
+                </td>
+                <td>{b.name}</td>
+                <td>{b.style}</td>
+                <td>{b.abv === null ? "" : `${b.abv}%`}</td>
+                <td>
+                  {b.status}
+                  {b.archived_at && (
+                    <>
+                      {" "}
+                      <span>archived</span>
+                    </>
+                  )}
+                </td>
+                <td>
+                  {b.source === "brewfather" && <span>Brewfather</span>}
+                  {b.sync?.not_found && (
+                    <>
+                      {" "}
+                      <span>Not found in Brewfather</span>
+                    </>
+                  )}
+                  {b.sync?.archive_pending && (
+                    <>
+                      {" "}
+                      <span>Archived in Brewfather; kick its keg to archive</span>
+                    </>
+                  )}
+                </td>
+                <td>
+                  <button type="button" className="btn" onClick={() => setEditing({ kind: "edit", beer: b })}>
+                    Edit
+                  </button>
+                  {b.source === "brewfather" && (
+                    <button type="button" className="btn" onClick={() => resync(b)}>
+                      Re-sync
+                    </button>
+                  )}
+                  {b.archived_at ? (
+                    <button type="button" className="btn" onClick={() => setArchivedState(b, false)}>
+                      Restore
+                    </button>
+                  ) : (
+                    <button type="button" className="btn" onClick={() => setArchivedState(b, true)}>
+                      Archive
+                    </button>
+                  )}
+                  <button type="button" className="btn" onClick={() => remove(b)}>
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       {editing.kind !== "none" && (
-        <BeerForm
-          key={editing.kind === "edit" ? editing.beer.id : "add"}
-          beer={editing.kind === "edit" ? editing.beer : undefined}
-          onSaved={saved}
-          onCancel={() => setEditing({ kind: "none" })}
-          onSignedOut={onSignedOut}
-        />
+        <Modal
+          title={editing.kind === "edit" ? `Edit ${editing.beer.name}` : "Add beer"}
+          onClose={() => setEditing({ kind: "none" })}
+        >
+          <BeerForm
+            beer={editing.kind === "edit" ? editing.beer : undefined}
+            onSaved={saved}
+            onCancel={() => setEditing({ kind: "none" })}
+            onSignedOut={onSignedOut}
+          />
+        </Modal>
       )}
       {error && <p role="alert">{error}</p>}
     </section>

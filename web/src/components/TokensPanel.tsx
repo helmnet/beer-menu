@@ -1,18 +1,24 @@
+import { Plus } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch, errorMessage, isUnauthenticated, Token } from "../api";
+import Modal from "./Modal";
 
 /**
- * TokensPanel lists API tokens (GET /api/tokens), creates them (POST /api/tokens) and revokes
- * them after confirmation (DELETE /api/tokens/{id}). A new token's secret is shown once in a
- * dialog with a copy button and is dropped from state when the dialog closes, so it cannot be
- * shown again. Any 401 calls `onSignedOut`.
+ * TokensPanel is the API Tokens page, one card: it lists API tokens (GET /api/tokens) and
+ * revokes them after confirmation (DELETE /api/tokens/{id}). "New token" opens the "New API
+ * token" dialog with Name and Scope; a server error keeps the form open with its message. On
+ * success (POST /api/tokens) the dialog swaps the form for the secret, shown once with Copy
+ * and Close, and the list reloads. Closing the dialog, by Close or Escape, drops the secret from
+ * state, so it cannot be shown again. Any 401 calls `onSignedOut`.
  */
 export default function TokensPanel({ onSignedOut }: { onSignedOut: () => void }) {
   const [tokens, setTokens] = useState<Token[]>([]);
+  const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [scope, setScope] = useState<Token["scope"]>("read");
   const [secret, setSecret] = useState("");
   const [copied, setCopied] = useState("");
+  const [formError, setFormError] = useState("");
   const [error, setError] = useState("");
 
   async function run(action: () => Promise<void>) {
@@ -31,15 +37,34 @@ export default function TokensPanel({ onSignedOut }: { onSignedOut: () => void }
     run(load);
   }, []);
 
-  function create(e: FormEvent) {
+  function openDialog() {
+    // A create answered after its dialog closed leaves a secret behind; never show it later.
+    setSecret("");
+    setCopied("");
+    setName("");
+    setScope("read");
+    setFormError("");
+    setCreating(true);
+  }
+
+  function closeDialog() {
+    setCreating(false);
+    setSecret("");
+    setCopied("");
+  }
+
+  async function create(e: FormEvent) {
     e.preventDefault();
-    run(async () => {
+    setFormError("");
+    try {
       const created = await apiFetch<Token & { secret: string }>("POST", "/api/tokens", { name, scope });
       setSecret(created.secret);
-      setCopied("");
-      setName("");
-      await load();
-    });
+    } catch (err) {
+      if (isUnauthenticated(err)) onSignedOut();
+      else setFormError(errorMessage(err));
+      return;
+    }
+    run(load);
   }
 
   function revoke(t: Token) {
@@ -61,65 +86,88 @@ export default function TokensPanel({ onSignedOut }: { onSignedOut: () => void }
   }
 
   return (
-    <section>
-      <h2>API tokens</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Scope</th>
-            <th>Created</th>
-            <th>Last used</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {tokens.map((t) => (
-            <tr key={t.id}>
-              <td>{t.name}</td>
-              <td>{t.scope}</td>
-              <td>{new Date(t.created_at).toLocaleString()}</td>
-              <td>{t.last_used_at ? new Date(t.last_used_at).toLocaleString() : "never"}</td>
-              <td>
-                {t.revoked_at ? (
-                  "Revoked"
-                ) : (
-                  <button type="button" onClick={() => revoke(t)}>
-                    Revoke
-                  </button>
-                )}
-              </td>
+    <section className="card">
+      <div className="page-header">
+        <h2>API Tokens</h2>
+        <button type="button" className="btn btn-primary" onClick={openDialog}>
+          <Plus aria-hidden="true" />
+          New token
+        </button>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Scope</th>
+              <th>Created</th>
+              <th>Last used</th>
+              <th>Status</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      <form onSubmit={create}>
-        <label>
-          Name
-          <input value={name} onChange={(e) => setName(e.target.value)} required />
-        </label>
-        <label>
-          Scope
-          <select value={scope} onChange={(e) => setScope(e.target.value as Token["scope"])}>
-            <option value="read">read</option>
-            <option value="write">write</option>
-          </select>
-        </label>
-        <button type="submit">Create token</button>
-      </form>
+          </thead>
+          <tbody>
+            {tokens.map((t) => (
+              <tr key={t.id}>
+                <td>{t.name}</td>
+                <td>{t.scope}</td>
+                <td>{new Date(t.created_at).toLocaleString()}</td>
+                <td>{t.last_used_at ? new Date(t.last_used_at).toLocaleString() : "never"}</td>
+                <td>
+                  {t.revoked_at ? (
+                    "Revoked"
+                  ) : (
+                    <button type="button" className="btn" onClick={() => revoke(t)}>
+                      Revoke
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       {error && <p role="alert">{error}</p>}
-      {secret && (
-        <div role="dialog" aria-label="New API token">
-          <p>Copy this token now. It will not be shown again.</p>
-          <code>{secret}</code>
-          <button type="button" onClick={copy}>
-            Copy
-          </button>
-          {copied && <p>{copied}</p>}
-          <button type="button" onClick={() => setSecret("")}>
-            Close
-          </button>
-        </div>
+      {creating && (
+        <Modal title="New API token" onClose={closeDialog}>
+          {secret ? (
+            <div className="secret-box">
+              <p>Copy this token now. It will not be shown again.</p>
+              <code>{secret}</code>
+              {copied && <p>{copied}</p>}
+              <div className="btn-row">
+                <button type="button" className="btn" onClick={copy}>
+                  Copy
+                </button>
+                <button type="button" className="btn btn-primary" onClick={closeDialog}>
+                  Close
+                </button>
+              </div>
+            </div>
+          ) : (
+            <form className="inline-form" onSubmit={create}>
+              <label>
+                Name
+                <input value={name} onChange={(e) => setName(e.target.value)} required />
+              </label>
+              <label>
+                Scope
+                <select value={scope} onChange={(e) => setScope(e.target.value as Token["scope"])}>
+                  <option value="read">read</option>
+                  <option value="write">write</option>
+                </select>
+              </label>
+              {formError && <p role="alert">{formError}</p>}
+              <div className="btn-row">
+                <button type="submit" className="btn btn-primary">
+                  Create token
+                </button>
+                <button type="button" className="btn" onClick={closeDialog}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
+        </Modal>
       )}
     </section>
   );
