@@ -12,9 +12,11 @@ type Editing = { kind: "none" } | { kind: "add" } | { kind: "edit"; beer: Beer }
  * and a corny keg otherwise, name, style, ABV and status, and opens BeerForm to add a beer or edit one. "Show archived" switches to the
  * archived beers (GET /api/beers?archived=true); current beers can be archived and archived
  * ones restored (PATCH {"archived": ...}), and any beer deleted after a confirm prompt
- * (DELETE /api/beers/{id}). The list reloads after every change, and whenever `refresh`
- * changes (kegs changed elsewhere, so `on_tap` may have), keeping the view and any open form.
- * Any 401 calls `onSignedOut`.
+ * (DELETE /api/beers/{id}). Beers imported from Brewfather are labelled "Brewfather", with
+ * a note when Brewfather no longer has their batch or archived it while a keg is current, and
+ * have a Re-sync button (POST /api/beers/{id}/sync). The list reloads after every change, and
+ * whenever `refresh` changes (kegs changed or Brewfather imported or synced elsewhere), keeping
+ * the view and any open form. Any 401 calls `onSignedOut`.
  */
 export default function BeersPanel({ onSignedOut, refresh }: { onSignedOut: () => void; refresh?: number }) {
   const [beers, setBeers] = useState<Beer[]>([]);
@@ -55,6 +57,13 @@ export default function BeersPanel({ onSignedOut, refresh }: { onSignedOut: () =
     });
   }
 
+  function resync(b: Beer) {
+    run(async () => {
+      await apiFetch("POST", `/api/beers/${b.id}/sync`);
+      await load();
+    });
+  }
+
   function saved() {
     setEditing({ kind: "none" });
     run(load);
@@ -83,6 +92,7 @@ export default function BeersPanel({ onSignedOut, refresh }: { onSignedOut: () =
             <th>Style</th>
             <th>ABV</th>
             <th>Status</th>
+            <th>Source</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -105,9 +115,29 @@ export default function BeersPanel({ onSignedOut, refresh }: { onSignedOut: () =
                 )}
               </td>
               <td>
+                {b.source === "brewfather" && <span>Brewfather</span>}
+                {b.sync?.not_found && (
+                  <>
+                    {" "}
+                    <span>Not found in Brewfather</span>
+                  </>
+                )}
+                {b.sync?.archive_pending && (
+                  <>
+                    {" "}
+                    <span>Archived in Brewfather; kick its keg to archive</span>
+                  </>
+                )}
+              </td>
+              <td>
                 <button type="button" onClick={() => setEditing({ kind: "edit", beer: b })}>
                   Edit
                 </button>
+                {b.source === "brewfather" && (
+                  <button type="button" onClick={() => resync(b)}>
+                    Re-sync
+                  </button>
+                )}
                 {b.archived_at ? (
                   <button type="button" onClick={() => setArchivedState(b, false)}>
                     Restore

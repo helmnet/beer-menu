@@ -111,7 +111,7 @@ func deleteBeer(deps Deps) http.Handler {
 		if !ok {
 			return
 		}
-		if err := beers.Delete(deps.DB, id); err != nil {
+		if err := beers.Delete(deps.DB, id, deps.Now()); err != nil {
 			writeBeerError(w, r, err)
 			return
 		}

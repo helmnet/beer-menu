@@ -14,7 +14,7 @@ import (
 
 // beerFields is every field the contract's Beer schema requires.
 var beerFields = []string{"id", "name", "style", "abv", "ibu", "srm", "color", "description", "brewer", "brew_date",
-	"status", "source", "source_ref", "archived_at", "on_tap", "created_at", "updated_at"}
+	"status", "source", "source_ref", "archived_at", "on_tap", "sync", "created_at", "updated_at"}
 
 // decodeObject fails unless body is a JSON object, and returns it.
 func decodeObject(t *testing.T, body string) map[string]any {

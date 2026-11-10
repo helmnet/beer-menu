@@ -34,6 +34,7 @@ go.work.sum
 
 # beer-menu
 data/
+beer-menu-secret-key
 web/node_modules/
 web/dist/
 api/bin/

@@ -28,6 +28,35 @@ Checked against docs.brewfather.app/api and docs.brewfather.app/api/types.md:
   quickstart has a manual step against a real account (owner only, key never committed) to
   confirm the include list returns all fields. If it does not, the client switches to
   `complete=true` for list pages (one call per 50 batches either way).
+- **Probe results (owner's real account, quickstart section P, 2026-11-10)**:
+  - Count per status with `include`: Planning 1, Brewing 0, Fermenting 0, Conditioning 0,
+    Completed 2. The account has hundreds of archived batches, so `status` does filter.
+  - Every mapped field appears in the `include` response (paths of one Completed batch):
+    `_id`, `name`, `batchNo`, `status`, `brewDate`, `measuredAbv`, `estimatedIbu`,
+    `estimatedColor`, `batchNotes`, `tasteNotes`, `recipe.name`, `recipe.style.name`,
+    `recipe.abv`. (`brewer` also came back; not used.)
+  - A 50-batch `complete=true` page (no status filter) is 2,141,256 bytes, about 2 MiB, or
+    about 43 KB per batch.
+  - **Decision for T016**: list pages use `include` with the field list above, not
+    `complete=true`. The responses are much smaller and every field is present. `limit=50`
+    stays, and the 4 MiB read cap is safe for `include` pages.
+- **Quickstart sections 1 to 7 on the owner's real account (T056, 2026-11-10)**: the `include`
+  list and the `status` filter behaved as documented. Only the 3 non-archived batches were
+  listed, and an archived batch's ID imported as `archived`. One finding: Brewfather names
+  every new batch `Batch`, so the batch name hid the beer name. The name chain now treats a
+  blank or default `Batch` name as none and falls back to `recipe.name` (FR-012). Batch names
+  can carry trailing spaces; `Sanitize` trims them on import, and the batch list shows them as
+  sent. Every other step passed:
+  - connect and refuse;
+  - the key absent from logs, database and WAL;
+  - import and `already_imported`;
+  - re-sync keeping local edits;
+  - deferred archive while a keg is current;
+  - scheduled auto-import keeping its cadence across a restart;
+  - a deleted auto-import not coming back;
+  - `reconnect_needed` after a key change;
+  - startup refused on a malformed key;
+  - `configured: false` with no key.
 
 ## R2. Encryption at rest: AES-256-GCM from the standard library
 

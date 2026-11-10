@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Beer Menu API
-  version: 0.5.0
+  version: 0.6.0
   description: >
     REST API for the Beer Menu self-hosted tap list. Served under /api on the same
     origin as the admin app.
@@ -38,6 +38,8 @@ tags:
     description: Kegs, levels and keg history
   - name: menu
     description: The public menu the TV display shows
+  - name: brewfather
+    description: Brewfather account connection, batch import and sync
 security:
   - session: []
   - bearer: []
@@ -511,6 +513,47 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+  /api/beers/{id}/sync:
+    post:
+      operationId: resyncBeer
+      summary: Re-sync one imported beer from its batch
+      description: >
+        Overwrites ABV, IBU, SRM, brew date and status only; may archive the beer when its batch
+        was archived (archive waits while the beer has a current keg). A missing batch marks
+        the beer not found and changes nothing else (still 200). Allowed for archived beers.
+      tags: [beers, brewfather]
+      x-access: write
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: The beer after the re-sync and the fields that were cleaned
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [beer, adjusted]
+                properties:
+                  beer:
+                    $ref: "#/components/schemas/Beer"
+                  adjusted:
+                    type: array
+                    items: {type: string}
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/BrewfatherConflict"
+        "429":
+          $ref: "#/components/responses/BrewfatherRateLimited"
+        "502":
+          $ref: "#/components/responses/BrewfatherUnreachable"
+        "503":
+          $ref: "#/components/responses/BrewfatherNotConfigured"
 
   /api/srm-colors:
     get:
@@ -914,6 +957,238 @@ paths:
                     keg: null
                     status: fermenting
 
+  /api/brewfather:
+    get:
+      operationId: getBrewfather
+      summary: Read the Brewfather connection and sync status
+      description: Never includes the user ID or any part of the API key.
+      tags: [brewfather]
+      x-access: read
+      responses:
+        "200":
+          description: The status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrewfatherStatus"
+              example:
+                configured: true
+                connected: true
+                reconnect_needed: false
+                interval: 1h
+                sync_running: false
+                retry_at: null
+                last_sync:
+                  started_at: "2026-11-09T18:00:00Z"
+                  finished_at: "2026-11-09T18:00:03Z"
+                  ok: true
+                  message: Updated 4 beers, imported 1.
+                  updated: 4
+                  imported: 1
+                  not_found: 0
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+  /api/brewfather/connection:
+    put:
+      operationId: connectBrewfather
+      summary: Connect or replace the Brewfather account
+      description: >
+        Checks the credentials with one Brewfather batch read before storing anything. The key
+        is stored encrypted and is never returned. Admin session only. Body at most 8 KiB.
+      tags: [brewfather]
+      x-access: admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BrewfatherCredentials"
+      responses:
+        "200":
+          description: Connected; the new status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrewfatherStatus"
+        "400":
+          $ref: "#/components/responses/BrewfatherRefused"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/BrewfatherRateLimited"
+        "502":
+          $ref: "#/components/responses/BrewfatherUnreachable"
+        "503":
+          $ref: "#/components/responses/BrewfatherNotConfigured"
+    delete:
+      operationId: disconnectBrewfather
+      summary: Disconnect Brewfather and forget the credentials
+      description: Imported beers stay. Scheduled sync stops. Idempotent. Admin session only.
+      tags: [brewfather]
+      x-access: admin
+      responses:
+        "204":
+          description: Disconnected
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/brewfather/schedule:
+    put:
+      operationId: setBrewfatherSchedule
+      summary: Set the automatic sync interval
+      tags: [brewfather]
+      x-access: admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [interval]
+              properties:
+                interval:
+                  $ref: "#/components/schemas/SyncInterval"
+      responses:
+        "200":
+          description: The new status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrewfatherStatus"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/brewfather/batches:
+    get:
+      operationId: listBrewfatherBatches
+      summary: List every batch in the connected account that is not archived
+      description: >
+        Archived batches are never listed or imported. Write access because each fresh list spends the owner's Brewfather quota. Served from a
+        5-minute cache unless refresh=true. Newest brew date first. `beer_id` is read from this
+        app's database on every call, so it is never stale.
+      tags: [brewfather]
+      x-access: write
+      parameters:
+        - name: refresh
+          in: query
+          required: false
+          schema: {type: boolean, default: false}
+      responses:
+        "200":
+          description: The batches
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [batches, fetched_at]
+                properties:
+                  fetched_at: {type: string, format: date-time}
+                  batches:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/BatchSummary"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/BrewfatherNotConnected"
+        "429":
+          $ref: "#/components/responses/BrewfatherRateLimited"
+        "502":
+          $ref: "#/components/responses/BrewfatherUnreachable"
+        "503":
+          $ref: "#/components/responses/BrewfatherNotConfigured"
+  /api/brewfather/imports:
+    post:
+      operationId: importBrewfatherBatches
+      summary: Import batches as beers
+      description: >
+        Reads each batch fresh and creates one beer per batch, with the batch ID as the beer's
+        source_ref. A batch already linked to a beer is reported, not duplicated. A batch that
+        is archived in Brewfather is refused with outcome `archived`. Each batch is handled on its own; the answer is 200 with a
+        result per batch even when some fail. The request answers within 20 s: on a deadline
+        or an unreachable Brewfather the untried batches report `failed` ("Not attempted"). If
+        Brewfather's rate limit is already in force, the request is refused with 429 before any
+        call; a limit hit midway stops the remaining batches, which report `rate_limited`.
+      tags: [brewfather]
+      x-access: write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [batch_ids]
+              properties:
+                batch_ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 50
+                  uniqueItems: true
+                  items: {type: string, minLength: 1, maxLength: 100}
+      responses:
+        "200":
+          description: One result per requested batch, in request order
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [results]
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ImportResult"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/BrewfatherNotConnected"
+        "429":
+          $ref: "#/components/responses/BrewfatherRateLimited"
+        "503":
+          $ref: "#/components/responses/BrewfatherNotConfigured"
+  /api/brewfather/sync:
+    post:
+      operationId: syncBrewfather
+      summary: Run a sync now
+      description: >
+        Starts the same sync the schedule runs, in the background, and answers at once. Poll
+        GET /api/brewfather until sync_running is false, then read last_sync.
+      tags: [brewfather]
+      x-access: write
+      responses:
+        "202":
+          description: Sync started; the status with sync_running true
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrewfatherStatus"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/BrewfatherConflict"
+        "429":
+          $ref: "#/components/responses/BrewfatherRateLimited"
+        "503":
+          $ref: "#/components/responses/BrewfatherNotConfigured"
+
 components:
   securitySchemes:
     session:
@@ -1021,6 +1296,55 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    BrewfatherNotConfigured:
+      description: The server has no encryption key (BEER_MENU_SECRET_KEY or _FILE)
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+          example: {error: not_configured, message: Brewfather import is not set up on this server.}
+    BrewfatherNotConnected:
+      description: No account is connected, or its credentials need re-entering
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+          example: {error: not_connected, message: Connect a Brewfather account first.}
+    BrewfatherConflict:
+      description: >
+        not_connected, reconnect_needed, sync_running, or (re-sync) not_imported for a manual
+        beer
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+          example: {error: sync_running, message: A sync is already running.}
+    BrewfatherRefused:
+      description: Invalid body, or Brewfather refused the credentials (credentials_refused, no_batch_access)
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+          example: {error: credentials_refused, message: Brewfather refused this user ID and API key.}
+    BrewfatherRateLimited:
+      description: Brewfather's rate limit is in force
+      headers:
+        Retry-After:
+          schema: {type: integer}
+          description: Seconds until calls resume
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [error, message, retry_at]
+            properties:
+              error: {type: string}
+              message: {type: string}
+              retry_at: {type: string, format: date-time}
+          example: {error: provider_rate_limited, message: Brewfather's rate limit is reached. Try again after 18:42., retry_at: "2026-11-09T18:42:00Z"}
+    BrewfatherUnreachable:
+      description: Brewfather timed out, failed, or sent an unreadable response
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+          example: {error: provider_unreachable, message: Brewfather could not be reached; try again.}
   schemas:
     Health:
       type: object
@@ -1162,7 +1486,7 @@ components:
       type: object
       additionalProperties: false
       required: [id, name, style, abv, ibu, srm, color, description, brewer, brew_date,
-        status, source, source_ref, archived_at, on_tap, created_at, updated_at]
+        status, source, source_ref, archived_at, on_tap, sync, created_at, updated_at]
       properties:
         id: {type: integer}
         name: {type: string}
@@ -1187,6 +1511,11 @@ components:
         on_tap:
           type: boolean
           description: True when a current keg of this beer is on a tap
+        sync:
+          description: Null for a manual beer; the import sync state otherwise.
+          oneOf:
+            - $ref: "#/components/schemas/BeerSync"
+            - type: "null"
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
     BeerCreate:
@@ -1401,3 +1730,99 @@ components:
           minimum: 0
           maximum: 1
           description: Fraction of the keg left. Not rounded.
+    SyncInterval:
+      type: string
+      enum: ["off", 15m, 1h, 6h, 24h]
+    BrewfatherCredentials:
+      type: object
+      additionalProperties: false
+      required: [user_id, api_key]
+      properties:
+        user_id: {type: string, minLength: 1, maxLength: 200}
+        api_key:
+          type: string
+          minLength: 1
+          maxLength: 500
+          writeOnly: true
+    BrewfatherStatus:
+      type: object
+      additionalProperties: false
+      required: [configured, connected, reconnect_needed, interval, sync_running, retry_at, last_sync]
+      properties:
+        configured:
+          type: boolean
+          description: False when the server has no encryption key; nothing else works then.
+        connected: {type: boolean}
+        reconnect_needed:
+          type: boolean
+          description: Stored credentials cannot be decrypted with the server's current key.
+        interval:
+          $ref: "#/components/schemas/SyncInterval"
+        sync_running: {type: boolean}
+        retry_at:
+          type: [string, "null"]
+          format: date-time
+          description: While Brewfather's rate limit holds, the time calls resume.
+        last_sync:
+          oneOf:
+            - $ref: "#/components/schemas/LastSync"
+            - type: "null"
+    LastSync:
+      type: object
+      additionalProperties: false
+      required: [started_at, finished_at, ok, message, updated, imported, not_found]
+      properties:
+        started_at: {type: string, format: date-time}
+        finished_at: {type: [string, "null"], format: date-time}
+        ok: {type: [boolean, "null"]}
+        message: {type: [string, "null"]}
+        updated: {type: integer}
+        imported: {type: integer}
+        not_found: {type: integer}
+    BatchSummary:
+      type: object
+      additionalProperties: false
+      required: [id, name, number, status, brew_date, beer_id]
+      properties:
+        id: {type: string, description: Provider batch ID}
+        name: {type: string}
+        number: {type: [integer, "null"]}
+        status:
+          type: string
+          enum: [planned, fermenting, conditioning, ready]
+          description: Already mapped to a beer status.
+        brew_date: {type: [string, "null"], format: date}
+        beer_id:
+          type: [integer, "null"]
+          description: The beer imported from this batch, or null.
+    ImportResult:
+      type: object
+      additionalProperties: false
+      required: [batch_id, outcome, beer, adjusted, message]
+      properties:
+        batch_id: {type: string}
+        outcome:
+          type: string
+          enum: [imported, already_imported, archived, not_found, rate_limited, failed]
+        beer:
+          description: The new beer, or the existing one for already_imported.
+          oneOf:
+            - $ref: "#/components/schemas/Beer"
+            - type: "null"
+        adjusted:
+          type: array
+          items: {type: string}
+          description: Beer fields cleaned or emptied to pass the beer rules.
+        message: {type: [string, "null"]}
+    BeerSync:
+      type: object
+      additionalProperties: false
+      required: [synced_at, not_found, archive_pending]
+      properties:
+        synced_at: {type: [string, "null"], format: date-time}
+        not_found:
+          type: boolean
+          description: The provider no longer has this beer's batch.
+        archive_pending:
+          type: boolean
+          description: The batch was archived but the beer has a current keg.

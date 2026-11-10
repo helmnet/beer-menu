@@ -2,15 +2,18 @@
 package httpapi
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
 	"time"
 
 	"github.com/helmnet/beer-menu/api/internal/auth"
+	"github.com/helmnet/beer-menu/api/internal/importer"
 )
 
 // Deps holds what handlers need: the open database, the running app version, whether the
-// session cookie is marked Secure, the clock and the sign-in limiter.
+// session cookie is marked Secure, the clock, the sign-in limiter, the import service and the
+// context of background work.
 type Deps struct {
 	DB      *sql.DB
 	Version string
@@ -20,6 +23,11 @@ type Deps struct {
 	Now func() time.Time
 	// Limiter counts failed sign-ins. NewMux makes one on Now if nil.
 	Limiter *auth.Limiter
+	// Importer connects, lists, imports and syncs Brewfather batches.
+	Importer *importer.Service
+	// Background is the context of work a request starts but does not wait for ("Sync now"); it
+	// ends at shutdown. NewMux uses context.Background() if nil.
+	Background context.Context
 }
 
 // Route is one API endpoint. Every Route must be documented in api/openapi.yaml with an
@@ -70,6 +78,15 @@ var Routes = []Route{
 	{Method: http.MethodDelete, Path: "/api/kegs/{id}", Access: AccessWrite, Handler: deleteKeg},
 	{Method: http.MethodPost, Path: "/api/kegs/{id}/pours", Access: AccessWrite, Handler: pourKeg},
 	{Method: http.MethodGet, Path: "/api/keg-types", Access: AccessRead, Handler: listKegTypes},
+	{Method: http.MethodGet, Path: "/api/brewfather", Access: AccessRead, Handler: getBrewfather},
+	{Method: http.MethodPut, Path: "/api/brewfather/connection", Access: AccessAdmin, Handler: connectBrewfather},
+	{Method: http.MethodDelete, Path: "/api/brewfather/connection", Access: AccessAdmin, Handler: disconnectBrewfather},
+	{Method: http.MethodPut, Path: "/api/brewfather/schedule", Access: AccessAdmin, Handler: setBrewfatherSchedule},
+	// Write, not read: a fresh list spends the owner's Brewfather quota (FR-030).
+	{Method: http.MethodGet, Path: "/api/brewfather/batches", Access: AccessWrite, Handler: listBrewfatherBatches},
+	{Method: http.MethodPost, Path: "/api/brewfather/imports", Access: AccessWrite, Handler: importBrewfatherBatches},
+	{Method: http.MethodPost, Path: "/api/brewfather/sync", Access: AccessWrite, Handler: syncBrewfather},
+	{Method: http.MethodPost, Path: "/api/beers/{id}/sync", Access: AccessWrite, Handler: resyncBeer},
 }
 
 // NewMux returns the API handler: every entry of Routes registered as "<METHOD> <path>"
@@ -78,6 +95,9 @@ var Routes = []Route{
 func NewMux(deps Deps) http.Handler {
 	if deps.Now == nil {
 		deps.Now = time.Now
+	}
+	if deps.Background == nil {
+		deps.Background = context.Background()
 	}
 	if deps.Limiter == nil {
 		deps.Limiter = auth.NewLimiter(deps.Now)

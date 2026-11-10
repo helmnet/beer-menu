@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import type { Beer, Keg, KegType, Menu, Tap } from "./api";
+import type { BatchSummary, Beer, BrewfatherStatus, ImportResult, Keg, KegType, Menu, Tap } from "./api";
 
 /** Reply is one stubbed API response. */
 export interface Reply {
@@ -62,8 +62,48 @@ export function beer(overrides: Partial<Beer> = {}): Beer {
     source_ref: null,
     archived_at: null,
     on_tap: false,
+    sync: null,
     created_at: "2026-11-09T12:00:00Z",
     updated_at: "2026-11-09T12:00:00Z",
+    ...overrides,
+  };
+}
+
+/** brewfatherStatus returns a GET /api/brewfather body for stubs: set up but not connected. */
+export function brewfatherStatus(overrides: Partial<BrewfatherStatus> = {}): BrewfatherStatus {
+  return {
+    configured: true,
+    connected: false,
+    reconnect_needed: false,
+    interval: "off",
+    sync_running: false,
+    retry_at: null,
+    last_sync: null,
+    ...overrides,
+  };
+}
+
+/** batch returns a BatchSummary for stubs: a fermenting batch that is not imported. */
+export function batch(overrides: Partial<BatchSummary> = {}): BatchSummary {
+  return {
+    id: "batch-1",
+    name: "Pale Ale",
+    number: 1,
+    status: "fermenting",
+    brew_date: "2026-11-01",
+    beer_id: null,
+    ...overrides,
+  };
+}
+
+/** importResult returns an ImportResult for stubs: batch-1 imported as a new Brewfather beer. */
+export function importResult(overrides: Partial<ImportResult> = {}): ImportResult {
+  return {
+    batch_id: "batch-1",
+    outcome: "imported",
+    beer: beer({ name: "Pale Ale", source: "brewfather", source_ref: "batch-1" }),
+    adjusted: [],
+    message: null,
     ...overrides,
   };
 }

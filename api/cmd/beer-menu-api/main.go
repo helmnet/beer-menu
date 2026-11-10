@@ -2,7 +2,10 @@
 // (default /data), BEER_MENU_PORT (default 8080) and BEER_MENU_COOKIE_SECURE (default true;
 // only the exact value "false" drops the Secure flag from the session cookie, for plain-HTTP
 // access), and BEER_MENU_ADMIN_USERNAME with BEER_MENU_ADMIN_PASSWORD (both or neither; they
-// create the first admin when none exists and are ignored otherwise). It prepares and
+// create the first admin when none exists and are ignored otherwise), and
+// BEER_MENU_SECRET_KEY_FILE or BEER_MENU_SECRET_KEY (the file wins; standard base64 of 32
+// bytes, from openssl rand -base64 32) for the key that encrypts the Brewfather API key; with
+// neither, Brewfather import is not configured, and an invalid one stops startup. It prepares and
 // migrates the database, then serves HTTP until SIGTERM or SIGINT. "beer-menu-api
 // healthcheck" probes the running API's health endpoint and exits 0 when it returns 200,
 // else 1. "beer-menu-api reset-password <username>" prompts on the terminal for a new
@@ -21,7 +24,10 @@ import (
 	"time"
 
 	"github.com/helmnet/beer-menu/api/internal/auth"
+	"github.com/helmnet/beer-menu/api/internal/brewfather"
 	"github.com/helmnet/beer-menu/api/internal/httpapi"
+	"github.com/helmnet/beer-menu/api/internal/importer"
+	"github.com/helmnet/beer-menu/api/internal/secrets"
 	"github.com/helmnet/beer-menu/api/internal/store"
 	"golang.org/x/term"
 )
@@ -55,6 +61,10 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "reset-password" {
 		os.Exit(resetPassword(cfg.DataDir, os.Args[2:], int(os.Stdin.Fd()), os.Stdout, term.IsTerminal, term.ReadPassword))
 	}
+	if cfg.SecretKey, err = loadSecretKey(os.Getenv, os.ReadFile); err != nil {
+		slog.Error("startup refused", "err", err)
+		os.Exit(1)
+	}
 	if err := run(cfg); err != nil {
 		slog.Error("beer-menu-api stopped", "err", err)
 		os.Exit(1)
@@ -79,11 +89,35 @@ func run(cfg config) error {
 		return err
 	}
 
+	var box *secrets.Box
+	if cfg.SecretKey != nil {
+		if box, err = secrets.NewBox(cfg.SecretKey); err != nil {
+			return err
+		}
+	} else {
+		slog.Info("brewfather import not configured, no encryption key set")
+	}
+
+	imp := importer.New(db, box, brewfather.New, time.Now)
+	// Scheduled and "Sync now" syncs run on ctx, so a signal stops them; both are waited for
+	// below, before the deferred db.Close.
+	scheduled := make(chan struct{})
+	go func() {
+		defer close(scheduled)
+		imp.Run(ctx)
+	}()
+	defer func() {
+		stop()
+		<-scheduled
+		imp.Wait()
+	}()
+
 	srv := &http.Server{
 		Addr: ":" + cfg.Port,
 		Handler: httpapi.NewMux(httpapi.Deps{
 			DB: db, Version: version, CookieSecure: cfg.CookieSecure,
 			Now: time.Now, Limiter: auth.NewLimiter(time.Now),
+			Importer: imp, Background: ctx,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 		// Without these an idle keep-alive or a slow request body holds a connection forever.

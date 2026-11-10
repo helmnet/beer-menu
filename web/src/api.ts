@@ -39,8 +39,75 @@ export interface Beer {
   source_ref: string | null;
   archived_at: string | null;
   on_tap: boolean;
+  sync: BeerSync | null;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * BeerSync is a Brewfather beer's sync state, null on manual beers. `not_found` means
+ * Brewfather no longer has its batch; `archive_pending` means the batch was archived but the
+ * beer still has a current keg, so it is archived once that keg is kicked.
+ */
+export interface BeerSync {
+  synced_at: string | null;
+  not_found: boolean;
+  archive_pending: boolean;
+}
+
+/** SyncInterval is how often the API syncs Brewfather on its own. */
+export type SyncInterval = "off" | "15m" | "1h" | "6h" | "24h";
+
+/**
+ * LastSync is the last sync's outcome. `finished_at`, `ok` and `message` are null while it
+ * runs.
+ */
+export interface LastSync {
+  started_at: string;
+  finished_at: string | null;
+  ok: boolean | null;
+  message: string | null;
+  updated: number;
+  imported: number;
+  not_found: number;
+}
+
+/**
+ * BrewfatherStatus is the body of GET /api/brewfather. `configured` is false when the server
+ * has no encryption key; `reconnect_needed` when stored credentials no longer decrypt;
+ * `retry_at` is when Brewfather calls resume while its rate limit holds. It never holds the
+ * user ID or the API key.
+ */
+export interface BrewfatherStatus {
+  configured: boolean;
+  connected: boolean;
+  reconnect_needed: boolean;
+  interval: SyncInterval;
+  sync_running: boolean;
+  retry_at: string | null;
+  last_sync: LastSync | null;
+}
+
+/** BatchSummary is one Brewfather batch that is not archived; `beer_id` is its imported beer or null. */
+export interface BatchSummary {
+  id: string;
+  name: string;
+  number: number | null;
+  status: BeerStatus;
+  brew_date: string | null;
+  beer_id: number | null;
+}
+
+/**
+ * ImportResult is the outcome of importing one batch. `beer` is the new beer, or the existing
+ * one for `already_imported`; `adjusted` names beer fields cleaned to pass the beer rules.
+ */
+export interface ImportResult {
+  batch_id: string;
+  outcome: "imported" | "already_imported" | "archived" | "not_found" | "rate_limited" | "failed";
+  beer: Beer | null;
+  adjusted: string[];
+  message: string | null;
 }
 
 /** KegTypeKey names one row of the API's fixed keg type table. */
@@ -203,11 +270,16 @@ export function isUnauthenticated(err: unknown): boolean {
 }
 
 /**
- * errorMessage returns the text to show for err: for a 429 with Retry-After, how many minutes
- * to wait; otherwise the API's message.
+ * errorMessage returns the text to show for err: for a 429 with Retry-After, when to retry (the
+ * local clock time for Brewfather's rate limit, else how many minutes to wait); otherwise the
+ * API's message.
  */
 export function errorMessage(err: unknown): string {
   if (err instanceof ApiError && err.status === 429 && err.retryAfter !== undefined) {
+    if (err.code === "provider_rate_limited") {
+      const at = new Date(Date.now() + err.retryAfter * 1000).toLocaleTimeString();
+      return `Brewfather's rate limit is reached. Try again after ${at}.`;
+    }
     const minutes = Math.max(1, Math.ceil(err.retryAfter / 60));
     return `Too many failed attempts. Try again in ${minutes} ${minutes === 1 ? "minute" : "minutes"}.`;
   }

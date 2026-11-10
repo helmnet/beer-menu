@@ -235,8 +235,9 @@ counts. Turn the schedule off and confirm no further syncs run.
 - **Repeated list views**: opening the batch list again within 5 minutes shows the saved copy
   without calling Brewfather; the panel has a "Refresh" action that fetches a fresh copy.
   Import and re-sync always read the batch fresh.
-- **Batch with no name**: the beer is named after the recipe; with no recipe name, "Batch
-  <number>"; with no number either, "Brewfather batch".
+- **Batch with no name, or with Brewfather's default name "Batch"**: the beer is named after
+  the recipe; with no recipe name, "Batch <number>"; with no number either, "Brewfather batch".
+  A batch the owner renamed in Brewfather keeps its name.
 - **Fractional IBU**: rounded to the nearest whole number. **ABV and SRM with more decimals**:
   rounded to one decimal place.
 - **Brew date**: converted from Brewfather's millisecond time to a calendar date in UTC (the
@@ -299,7 +300,8 @@ counts. Turn the schedule off and confirm no further syncs run.
   reference). A batch that is archived in Brewfather MUST NOT be imported; its result MUST say
   so.
 - **FR-012**: The system MUST map batch fields onto a beer as follows: name from the batch name
-  (else recipe name, else "Batch <number>", else "Brewfather batch"); style from the recipe
+  (a blank name or Brewfather's default name "Batch", in any case, counts as no name; else
+  recipe name, else "Batch <number>", else "Brewfather batch"); style from the recipe
   style name; ABV from measured ABV, else the recipe's estimated ABV; IBU from the batch's
   estimated IBU; SRM from the batch's estimated color; brew date from the batch brew date;
   description from tasting notes, else general batch notes; brewer left empty.

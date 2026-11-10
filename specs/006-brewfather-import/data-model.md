@@ -99,7 +99,7 @@ by the provider; cleaned by `beers.Sanitize` before any write.
 | Batch field | Common field |
 | --- | --- |
 | `_id` | `Ref` |
-| `name`, else `recipe.name`, else `Batch <batchNo>`, else `Brewfather batch` | `Name` |
+| `name` (blank or the default `Batch`, trimmed and any case, counts as absent), else `recipe.name`, else `Batch <batchNo>`, else `Brewfather batch` | `Name` |
 | `batchNo` | `Number` |
 | `status`: Planning → planned; Brewing, Fermenting → fermenting; Conditioning → conditioning; Completed, Archived → ready | `Status` |
 | `status == Archived` | `Archived` |
