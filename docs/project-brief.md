@@ -75,7 +75,7 @@ The MVP covers five areas: the beer library, taps, keg levels, coming soon, and 
 
 - A full-screen, landscape view designed for a TV at 1080p, readable at 3 m or more.
 - Updates without a manual reload when data changes (polling or server-sent events).
-- Dark theme by default; basic theme settings (title, logo, colors) from the admin app.
+- Dark theme by default; a light theme, title and page interval set from the admin app. No logo (no image uploads) and no custom colors.
 - Kegs on the "on deck" section should have artwork showing the type of keg (5 gallon corny keg by default) and the color of the beer inside
 - Beers on tap should have glassware artwork showing the beer's color that's on tap
 
@@ -213,7 +213,7 @@ Run `/speckit-constitution` once from this brief, then one `/speckit-specify` pe
 | 4 | Taps and kegs | 3 | Configure taps, put a keg on a tap, update and kick kegs, keg history |
 | 5 | TV display | 4 | Full-screen tap list with keg gauges and coming soon; live updates; works in Fully Kiosk on a Fire Stick. Adds a public `GET /api/menu` with only what the display shows; full beer reads need a credential |
 | 6 | Brewfather import | 3 | Connect account, list batches, import, re-sync and scheduled sync; status feeds coming soon |
-| 7 | Display settings | 5 | Title, logo, theme, units and the TV page rotation interval (default 15 s) editable from the admin app |
+| 7 | Display settings | 5 | Title, theme (dark or light, TV only), units (US or metric, admin only) and the TV page rotation interval (default 15 s) editable from the admin app. No logo |
 
 Features 5 and 6 are independent and can run in either order. An OpenAPI spec is kept in the repo from feature 1 onward so later clients (APK, Home Assistant) have a contract.
 
