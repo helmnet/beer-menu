@@ -42,6 +42,16 @@ describe("TokensPanel", () => {
     expect(within(row("old")).queryByRole("button", { name: "Revoke" })).toBeNull();
   });
 
+  it("links to the API docs in a new tab", async () => {
+    stubApi({ "GET /api/tokens": { status: 200, body: [unused] } });
+    render(<TokensPanel onSignedOut={vi.fn()} />);
+    await screen.findByText("script");
+    const link = screen.getByRole("link", { name: "API docs" });
+    expect(link.getAttribute("href")).toBe("/api/docs");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")?.split(" ")).toEqual(expect.arrayContaining(["noopener", "noreferrer"]));
+  });
+
   it("opens the same New API token dialog from the top bar slot it is given", async () => {
     stubApi({ "GET /api/tokens": { status: 200, body: [unused] } });
     const slot = document.createElement("div");

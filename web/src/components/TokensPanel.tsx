@@ -11,7 +11,8 @@ import Modal from "./Modal";
  * success (POST /api/tokens) the dialog swaps the form for the secret, shown once with Copy
  * and Close, and the list reloads. Closing the dialog, by Close or Escape, drops the secret from
  * state, so it cannot be shown again. Any 401 calls `onSignedOut`. Given `actionSlot` (the phone
- * top bar's slot), a second New token is portaled there; CSS shows one of the two.
+ * top bar's slot), a second New token is portaled there; CSS shows one of the two. Under the
+ * list, an "API docs" link opens the read-only API docs (/api/docs) in a new tab.
  */
 export default function TokensPanel({ onSignedOut, actionSlot }: { onSignedOut: () => void; actionSlot?: HTMLElement | null }) {
   const [tokens, setTokens] = useState<Token[]>([]);
@@ -134,6 +135,13 @@ export default function TokensPanel({ onSignedOut, actionSlot }: { onSignedOut: 
             </tbody>
           </table>
         </div>
+        <p className="muted">
+          Calling the API? See the{" "}
+          <a href="/api/docs" target="_blank" rel="noopener noreferrer">
+            API docs
+          </a>
+          .
+        </p>
         {error && <p role="alert">{error}</p>}
       </div>
       {creating && (
