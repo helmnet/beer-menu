@@ -18,6 +18,9 @@ updates:
     cooldown:
       default-days: 7
     groups:
+      # react: listed first so it wins (a dependency joins only its first matching group); @types/react-dom peer-pins @types/react's major, so these must move together, majors included.
+      react:
+        patterns: [react, react-dom, "@types/react", "@types/react-dom"]
       npm-minor-patch:
         update-types: [minor, patch]
 

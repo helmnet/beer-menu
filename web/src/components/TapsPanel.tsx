@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, GlassWater, Pencil, Plus, Power, Trash2 } from "lucide-react";
-import { FormEvent, useEffect, useId, useState } from "react";
+import { FormEvent, type JSX, useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { ApiError, apiFetch, errorMessage, isUnauthenticated, Keg, KegType, Tap, Units } from "../api";
 import KegCard from "./KegCard";
