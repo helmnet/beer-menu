@@ -141,7 +141,7 @@ The app runs as two containers. The web container serves the React build and pro
 | Database | SQLite (pure-Go driver such as `modernc.org/sqlite`, WAL mode) | One file, no extra service, easy backup with TrueNAS snapshots |
 | Admin app | React + TypeScript, built with Vite | Served as static files by an nginx container that also proxies `/api`; includes the `/display` route |
 | Display | Browser page tuned for 1080p TVs | Runs in Fully Kiosk now; replaced by the APK later |
-| API contract | OpenAPI document in the repo | Shared contract for the admin app, APK and Home Assistant |
+| API contract | OpenAPI document in the repo, embedded in the API binary and shown as read-only Swagger UI at `/api/docs` (feature 9) | Shared contract for the admin app, APK and Home Assistant |
 | Deployment | Two images (`beer-menu-api`, `beer-menu-web`) built by GitHub Actions and pushed to `ghcr.io/helmnet`, when a semver release tag (`vX.Y.Z`) is pushed by hand, tagged `X.Y.Z`, `X.Y` and `latest`. A `beer-menu/docker-compose.yaml` in `truenas_apps` pins the `X.Y.Z` tag, and Dependabot opens a bump PR for each new release; a push to main there deploys through the self-hosted runner. SQLite on a bind mount under `/mnt/app/beer-menu`; containers run as the non-root UID/GID the deployer sets in `truenas_apps` | Same pattern as `github-runner` in `truenas_apps`; secrets come from repo secrets named `BEER_MENU_<VAR>` |
 
 ## Authentication and API tokens
@@ -155,7 +155,7 @@ Security is a top priority, and the repo may go public later: no secrets, creden
 
 **Rules**
 
-- Every token has a scope: `read` (read-only data access, such as the beer library) or `write` (also changes data, but cannot manage admins, tokens or passwords). Only the TV menu read (`GET /api/menu`, feature 5) is public on the LAN, so the TV display needs no token.
+- Every token has a scope: `read` (read-only data access, such as the beer library) or `write` (also changes data, but cannot manage admins, tokens or passwords). Only the TV menu read (`GET /api/menu`, feature 5) and the API docs (the Swagger UI at `/api/docs` and the raw spec at `/api/openapi.yaml`, feature 9) are public on the LAN. The TV display needs no token. The docs expose no data and cannot make API calls.
 - No default credentials. The first admin is created on first run (setup screen or env var).
 - Login is rate limited to slow password guessing.
 - Third-party secrets (the Brewfather API key) are stored encrypted at rest and never returned by the API.
@@ -243,8 +243,9 @@ Run `/speckit-constitution` once from this brief, then one `/speckit-specify` pe
 | 6 | Brewfather import | 3 | Connect account, list batches, import, re-sync and scheduled sync; status feeds on deck |
 | 7 | Display settings | 5 | Title, theme (dark or light, TV only), units (US or metric, admin only) and the TV page rotation interval (default 15 s) editable from the admin app. No logo |
 | 8 | Admin app restyle | 7 | The admin app matches the "Admin app" section under Functional scope: side panel navigation, light, dark and system themes, royal blue accent, modal forms, searchable beer pickers, and an On Deck page matching the TV. Checked by screenshots at laptop and phone widths |
+| 9 | API docs | 8 | The API serves Swagger UI at `/api/docs` and the OpenAPI spec at `/api/openapi.yaml`, both without authentication. Read-only: no "Try it out" or Authorize. Swagger UI assets are a pinned version bundled in the API image, so the page works offline and keeps a `'self'`-only CSP. The API Tokens page links to it |
 
-Features 5 and 6 are independent and can run in either order. Feature 8 follows the MVP (features 0 to 7) and runs before roadmap phase 2. An OpenAPI spec is kept in the repo from feature 1 onward so later clients (APK, Home Assistant) have a contract.
+Features 5 and 6 are independent and can run in either order. Features 8 and 9 follow the MVP (features 0 to 7) and run before roadmap phase 2. An OpenAPI spec is kept in the repo from feature 1 onward so later clients (APK, Home Assistant) have a contract.
 
 ## Open questions
 
