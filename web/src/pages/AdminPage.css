@@ -101,6 +101,12 @@ body:has(> #root > .admin) {
   color: var(--muted);
 }
 
+/* Links keep the default underline but use theme text: browser blue fails dark-theme contrast
+   and royal blue is accent only. */
+.admin a {
+  color: var(--text);
+}
+
 /* Visually hidden but read by screen readers (used for legends and labels). */
 .admin .sr-only {
   position: absolute;

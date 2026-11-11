@@ -72,7 +72,10 @@ Security is a top priority, and the repo may go public.
 - API tokens MUST be shown once, stored hashed, sent as `Authorization: Bearer <token>`,
   revocable, and record a last-used time. Each token MUST have a `read` or `write` scope.
 - Only these endpoints are public: menu reads, the health check, the first-run setup status,
-  first-admin creation (refused once an admin exists) and sign-in. Every other endpoint MUST
+  first-admin creation (refused once an admin exists), sign-in, and the read-only API docs (the
+  docs page and the OpenAPI document; the page MUST NOT offer a way to send API requests, beyond
+  loading the OpenAPI document, and MUST NOT accept credentials).
+  Every other endpoint MUST
   require a session or a token with the right scope. Public writes (first-admin creation and
   sign-in) MUST also refuse cross-site browser requests.
 - Login MUST be rate limited.
@@ -153,4 +156,4 @@ compromised.
 - Every pull request review MUST check compliance with these principles, including the
   NON-NEGOTIABLE ones (IV and V). `docs/project-brief.md` is the guidance file for product scope.
 
-**Version**: 1.2.0 | **Ratified**: 2026-11-08 | **Last Amended**: 2026-11-08
+**Version**: 1.3.0 | **Ratified**: 2026-11-08 | **Last Amended**: 2026-11-11

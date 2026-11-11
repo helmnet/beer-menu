@@ -1,0 +1,79 @@
+# Fragment to merge into api/openapi.yaml (feature 9). Adds the `docs` tag and three public
+# operations; bump info.version 0.7.0 -> 0.8.0.
+tags:
+  - name: docs
+    description: Read-only API documentation (Swagger UI) and the raw OpenAPI document
+paths:
+  /api/docs:
+    get:
+      operationId: getDocs
+      summary: Show the API documentation page
+      description: >
+        Public. Read-only Swagger UI for this document: no "Try it out" and no Authorize.
+        All scripts and styles are served from /api/docs/{file}; the page loads nothing from
+        another origin. Sent with its own Content-Security-Policy allowing only same-origin
+        scripts, styles and connections.
+      tags: [docs]
+      security: []
+      x-access: public
+      responses:
+        "200":
+          description: The docs page
+          content:
+            text/html:
+              schema:
+                type: string
+  /api/docs/{file}:
+    get:
+      operationId: getDocsAsset
+      summary: Fetch one file of the documentation page
+      description: >
+        Public. Serves only the fixed set of files the docs page uses; any other name is 404.
+      tags: [docs]
+      security: []
+      x-access: public
+      parameters:
+        - name: file
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - init.js
+              - swagger-ui-bundle.js
+              - swagger-ui.css
+              - LICENSE
+              - NOTICE
+              - swagger-ui-bundle.js.LICENSE.txt
+      responses:
+        "200":
+          description: The file
+          content:
+            text/javascript:
+              schema:
+                type: string
+            text/css:
+              schema:
+                type: string
+            text/plain:
+              schema:
+                type: string
+        "404":
+          description: No such file
+  /api/openapi.yaml:
+    get:
+      operationId: getOpenAPI
+      summary: Download this API contract
+      description: >
+        Public. The OpenAPI document the running API was built with, byte-identical to
+        api/openapi.yaml for this release.
+      tags: [docs]
+      security: []
+      x-access: public
+      responses:
+        "200":
+          description: The OpenAPI document
+          content:
+            application/yaml:
+              schema:
+                type: string
