@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useId, useState } from "react";
+import { FormEvent, type JSX, useEffect, useId, useState } from "react";
 import { ApiError, apiFetch, errorMessage, isUnauthenticated, Settings } from "../api";
 
 type Field = keyof Settings;
