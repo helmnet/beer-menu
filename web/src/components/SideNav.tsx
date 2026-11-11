@@ -71,6 +71,11 @@ export function groupOf(page: PageKey): GroupKey {
   return groups.find((g) => g.pages.some((p) => p.key === page))!.key;
 }
 
+/** isPageKey reports whether s names an admin page, for untrusted input such as the URL hash. */
+export function isPageKey(s: string): s is PageKey {
+  return groups.some((g) => g.pages.some((p) => p.key === s));
+}
+
 /** pageLabel returns the page's label as shown in the side panel and as its heading. */
 function pageLabel(page: PageKey): string {
   return groups.flatMap((g) => g.pages).find((p) => p.key === page)!.label;

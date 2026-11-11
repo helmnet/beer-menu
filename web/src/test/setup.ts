@@ -1,4 +1,5 @@
 import { configure } from "@testing-library/react";
+import { afterEach } from "vitest";
 
 // The first render in a file can pass 1000 ms on a loaded machine (jsdom startup and imports).
 configure({ asyncUtilTimeout: 5000 });
@@ -15,3 +16,6 @@ if (typeof HTMLDialogElement !== "undefined" && !HTMLDialogElement.prototype.sho
     this.dispatchEvent(new Event("close"));
   };
 }
+
+// AdminPage keeps its page in the URL hash, and jsdom keeps the URL across tests in a file.
+afterEach(() => window.history.replaceState(null, "", "/"));
