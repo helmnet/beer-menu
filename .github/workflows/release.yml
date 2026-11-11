@@ -1,5 +1,6 @@
 # Publishes both images to GHCR when a vX.Y.Z tag is pushed, tagged X.Y.Z, X.Y and latest.
 # Each image is scanned with Trivy before it is pushed.
+# Once both images are published, creates a GitHub Release with notes generated since the previous tag.
 name: release
 
 on:
@@ -68,3 +69,16 @@ jobs:
         env:
           IMAGE: ghcr.io/helmnet/beer-menu-${{ matrix.image }}
         run: docker push --all-tags "$IMAGE"
+
+  # Waits for both images, so no Release exists for a version whose images failed the scan or push.
+  github-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    # Job-scoped: replaces the workflow-level set, so only this job can write releases (no packages: write).
+    permissions:
+      contents: write
+    steps:
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes

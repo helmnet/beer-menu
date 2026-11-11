@@ -279,6 +279,9 @@ passes, with three tags: `X.Y.Z`, `X.Y` and `latest`. Tags that do not match `vX
 Each image is published on its own: if one image fails its scan, the other is still published.
 Re-run the failed job once a fix is available, or release the next `X.Y.Z`.
 The image reports `X.Y.Z` as `version` in `/api/health`.
+Once both images are published, the workflow creates a GitHub Release for the tag with notes
+generated from the changes since the previous tag. If only that job fails, re-run it, or
+create the release by hand: `gh release create vX.Y.Z --verify-tag --generate-notes`.
 
 Production pins an exact `X.Y.Z` in the `truenas_apps` repo and never uses `latest`.
 
