@@ -10,7 +10,7 @@ import OnDeckPanel from "../components/OnDeckPanel";
 import PasswordForm from "../components/PasswordForm";
 import SettingsPanel from "../components/SettingsPanel";
 import SetupForm from "../components/SetupForm";
-import SideNav, { GroupKey, groupOf, PageKey } from "../components/SideNav";
+import SideNav, { GroupKey, groupOf, isPageKey, PageKey } from "../components/SideNav";
 import TapsPanel from "../components/TapsPanel";
 import ThemeControl from "../components/ThemeControl";
 import TokensPanel from "../components/TokensPanel";
@@ -32,9 +32,13 @@ type View =
  * panel changes and saves it, with no server request. On load it asks GET /api/setup and
  * GET /api/session, then shows the first-admin setup form, the sign-in form, a loading note or
  * an error, each in a centered card with no side panel. Signed in, it is a shell: SideNav (side
- * panel, or top bar and drawer on a phone) and a `main` that mounts only the current page, Taps
- * after every sign-in. The page's primary action (Add tap, Add keg, Add beer, Add admin or
- * New token) is also portaled into the top bar's slot. Since a page mounts when shown, it
+ * panel, or top bar and drawer on a phone) and a `main` that mounts only the current page. The
+ * current page is kept in the URL hash (`#beers`, `#on-deck`): choosing a page in SideNav sets
+ * it, adding a browser history entry, so Back and Forward move between pages, and load, reload
+ * and every sign-in show the hash's page, or Taps when the hash names no page. A hash, not a
+ * path, since the `display` page would clash with the `/display` TV route. The page's primary
+ * action (Add tap, Add keg, Add beer, Add admin or New token) is also portaled into the top
+ * bar's slot. Since a page mounts when shown, it
  * fetches fresh data each time and pages need not refresh each other.
  *
  * After each sign-in it reads GET /api/health once for the version (a failure or empty
@@ -45,8 +49,8 @@ type View =
 export default function AdminPage() {
   const [view, setView] = useState<View>({ kind: "loading" });
   const [theme, setTheme] = useState<Theme>(loadTheme);
-  const [page, setPage] = useState<PageKey>("taps");
-  const [openGroup, setOpenGroup] = useState<GroupKey | null>("menu");
+  const [page, setPage] = useState<PageKey>(hashPage);
+  const [openGroup, setOpenGroup] = useState<GroupKey | null>(() => groupOf(hashPage()));
   const [units, setUnits] = useState<Units>("us");
   // null until the health check answers, so "unknown" never flashes before the real version.
   const [version, setVersion] = useState<string | null>(null);
@@ -61,6 +65,13 @@ export default function AdminPage() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  // Back, Forward and hand-edited hashes all arrive here.
+  useEffect(() => {
+    const onHash = () => show(hashPage());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
   const isSignedIn = view.kind === "signedIn";
@@ -87,8 +98,7 @@ export default function AdminPage() {
   }, [isSignedIn]);
 
   function signedIn(admin: Admin) {
-    setPage("taps");
-    setOpenGroup("menu");
+    show(hashPage());
     setView({ kind: "signedIn", admin });
   }
   const toLogin = () => setView({ kind: "login" });
@@ -110,9 +120,15 @@ export default function AdminPage() {
     saveTheme(t);
   }
 
-  function select(p: PageKey) {
+  function show(p: PageKey) {
     setPage(p);
     setOpenGroup(groupOf(p));
+  }
+
+  function select(p: PageKey) {
+    // Setting the hash pushes a history entry; re-choosing the current page adds none.
+    if (p !== page) window.location.hash = p;
+    show(p);
   }
 
   if (view.kind !== "signedIn") {
@@ -184,6 +200,12 @@ function pageView(
     case "brewfather":
       return <BrewfatherPanel onSignedOut={toLogin} />;
   }
+}
+
+/** hashPage is the page named by the URL hash, or Taps when it names none. */
+function hashPage(): PageKey {
+  const key = window.location.hash.slice(1);
+  return isPageKey(key) ? key : "taps";
 }
 
 /** loadView picks the first view from the setup state and the current session. */

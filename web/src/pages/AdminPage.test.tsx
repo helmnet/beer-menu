@@ -119,7 +119,7 @@ describe("AdminPage", () => {
     expect(calls.map((c) => c.key)).toContain("DELETE /api/session");
   });
 
-  it("returns to Taps after signing in again", async () => {
+  it("returns to the hash's page after signing in again", async () => {
     stubApi({
       ...signedIn,
       ...panels,
@@ -134,6 +134,66 @@ describe("AdminPage", () => {
     await screen.findByRole("button", { name: "Sign in" });
     fillCredentials(testPassword());
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(await screen.findByRole("heading", { level: 2, name: "API Tokens" })).toBeTruthy();
+    expect(within(nav()).getByRole("button", { name: "API Tokens" }).getAttribute("aria-current")).toBe("page");
+  });
+
+  it("puts the chosen page in the URL hash, once per page", async () => {
+    stubApi({ ...signedIn, ...panels });
+    render(<AdminPage />);
+    await screen.findByRole("heading", { level: 2, name: "Taps" });
+    const start = window.history.length;
+    goTo("Beer Library");
+    await screen.findByRole("heading", { level: 2, name: "Beer Library" });
+    expect(window.location.hash).toBe("#beers");
+    expect(window.location.pathname).toBe("/");
+    expect(window.history.length).toBe(start + 1);
+    goTo("Beer Library");
+    expect(window.history.length).toBe(start + 1);
+    goTo("Display Settings");
+    await screen.findByRole("heading", { level: 2, name: "Display Settings" });
+    expect(window.location.hash).toBe("#display");
+    expect(window.location.pathname).toBe("/");
+  });
+
+  it("goes back to the previous page on Back", async () => {
+    stubApi({ ...signedIn, ...panels });
+    render(<AdminPage />);
+    await screen.findByRole("heading", { level: 2, name: "Taps" });
+    goTo("Keg History");
+    await screen.findByRole("heading", { level: 2, name: "Keg History" });
+    goTo("API Tokens");
+    await screen.findByRole("heading", { level: 2, name: "API Tokens" });
+    window.history.back();
+    expect(await screen.findByRole("heading", { level: 2, name: "Keg History" })).toBeTruthy();
+    expect(within(nav()).getByRole("button", { name: "Keg History" }).getAttribute("aria-current")).toBe("page");
+    window.history.back();
+    expect(await screen.findByRole("heading", { level: 2, name: "Taps" })).toBeTruthy();
+  });
+
+  it("follows a hash change, opening the page's group", async () => {
+    stubApi({ ...signedIn, ...panels });
+    render(<AdminPage />);
+    await screen.findByRole("heading", { level: 2, name: "Taps" });
+    window.location.hash = "brewfather";
+    expect(await screen.findByRole("heading", { level: 2, name: "Brewfather" })).toBeTruthy();
+    expect(within(nav()).getByRole("button", { name: "Brewfather" }).getAttribute("aria-current")).toBe("page");
+    window.location.hash = "nope";
+    expect(await screen.findByRole("heading", { level: 2, name: "Taps" })).toBeTruthy();
+  });
+
+  it("opens the hash's page on load", async () => {
+    window.history.replaceState(null, "", "/#on-deck");
+    stubApi({ ...signedIn, ...panels });
+    render(<AdminPage />);
+    expect(await screen.findByRole("heading", { level: 2, name: "On Deck" })).toBeTruthy();
+    expect(heading("Taps")).toBeNull();
+  });
+
+  it.each(["#nope", "#constructor", "#", "#taps%20"])("opens Taps for the hash %s", async (hash) => {
+    window.history.replaceState(null, "", `/${hash}`);
+    stubApi({ ...signedIn, ...panels });
+    render(<AdminPage />);
     expect(await screen.findByRole("heading", { level: 2, name: "Taps" })).toBeTruthy();
     expect(within(nav()).getByRole("button", { name: "Taps" }).getAttribute("aria-current")).toBe("page");
   });
