@@ -1,17 +1,19 @@
 import { Plus } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { apiFetch, errorMessage, isUnauthenticated, Token } from "../api";
 import Modal from "./Modal";
 
 /**
- * TokensPanel is the API Tokens page, one card: it lists API tokens (GET /api/tokens) and
+ * TokensPanel is the API Tokens page, the heading with "New token" above one card: it lists API tokens (GET /api/tokens) and
  * revokes them after confirmation (DELETE /api/tokens/{id}). "New token" opens the "New API
  * token" dialog with Name and Scope; a server error keeps the form open with its message. On
  * success (POST /api/tokens) the dialog swaps the form for the secret, shown once with Copy
  * and Close, and the list reloads. Closing the dialog, by Close or Escape, drops the secret from
- * state, so it cannot be shown again. Any 401 calls `onSignedOut`.
+ * state, so it cannot be shown again. Any 401 calls `onSignedOut`. Given `actionSlot` (the phone
+ * top bar's slot), a second New token is portaled there; CSS shows one of the two.
  */
-export default function TokensPanel({ onSignedOut }: { onSignedOut: () => void }) {
+export default function TokensPanel({ onSignedOut, actionSlot }: { onSignedOut: () => void; actionSlot?: HTMLElement | null }) {
   const [tokens, setTokens] = useState<Token[]>([]);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
@@ -85,48 +87,55 @@ export default function TokensPanel({ onSignedOut }: { onSignedOut: () => void }
     }
   }
 
+  const newToken = (
+    <button type="button" className="btn btn-primary page-action" onClick={openDialog}>
+      <Plus aria-hidden="true" />
+      New token
+    </button>
+  );
+
   return (
-    <section className="card">
+    <section className="page">
       <div className="page-header">
         <h2>API Tokens</h2>
-        <button type="button" className="btn btn-primary" onClick={openDialog}>
-          <Plus aria-hidden="true" />
-          New token
-        </button>
+        {newToken}
       </div>
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Scope</th>
-              <th>Created</th>
-              <th>Last used</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tokens.map((t) => (
-              <tr key={t.id}>
-                <td>{t.name}</td>
-                <td>{t.scope}</td>
-                <td>{new Date(t.created_at).toLocaleString()}</td>
-                <td>{t.last_used_at ? new Date(t.last_used_at).toLocaleString() : "never"}</td>
-                <td>
-                  {t.revoked_at ? (
-                    "Revoked"
-                  ) : (
-                    <button type="button" className="btn" onClick={() => revoke(t)}>
-                      Revoke
-                    </button>
-                  )}
-                </td>
+      {actionSlot && createPortal(newToken, actionSlot)}
+      <div className="card">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Scope</th>
+                <th>Created</th>
+                <th>Last used</th>
+                <th>Status</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {tokens.map((t) => (
+                <tr key={t.id}>
+                  <td>{t.name}</td>
+                  <td>{t.scope}</td>
+                  <td>{new Date(t.created_at).toLocaleString()}</td>
+                  <td>{t.last_used_at ? new Date(t.last_used_at).toLocaleString() : "never"}</td>
+                  <td>
+                    {t.revoked_at ? (
+                      "Revoked"
+                    ) : (
+                      <button type="button" className="btn" onClick={() => revoke(t)}>
+                        Revoke
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {error && <p role="alert">{error}</p>}
       </div>
-      {error && <p role="alert">{error}</p>}
       {creating && (
         <Modal title="New API token" onClose={closeDialog}>
           {secret ? (

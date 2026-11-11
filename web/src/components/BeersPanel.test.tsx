@@ -45,6 +45,18 @@ describe("BeersPanel", () => {
     expect(calls.find((c) => c.key === "POST /api/beers")?.body).toEqual({ name: "Stout", status: "ready" });
   });
 
+  it("opens the same Add beer dialog from the top bar slot it is given", async () => {
+    stubApi({ "GET /api/beers": { status: 200, body: [pale] }, "GET /api/srm-colors": { status: 200, body: { colors: [] } } });
+    const slot = document.createElement("div");
+    document.body.appendChild(slot);
+    render(<BeersPanel onSignedOut={vi.fn()} actionSlot={slot} />);
+    await screen.findByText("Pale");
+    expect(screen.getAllByRole("button", { name: "Add beer" })).toHaveLength(2);
+    fireEvent.click(within(slot).getByRole("button", { name: "Add beer" }));
+    expect(screen.getByRole("dialog", { name: "Add beer" })).toBeTruthy();
+    slot.remove();
+  });
+
   it("opens the Edit dialog filled with the beer's values", async () => {
     stubApi({
       "GET /api/beers": { status: 200, body: [pale] },

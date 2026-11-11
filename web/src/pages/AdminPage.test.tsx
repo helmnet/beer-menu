@@ -168,17 +168,34 @@ describe("AdminPage", () => {
     expect(screen.getByRole("main")).toBeTruthy();
   });
 
-  it("shows the page title and, on Taps only, Add tap in the phone top bar", async () => {
+  it.each([
+    ["Taps", "Add tap"],
+    ["On Deck", "Add keg"],
+    ["Beer Library", "Add beer"],
+    ["Admin Users", "Add admin"],
+    ["API Tokens", "New token"],
+  ])("shows the page title and %s's %s in the phone top bar", async (label, action) => {
     stubApi({ ...signedIn, ...panels });
     render(<AdminPage />);
     await screen.findByRole("heading", { level: 2, name: "Taps" });
+    if (label !== "Taps") goTo(label);
+    await screen.findByRole("heading", { level: 2, name: label });
     const bar = screen.getByRole("banner");
-    expect(within(bar).getByText("Taps")).toBeTruthy();
-    expect(within(bar).getByRole("button", { name: "Add tap" })).toBeTruthy();
+    expect(within(bar).getByText(label)).toBeTruthy();
+    expect(within(bar).getByRole("button", { name: action })).toBeTruthy();
+    expect(within(screen.getByRole("main")).getByRole("button", { name: action })).toBeTruthy();
+  });
+
+  it("shows no top bar action on a page without one", async () => {
+    stubApi({ ...signedIn, ...panels });
+    render(<AdminPage />);
+    await screen.findByRole("heading", { level: 2, name: "Taps" });
     goTo("Keg History");
     await screen.findByRole("heading", { level: 2, name: "Keg History" });
+    const bar = screen.getByRole("banner");
     expect(within(bar).getByText("Keg History")).toBeTruthy();
-    expect(within(bar).queryByRole("button", { name: "Add tap" })).toBeNull();
+    // Only the menu button remains.
+    expect(within(bar).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual(["Open menu"]);
   });
 
   it("fetches fresh data when a page is shown again", async () => {

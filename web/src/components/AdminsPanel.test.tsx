@@ -16,7 +16,7 @@ function removeButton(username: string) {
 }
 
 describe("AdminsPanel", () => {
-  it("lists admins and adds one", async () => {
+  it("lists admins and adds one in the Add admin dialog, then closes it and reloads", async () => {
     const routes = {
       "GET /api/admins": { status: 200, body: [owner] as unknown[] },
       "POST /api/admins": { status: 201, body: second },
@@ -24,16 +24,23 @@ describe("AdminsPanel", () => {
     const calls = stubApi(routes);
     render(<AdminsPanel me={owner} onSignedOut={vi.fn()} />);
     await screen.findByText("owner");
-    const pw = testPassword();
-    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "second" } });
-    fireEvent.change(screen.getByLabelText("Password"), { target: { value: pw } });
-    routes["GET /api/admins"] = { status: 200, body: [owner, second] };
+    expect(screen.queryByLabelText("Username")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Add admin" }));
+    const dialog = screen.getByRole("dialog", { name: "Add admin" });
+    const pw = testPassword();
+    fireEvent.change(within(dialog).getByLabelText("Username"), { target: { value: "second" } });
+    fireEvent.change(within(dialog).getByLabelText("Password"), { target: { value: pw } });
+    routes["GET /api/admins"] = { status: 200, body: [owner, second] };
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     expect(await screen.findByText("second")).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: "Add admin" })).toBeNull();
     expect(calls.find((c) => c.key === "POST /api/admins")?.body).toEqual({ username: "second", password: pw });
+    // Reopened, the dialog starts empty.
+    fireEvent.click(screen.getByRole("button", { name: "Add admin" }));
+    expect((within(screen.getByRole("dialog", { name: "Add admin" })).getByLabelText("Username") as HTMLInputElement).value).toBe("");
   });
 
-  it("shows the server message when the username is taken", async () => {
+  it("keeps the dialog open with the server message when the username is taken", async () => {
     stubApi({
       "GET /api/admins": { status: 200, body: [owner] },
       "POST /api/admins": {
@@ -43,10 +50,43 @@ describe("AdminsPanel", () => {
     });
     render(<AdminsPanel me={owner} onSignedOut={vi.fn()} />);
     await screen.findByText("owner");
-    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "OWNER" } });
-    fireEvent.change(screen.getByLabelText("Password"), { target: { value: testPassword() } });
     fireEvent.click(screen.getByRole("button", { name: "Add admin" }));
-    expect((await screen.findByRole("alert")).textContent).toBe("That username is already in use.");
+    const dialog = screen.getByRole("dialog", { name: "Add admin" });
+    fireEvent.change(within(dialog).getByLabelText("Username"), { target: { value: "OWNER" } });
+    fireEvent.change(within(dialog).getByLabelText("Password"), { target: { value: testPassword() } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect((await within(dialog).findByRole("alert")).textContent).toBe("That username is already in use.");
+    expect(screen.getByRole("dialog", { name: "Add admin" })).toBe(dialog);
+    expect((within(dialog).getByLabelText("Username") as HTMLInputElement).value).toBe("OWNER");
+  });
+
+  it("closes the Add admin dialog on Cancel, Close or Escape without a request", async () => {
+    const calls = stubApi({ "GET /api/admins": { status: 200, body: [owner] } });
+    render(<AdminsPanel me={owner} onSignedOut={vi.fn()} />);
+    await screen.findByText("owner");
+    const dialog = () => screen.getByRole("dialog", { name: "Add admin" });
+    fireEvent.click(screen.getByRole("button", { name: "Add admin" }));
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog", { name: "Add admin" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Add admin" }));
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog", { name: "Add admin" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Add admin" }));
+    fireEvent(dialog(), new Event("cancel", { cancelable: true }));
+    expect(screen.queryByRole("dialog", { name: "Add admin" })).toBeNull();
+    expect(calls.map((c) => c.key)).toEqual(["GET /api/admins"]);
+  });
+
+  it("opens the same Add admin dialog from the top bar slot it is given", async () => {
+    stubApi({ "GET /api/admins": { status: 200, body: [owner] } });
+    const slot = document.createElement("div");
+    document.body.appendChild(slot);
+    render(<AdminsPanel me={owner} onSignedOut={vi.fn()} actionSlot={slot} />);
+    await screen.findByText("owner");
+    expect(screen.getAllByRole("button", { name: "Add admin" })).toHaveLength(2);
+    fireEvent.click(within(slot).getByRole("button", { name: "Add admin" }));
+    expect(screen.getByRole("dialog", { name: "Add admin" })).toBeTruthy();
+    slot.remove();
   });
 
   it("removes another admin after confirmation", async () => {
@@ -104,5 +144,53 @@ describe("AdminsPanel", () => {
     const onSignedOut = vi.fn();
     render(<AdminsPanel me={owner} onSignedOut={onSignedOut} />);
     await waitFor(() => expect(onSignedOut).toHaveBeenCalled());
+  });
+
+  it("reports a 401 from Add admin as signed out", async () => {
+    stubApi({
+      "GET /api/admins": { status: 200, body: [owner] },
+      "POST /api/admins": { status: 401, body: { error: "unauthenticated", message: "x" } },
+    });
+    const onSignedOut = vi.fn();
+    render(<AdminsPanel me={owner} onSignedOut={onSignedOut} />);
+    await screen.findByText("owner");
+    fireEvent.click(screen.getByRole("button", { name: "Add admin" }));
+    const dialog = screen.getByRole("dialog", { name: "Add admin" });
+    fireEvent.change(within(dialog).getByLabelText("Username"), { target: { value: "second" } });
+    fireEvent.change(within(dialog).getByLabelText("Password"), { target: { value: testPassword() } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onSignedOut).toHaveBeenCalled());
+    expect(within(dialog).queryByRole("alert")).toBeNull();
+  });
+
+  it("drops the typed password when the Add admin dialog is cancelled", async () => {
+    stubApi({ "GET /api/admins": { status: 200, body: [owner] } });
+    render(<AdminsPanel me={owner} onSignedOut={vi.fn()} />);
+    await screen.findByText("owner");
+    fireEvent.click(screen.getByRole("button", { name: "Add admin" }));
+    const pw = () => within(screen.getByRole("dialog", { name: "Add admin" })).getByLabelText("Password") as HTMLInputElement;
+    expect(pw().autocomplete).toBe("new-password");
+    fireEvent.change(pw(), { target: { value: testPassword() } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add admin" }));
+    expect(pw().value).toBe("");
+  });
+
+  it("sends one POST when Add admin is submitted twice", async () => {
+    const calls = stubApi({
+      "GET /api/admins": { status: 200, body: [owner] as unknown[] },
+      "POST /api/admins": { status: 201, body: second },
+    });
+    render(<AdminsPanel me={owner} onSignedOut={vi.fn()} />);
+    await screen.findByText("owner");
+    fireEvent.click(screen.getByRole("button", { name: "Add admin" }));
+    const dialog = screen.getByRole("dialog", { name: "Add admin" });
+    fireEvent.change(within(dialog).getByLabelText("Username"), { target: { value: "second" } });
+    fireEvent.change(within(dialog).getByLabelText("Password"), { target: { value: testPassword() } });
+    const form = within(dialog).getByRole("button", { name: "Save" }).closest("form") as HTMLFormElement;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add admin" })).toBeNull());
+    expect(calls.filter((c) => c.key === "POST /api/admins")).toHaveLength(1);
   });
 });
