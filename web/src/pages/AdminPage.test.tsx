@@ -119,7 +119,27 @@ describe("AdminPage", () => {
     expect(calls.map((c) => c.key)).toContain("DELETE /api/session");
   });
 
-  it("returns to the hash's page after signing in again", async () => {
+  it("returns to the hash's page after a 401 and signing in again", async () => {
+    const routes: Record<string, Reply> = {
+      ...signedIn,
+      ...panels,
+      "GET /api/tokens": unauthenticated,
+      "POST /api/session": { status: 200, body: owner },
+    };
+    stubApi(routes);
+    render(<AdminPage />);
+    await screen.findByRole("heading", { level: 2, name: "Taps" });
+    goTo("API Tokens");
+    await screen.findByRole("button", { name: "Sign in" });
+    routes["GET /api/tokens"] = panels["GET /api/tokens"];
+    fillCredentials(testPassword());
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(await screen.findByRole("heading", { level: 2, name: "API Tokens" })).toBeTruthy();
+    expect(within(nav()).getByRole("button", { name: "API Tokens" }).getAttribute("aria-current")).toBe("page");
+    expect(window.location.hash).toBe("#tokens");
+  });
+
+  it("clears the hash on Sign out, so signing in again shows Taps", async () => {
     stubApi({
       ...signedIn,
       ...panels,
@@ -130,12 +150,27 @@ describe("AdminPage", () => {
     await screen.findByRole("heading", { level: 2, name: "Taps" });
     goTo("API Tokens");
     await screen.findByRole("heading", { level: 2, name: "API Tokens" });
+    const length = window.history.length;
     fireEvent.click(within(nav()).getByRole("button", { name: "Sign out" }));
     await screen.findByRole("button", { name: "Sign in" });
+    expect(window.location.hash).toBe("");
+    expect(window.history.length).toBe(length);
     fillCredentials(testPassword());
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
-    expect(await screen.findByRole("heading", { level: 2, name: "API Tokens" })).toBeTruthy();
-    expect(within(nav()).getByRole("button", { name: "API Tokens" }).getAttribute("aria-current")).toBe("page");
+    expect(await screen.findByRole("heading", { level: 2, name: "Taps" })).toBeTruthy();
+    expect(window.location.hash).toBe("");
+  });
+
+  it("still signs out when the path starts with //", async () => {
+    // nginx serves the app at any path; "//evil.example/x" as a relative URL is another origin.
+    window.history.replaceState(null, "", `${window.location.origin}//evil.example/x#tokens`);
+    stubApi({ ...signedIn, ...panels, "DELETE /api/session": { status: 204 } });
+    render(<AdminPage />);
+    await screen.findByRole("heading", { level: 2, name: "API Tokens" });
+    fireEvent.click(within(nav()).getByRole("button", { name: "Sign out" }));
+    expect(await screen.findByRole("button", { name: "Sign in" })).toBeTruthy();
+    expect(window.location.pathname).toBe("//evil.example/x");
+    expect(window.location.hash).toBe("");
   });
 
   it("puts the chosen page in the URL hash, once per page", async () => {
