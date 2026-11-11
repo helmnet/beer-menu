@@ -15,7 +15,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     strategy:
-      # Without this, one image failing its scan cancels the other mid-release (see README "Releases").
+      # Without this, one image failing its scan cancels the other mid-release (see "Releases" in docs/development.md).
       fail-fast: false
       matrix:
         image: [api, web]

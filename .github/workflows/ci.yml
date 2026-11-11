@@ -1,5 +1,5 @@
 # Pull request and main-branch checks, skipped when only Markdown files change. Never merge while
-# any job below (api, web, openapi, images) or secrets.yml fails; see "Required checks" in README.md.
+# any job below (api, web, openapi, images) or secrets.yml fails; see "Required checks" in docs/development.md.
 name: ci
 
 on:
