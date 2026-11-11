@@ -92,8 +92,9 @@ checks for menu changes every 10 seconds, keeps the last menu through outages wi
 "offline" notice after about 2 minutes, and reloads itself about once a day to pick up
 upgrades.
 
-The display shows only display fields (tap label, beer name, style, ABV, IBU, color, keg
-shape and level). The full beer library, keg volumes and units need a credential.
+The display shows only display fields (tap label, beer name, style, ABV, IBU, SRM,
+description, color, keg shape and level). The full beer library, keg volumes and units need a
+credential.
 
 ## Display settings
 
@@ -105,8 +106,13 @@ The admin app's "Display settings" panel sets:
 | Theme | dark or light | dark | TV only (the admin app is unchanged) |
 | Units | US (gallons, pours in fluid ounces) or metric (litres, pours in millilitres) | US | admin app volumes |
 | Page seconds | whole seconds, 5 to 300 | 15 | TV page rotation |
+| Layout | Grid (cards, 8 a page), Vertical list or Side by side (6 rows a page) | Grid | TV |
+| Title alignment, font and color | left, center or right; one of 8 fonts shipped with the app; any color or the theme's | left, System, theme | TV title |
+| Text font and color | one of 8 fonts; any color or the theme's | System, theme | tap and on deck text |
+| Tap details | show or hide style, ABV, IBU, SRM and description | style, ABV and IBU shown | tap cards only |
 
-The TV picks a change up on its next menu check, within about 10 seconds.
+A preview beside the form shows the TV with the unsaved settings and the current menu. The TV
+picks a saved change up on its next menu check, within about 10 seconds.
 
 ## Brewfather import
 

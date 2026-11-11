@@ -10,8 +10,8 @@ import (
 	"github.com/helmnet/beer-menu/api/internal/settings"
 )
 
-// getSettings handles GET /api/settings (session or any token): 200 with all four display
-// settings, each its stored value or its default when never set or not valid.
+// getSettings handles GET /api/settings (session or any token): 200 with every display
+// setting, each its stored value or its default when never set or not valid.
 func getSettings(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		d, err := settings.GetDisplay(deps.DB)
@@ -24,9 +24,10 @@ func getSettings(deps Deps) http.Handler {
 }
 
 // updateSettings handles PATCH /api/settings (write): it applies the SettingsPatch body, at most
-// 8 KiB, with merge-patch semantics and returns 200 with all four settings. Every named field is
+// 8 KiB, with merge-patch semantics and returns 200 with every setting. Every named field is
 // validated before any is stored, so an invalid field changes nothing. A null or wrongly typed
-// field (page_seconds must be a JSON integer) or an invalid value gives 400 with a fields map
+// field (page_seconds must be a JSON integer, each show_* switch a JSON boolean, every other
+// field a string) or an invalid value gives 400 with a fields map
 // whose messages never echo the value; unknown fields and an empty object give 400.
 func updateSettings(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -37,6 +38,18 @@ func updateSettings(deps Deps) http.Handler {
 			Theme       json.RawMessage `json:"theme"`
 			Units       json.RawMessage `json:"units"`
 			PageSeconds json.RawMessage `json:"page_seconds"`
+
+			Layout          json.RawMessage `json:"layout"`
+			TitleAlign      json.RawMessage `json:"title_align"`
+			TitleFont       json.RawMessage `json:"title_font"`
+			TextFont        json.RawMessage `json:"text_font"`
+			ShowStyle       json.RawMessage `json:"show_style"`
+			ShowABV         json.RawMessage `json:"show_abv"`
+			ShowIBU         json.RawMessage `json:"show_ibu"`
+			ShowSRM         json.RawMessage `json:"show_srm"`
+			ShowDescription json.RawMessage `json:"show_description"`
+			TitleColor      json.RawMessage `json:"title_color"`
+			TextColor       json.RawMessage `json:"text_color"`
 		}
 		if !decodeJSON(w, r, &body, maxBody) {
 			return
@@ -47,6 +60,18 @@ func updateSettings(deps Deps) http.Handler {
 			Theme:       rawField[string](fe, "theme", body.Theme, "Must be a string."),
 			Units:       rawField[string](fe, "units", body.Units, "Must be a string."),
 			PageSeconds: rawField[int](fe, "page_seconds", body.PageSeconds, settings.PageSecondsMessage),
+
+			Layout:          rawField[string](fe, "layout", body.Layout, "Must be a string."),
+			TitleAlign:      rawField[string](fe, "title_align", body.TitleAlign, "Must be a string."),
+			TitleFont:       rawField[string](fe, "title_font", body.TitleFont, "Must be a string."),
+			TextFont:        rawField[string](fe, "text_font", body.TextFont, "Must be a string."),
+			ShowStyle:       rawField[bool](fe, "show_style", body.ShowStyle, settings.SwitchMessage),
+			ShowABV:         rawField[bool](fe, "show_abv", body.ShowABV, settings.SwitchMessage),
+			ShowIBU:         rawField[bool](fe, "show_ibu", body.ShowIBU, settings.SwitchMessage),
+			ShowSRM:         rawField[bool](fe, "show_srm", body.ShowSRM, settings.SwitchMessage),
+			ShowDescription: rawField[bool](fe, "show_description", body.ShowDescription, settings.SwitchMessage),
+			TitleColor:      rawField[string](fe, "title_color", body.TitleColor, "Must be a string."),
+			TextColor:       rawField[string](fe, "text_color", body.TextColor, "Must be a string."),
 		}
 		if len(fe) > 0 {
 			writeBeerError(w, r, fe)

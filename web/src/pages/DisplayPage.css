@@ -1,7 +1,10 @@
 /*
  * TV display styles. App imports DisplayPage statically, so this sheet loads on the admin page
- * too: every rule sits under .display and nothing touches body, html or bare elements.
- * Sizes are in vh so a 1080p TV and a laptop preview look the same.
+ * too: every rule sits under .display, except .tv-preview (the Display Settings preview box),
+ * and nothing touches body, html or bare elements.
+ * Sizes are in --vh and --vw units, so a 1080p TV and a laptop look the same: on the TV they are
+ * 1vh and 1vw; the Display Settings preview sets them to container units so the same drawing
+ * scales into its 16:9 box (research R8).
  */
 
 /*
@@ -15,8 +18,16 @@
  *   pager                    #8c8c95  5.9:1       #5f5f68  5.3:1
  *   offline                  #fff on #8b1e1e 9.1:1 in both
  * The dark pager was #6f6f78 (3.95:1), below the 4.5:1 FR-011 requires.
+ *
+ * The owner's colors (research R4) arrive as --title-color, used by the title, and --tv-text,
+ * used by every text role in cards, rows, the "On deck" and "On tap" headings and the "Nothing
+ * on tap" / "Nothing on deck" lines; each falls back to the theme color above when unset. The
+ * background, cards, art, pager and offline notice keep the theme's colors (FR-019). Owner colors
+ * are not contrast-checked.
  */
 .display {
+  --vh: 1vh;
+  --vw: 1vw;
   --bg: #0b0b0d;
   --card: #17171b;
   --text: #f2f2f2;
@@ -49,8 +60,8 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 2vh;
-  padding: 2vh 2vw;
+  gap: calc(2 * var(--vh));
+  padding: calc(2 * var(--vh)) calc(2 * var(--vw));
   box-sizing: border-box;
   background: var(--bg);
   color: var(--text);
@@ -68,7 +79,7 @@
   flex: 1 1 0;
   min-height: 0;
   display: grid;
-  gap: 2vh 2vw;
+  gap: calc(2 * var(--vh)) calc(2 * var(--vw));
   list-style: none;
 }
 
@@ -91,22 +102,23 @@
  * on-deck card with no label leaves its label row empty and every keg on the page matches.
  */
 .display .card {
+  color: var(--tv-text, var(--text));
   min-width: 0;
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr) 24vh;
+  grid-template-rows: auto minmax(0, 1fr) calc(24 * var(--vh));
   justify-items: center;
-  gap: 0.6vh 1vw;
-  padding: 1.5vh 1vw;
+  gap: calc(0.6 * var(--vh)) calc(1 * var(--vw));
+  padding: calc(1.5 * var(--vh)) calc(1 * var(--vw));
   overflow: hidden;
   text-align: center;
   background: var(--card);
-  border-radius: 1.5vh;
+  border-radius: calc(1.5 * var(--vh));
 }
 
 .display.taps-m .card {
-  grid-template-columns: 11vh minmax(0, 1fr);
+  grid-template-columns: calc(11 * var(--vh)) minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   text-align: left;
 }
@@ -127,7 +139,7 @@
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 0.4vh;
+  gap: calc(0.4 * var(--vh));
   overflow: hidden;
 }
 
@@ -135,6 +147,105 @@
   grid-row: 2;
   grid-column: 2;
   align-self: center;
+}
+
+/*
+ * List and columns layouts (research R7): a page is 6 equal row tracks, so a short page leaves
+ * blank space instead of stretching rows. Every row gives the art the same fixed cell, so the
+ * gauge reads the same on every row; the text is the label and name on one line, then the
+ * details line, then the description cut to one line.
+ */
+.display .rows {
+  flex: 1 1 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: repeat(6, minmax(0, 1fr));
+  gap: calc(1 * var(--vh));
+  list-style: none;
+}
+
+.display .row {
+  color: var(--tv-text, var(--text));
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: calc(8 * var(--vh)) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  align-items: center;
+  column-gap: calc(1.5 * var(--vw));
+  padding: calc(0.6 * var(--vh)) calc(1 * var(--vw));
+  overflow: hidden;
+  background: var(--card);
+  border-radius: calc(1.5 * var(--vh));
+}
+
+.display .row svg {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.display .row .text {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  align-content: center;
+  gap: calc(0.3 * var(--vh)) calc(1 * var(--vw));
+  overflow: hidden;
+}
+
+.display .row .label {
+  white-space: nowrap;
+}
+
+/* An on deck row has no label, so its name starts the line. */
+.display .row .name:first-child {
+  grid-column: 1 / -1;
+}
+
+.display .row .name {
+  font-size: calc(4.2 * var(--vh));
+  -webkit-line-clamp: 1;
+}
+
+.display .row .facts,
+.display .row .status,
+.display .row .description {
+  grid-column: 1 / -1;
+  font-size: calc(2.8 * var(--vh));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.display .row .description {
+  font-size: calc(2.6 * var(--vh));
+  white-space: normal;
+  -webkit-line-clamp: 1;
+}
+
+/* Side by side: two equal columns, each its heading over its own 6 rows. */
+.display .columns {
+  flex: 1 1 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: calc(2 * var(--vw));
+}
+
+.display .column {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(1 * var(--vh));
+}
+
+.display .column .nothing {
+  margin: 0;
+  font-size: calc(3 * var(--vh));
 }
 
 /* The art fills its grid cell; the viewBox keeps the shape. */
@@ -147,19 +258,19 @@
 }
 
 .display .label {
-  font-size: 2.6vh;
-  color: var(--muted);
+  font-size: calc(2.6 * var(--vh));
+  color: var(--tv-text, var(--muted));
 }
 
 .display .name {
-  font-size: 5.2vh;
+  font-size: calc(5.2 * var(--vh));
   font-weight: 700;
 }
 
 .display .style,
 .display .facts {
-  font-size: 3vh;
-  color: var(--soft);
+  font-size: calc(3 * var(--vh));
+  color: var(--tv-text, var(--soft));
 }
 
 .display .name,
@@ -171,55 +282,142 @@
   overflow-wrap: anywhere;
 }
 
+/*
+ * Clamped to 2 lines inside the card's fixed text block, which hides whatever does not fit, so a
+ * long description ends in "…" and never changes the card's size (research R10). SRM is a span
+ * in .facts, so it needs no rule of its own.
+ */
+.display .description {
+  font-size: calc(2.6 * var(--vh));
+  color: var(--tv-text, var(--soft));
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  /* When the block is short (taps-s), the description gives up its room before name or facts. */
+  flex-shrink: 100;
+}
+
 .display .facts span + span {
-  margin-left: 1.2vw;
+  margin-left: calc(1.2 * var(--vw));
 }
 
 .display .status {
-  font-size: 3vh;
-  color: var(--accent);
+  font-size: calc(3 * var(--vh));
+  color: var(--tv-text, var(--accent));
 }
 
 /* One line above the cards; flex: none so the cards keep the rest of the screen. */
 .display .title {
   flex: none;
-  font-size: 5vh;
+  font-size: calc(5 * var(--vh));
   font-weight: 700;
-  color: var(--text);
+  color: var(--title-color, var(--text));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+/* Left is the default above, so only center and right need a class. */
+.display .title.align-center {
+  text-align: center;
+}
+
+.display .title.align-right {
+  text-align: right;
+}
+
+/*
+ * Fonts (fonts.ts): the text font's class is on .display, and the title gets its own class when
+ * its font differs. Each ends in the system stack, so a font that fails to load falls back to it.
+ */
+.display.font-system,
+.display .font-system {
+  font-family: system-ui, sans-serif;
+}
+
+.display.font-inter,
+.display .font-inter {
+  font-family: "Inter", system-ui, sans-serif;
+}
+
+.display.font-lora,
+.display .font-lora {
+  font-family: "Lora", system-ui, sans-serif;
+}
+
+.display.font-roboto-slab,
+.display .font-roboto-slab {
+  font-family: "Roboto Slab", system-ui, sans-serif;
+}
+
+.display.font-oswald,
+.display .font-oswald {
+  font-family: "Oswald", system-ui, sans-serif;
+}
+
+.display.font-nunito,
+.display .font-nunito {
+  font-family: "Nunito", system-ui, sans-serif;
+}
+
+.display.font-bebas-neue,
+.display .font-bebas-neue {
+  font-family: "Bebas Neue", system-ui, sans-serif;
+}
+
+.display.font-pacifico,
+.display .font-pacifico {
+  font-family: "Pacifico", system-ui, sans-serif;
+}
+
 .display .heading {
   flex: none;
-  font-size: 4vh;
-  color: var(--muted);
+  font-size: calc(4 * var(--vh));
+  color: var(--tv-text, var(--muted));
 }
 
 /* Its own row under the cards, so it never covers one. */
 .display .pager {
   flex: none;
   align-self: flex-end;
-  margin-top: -1.5vh;
-  font-size: 2vh;
+  margin-top: calc(-1.5 * var(--vh));
+  font-size: calc(2 * var(--vh));
   color: var(--dim);
 }
 
 /* A corner notice: the last menu stays readable behind it. */
 .display .offline {
   position: absolute;
-  top: 1vh;
-  right: 1vw;
-  padding: 0.5vh 1vw;
-  font-size: 2.3vh;
+  top: calc(1 * var(--vh));
+  right: calc(1 * var(--vw));
+  padding: calc(0.5 * var(--vh)) calc(1 * var(--vw));
+  font-size: calc(2.3 * var(--vh));
   color: #fff;
   background: #8b1e1e;
-  border-radius: 0.8vh;
+  border-radius: calc(0.8 * var(--vh));
 }
 
 .display .nothing {
   margin: auto;
-  font-size: 6vh;
-  color: var(--muted);
+  font-size: calc(6 * var(--vh));
+  color: var(--tv-text, var(--muted));
+}
+
+/*
+ * The Display Settings preview: a 16:9 box the TV drawing fills. Its size units are the box's
+ * container units instead of the window's, so the same rules scale into it (research R8).
+ */
+.tv-preview {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  container-type: size;
+}
+
+.tv-preview .display {
+  position: absolute;
+  --vh: 1cqh;
+  --vw: 1cqw;
 }

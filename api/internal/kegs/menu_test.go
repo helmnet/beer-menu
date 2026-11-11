@@ -229,6 +229,7 @@ func TestMenuJSONKeys(t *testing.T) {
 	want := map[string]string{
 		"menu": "on_deck,taps", "tap": "beer,keg,label", "item": "beer,keg,status",
 		"beer": "abv,color,ibu,name,style", "keg": "level,shape",
+		"tap beer": "abv,color,ibu,name,srm,style",
 	}
 	check := func(what string, v any) {
 		t.Helper()
@@ -245,7 +246,7 @@ func TestMenuJSONKeys(t *testing.T) {
 		check("tap", v)
 	}
 	full, empty := taps[0].(map[string]any), taps[1].(map[string]any)
-	check("beer", full["beer"])
+	check("tap beer", full["beer"])
 	check("keg", full["keg"])
 	if empty["beer"] != nil || empty["keg"] != nil {
 		t.Errorf("empty tap = %v", empty)
@@ -257,6 +258,57 @@ func TestMenuJSONKeys(t *testing.T) {
 	check("keg", deck[0].(map[string]any)["keg"])
 	if deck[0].(map[string]any)["status"] != nil || deck[1].(map[string]any)["keg"] != nil || deck[1].(map[string]any)["status"] != "fermenting" {
 		t.Errorf("on deck = %v", deck)
+	}
+}
+
+// TestMenuTapDetails checks srm and description: on a tap beer each is carried when set and
+// omitted when unset; on deck beers never carry either, even when the beer has them (R9).
+func TestMenuTapDetails(t *testing.T) {
+	db := openDB(t)
+	rich := func(name string) int64 {
+		id := insertBeer(t, db, name, 5.6)
+		exec(t, db, "UPDATE beers SET description = 'Crisp & <b>bright</b>.' WHERE id = ?", id)
+		return id
+	}
+	addKeg(t, db, rich("Rich"), "corny_5_gal", 18.93, 9, int64(1), 1)
+	addKeg(t, db, insertBeer(t, db, "Plain", nil), "corny_5_gal", 18.93, 9, newTap(t, db, "Tap 2"), 1)
+	addKeg(t, db, rich("Waiting"), "corny_5_gal", 18.93, 18.93, nil, 1)
+	exec(t, db, "UPDATE beers SET status = 'fermenting' WHERE id = ?", rich("Brewing"))
+	exec(t, db, "UPDATE beers SET status = 'conditioning' WHERE id = ?", rich("Resting"))
+
+	m := mustMenu(t, db)
+	if b := m.Taps[0].Beer; b.SRM == nil || *b.SRM != 5.6 || b.Description == nil || *b.Description != "Crisp & <b>bright</b>." {
+		t.Fatalf("rich tap beer = %+v", b)
+	}
+	if b := m.Taps[1].Beer; b.SRM != nil || b.Description != nil {
+		t.Fatalf("plain tap beer = %+v", b)
+	}
+	if len(m.OnDeck) != 3 {
+		t.Fatalf("on deck = %s", onDeck(m))
+	}
+	for _, it := range m.OnDeck {
+		if it.Beer.SRM != nil || it.Beer.Description != nil {
+			t.Errorf("on deck beer %s carries srm or description: %+v", it.Beer.Name, it.Beer)
+		}
+	}
+	var got struct {
+		Taps   []struct{ Beer map[string]any }
+		OnDeck []struct{ Beer map[string]any } `json:"on_deck"`
+	}
+	b, _ := json.Marshal(m)
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if k := keySet(t, got.Taps[0].Beer); k != "abv,color,description,ibu,name,srm,style" {
+		t.Errorf("rich tap beer keys = %s", k)
+	}
+	if k := keySet(t, got.Taps[1].Beer); k != "abv,color,ibu,name,style" {
+		t.Errorf("plain tap beer keys = %s", k)
+	}
+	for _, it := range got.OnDeck {
+		if k := keySet(t, it.Beer); k != "abv,color,ibu,name,style" {
+			t.Errorf("on deck beer keys = %s", k)
+		}
 	}
 }
 

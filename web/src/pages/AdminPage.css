@@ -78,8 +78,12 @@ body:has(> #root > .admin) {
   box-sizing: border-box;
 }
 
-.admin h1,
-.admin h2,
+/*
+ * :where(:not(.display *)) keeps element rules out of the Display Settings preview, which must
+ * draw exactly as the TV does (FR-017), without raising the rules' specificity.
+ */
+.admin h1:where(:not(.display *)),
+.admin h2:where(:not(.display *)),
 .admin h3 {
   margin: 0;
   line-height: 1.25;
@@ -93,7 +97,7 @@ body:has(> #root > .admin) {
   font-size: 1.05rem;
 }
 
-.admin p {
+.admin p:where(:not(.display *)) {
   margin: 0.25rem 0;
 }
 
@@ -122,14 +126,15 @@ body:has(> #root > .admin) {
 
 /* Cards */
 
-.admin .card {
+/* The TV preview's cards are TV cards, not admin cards. */
+.admin .card:where(:not(.display *)) {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 16px;
 }
 
-.admin .card + .card {
+.admin .card:where(:not(.display *)) + .card {
   margin-top: 16px;
 }
 
@@ -254,6 +259,12 @@ body:has(> #root > .admin) {
   min-height: 0;
   padding: 0;
   accent-color: var(--accent);
+}
+
+/* A swatch, not a full-width bar. */
+.admin input[type="color"] {
+  width: 64px;
+  padding: 2px;
 }
 
 .admin .field {
@@ -841,6 +852,40 @@ body:has(> #root > .admin) {
   background: var(--accent);
 }
 
+/* Display Settings: fieldsets group fields without a box of their own. */
+.admin fieldset {
+  min-width: 0;
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+}
+
+.admin legend {
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+/*
+ * Display Settings: the TV preview sits above the form, and beside it once the window is wide
+ * enough for both to stay usable next to the side panel. Its 16:9 box is in DisplayPage.css.
+ */
+.admin .settings-layout {
+  display: grid;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (min-width: 1200px) {
+  .admin .settings-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .admin .settings-layout .preview-panel {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
 /*
  * Phones (below 768 px): the side panel becomes an off-canvas drawer behind the top bar's
  * menu button, cards stack in one column, nothing scrolls sideways except tables inside their
@@ -927,7 +972,7 @@ body:has(> #root > .admin) {
    * The top bar shows the page title, so the page's h2 is hidden visually but stays in the
    * accessibility tree as the main area's heading. Dialog titles stay visible.
    */
-  .admin .content h2:not(dialog h2) {
+  .admin .content h2:not(dialog h2):where(:not(.display *)) {
     position: absolute;
     width: 1px;
     height: 1px;
