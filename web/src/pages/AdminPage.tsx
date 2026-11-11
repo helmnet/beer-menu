@@ -33,9 +33,9 @@ type View =
  * GET /api/session, then shows the first-admin setup form, the sign-in form, a loading note or
  * an error, each in a centered card with no side panel. Signed in, it is a shell: SideNav (side
  * panel, or top bar and drawer on a phone) and a `main` that mounts only the current page, Taps
- * after every sign-in. The page's primary action (Taps: Add tap) is also portaled into the
- * top bar's slot. Since a page mounts when shown, it fetches fresh data each time and pages need
- * not refresh each other.
+ * after every sign-in. The page's primary action (Add tap, Add keg, Add beer, Add admin or
+ * New token) is also portaled into the top bar's slot. Since a page mounts when shown, it
+ * fetches fresh data each time and pages need not refresh each other.
  *
  * After each sign-in it reads GET /api/health once for the version (a failure or empty
  * version shows "unknown", with no error) and GET /api/settings once for the volume units,
@@ -168,17 +168,17 @@ function pageView(
     case "taps":
       return <TapsPanel units={units} actionSlot={actionSlot} onSignedOut={toLogin} />;
     case "on-deck":
-      return <OnDeckPanel units={units} onSignedOut={toLogin} />;
+      return <OnDeckPanel units={units} actionSlot={actionSlot} onSignedOut={toLogin} />;
     case "keg-history":
       return <KegHistory units={units} onSignedOut={toLogin} />;
     case "beers":
-      return <BeersPanel onSignedOut={toLogin} />;
+      return <BeersPanel actionSlot={actionSlot} onSignedOut={toLogin} />;
     case "display":
       return <SettingsPanel onSignedOut={toLogin} onChange={onSettings} />;
     case "admins":
-      return <AdminsPanel me={me} onSignedOut={toLogin} />;
+      return <AdminsPanel me={me} actionSlot={actionSlot} onSignedOut={toLogin} />;
     case "tokens":
-      return <TokensPanel onSignedOut={toLogin} />;
+      return <TokensPanel actionSlot={actionSlot} onSignedOut={toLogin} />;
     case "password":
       return <PasswordForm onSignedOut={toLogin} />;
     case "brewfather":

@@ -53,6 +53,7 @@ const dialogs: [string, string, string][] = [
   ["Beer Library", "Add beer", "Add beer"],
   ["Beer Library", "Edit", "Edit Pale"],
   ["API Tokens", "New token", "New API token"],
+  ["Admin Users", "Add admin", "Add admin"],
 ];
 
 const nav = () => screen.getByRole("navigation", { name: "Admin" });
@@ -142,6 +143,16 @@ describe("AdminPage.css", () => {
       .map((s) => s.trim().replace(/\s+/g, " "))
       .filter((s) => !/^\.admin(?![\w-])/.test(s) && s !== "body:has(> #root > .admin)");
     expect(bad).toEqual([]);
+  });
+
+  it("makes every page heading as tall as a button, so pages don't jump", () => {
+    const minHeight = (selector: string) =>
+      cssRules
+        .find((r) => r.selector.split(",").some((s) => s.trim() === selector) && /min-height/.test(r.body))
+        ?.body.match(/min-height:\s*([^;]+)/)?.[1].trim();
+    expect(minHeight(".admin .btn")).toBeDefined();
+    expect(minHeight(".admin .page-title")).toBe(minHeight(".admin .btn"));
+    expect(minHeight(".admin .page-header h2")).toBe(minHeight(".admin .btn"));
   });
 
   it("never uses the accent as a text color", () => {

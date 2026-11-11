@@ -7,7 +7,7 @@ type Values = Record<Field, string>;
 const text = (s: Settings): Values => ({ ...s, page_seconds: String(s.page_seconds) });
 
 /**
- * SettingsPanel is the Display Settings page, one card that edits the display settings: the TV
+ * SettingsPanel is the Display Settings page, the heading above one card that edits the display settings: the TV
  * title, the TV theme (Dark or Light), the admin app's volume units (US or Metric) and the seconds
  * each TV page shows (5 to 300). It loads GET /api/settings on mount and calls `onChange` with the
  * loaded settings, then on Save sends PATCH /api/settings with only the changed fields and calls
@@ -93,9 +93,9 @@ export default function SettingsPanel({
   }
 
   return (
-    <section className="card">
-      <h2>Display Settings</h2>
-      <form onSubmit={submit} noValidate aria-label="Display settings">
+    <section className="page">
+      <h2 className="page-title">Display Settings</h2>
+      <form className="card" onSubmit={submit} noValidate aria-label="Display settings">
         {field("title", "Title", (common) => <input {...common} />)}
         {field("theme", "Theme", (common) => (
           <select {...common}>

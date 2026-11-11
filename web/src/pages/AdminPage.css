@@ -127,7 +127,6 @@ body:has(> #root > .admin) {
   margin-top: 16px;
 }
 
-.admin .card > h2,
 .admin .card > h3 {
   margin-bottom: 12px;
 }
@@ -546,14 +545,31 @@ body:has(> #root > .admin) {
 .admin .page-header {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 16px;
 }
 
+/* An in-card header's h3 is shorter than its button, so center them. */
 .admin .card > .page-header {
+  align-items: center;
   margin-bottom: 12px;
+}
+
+.admin .card > .plain-list:last-child {
+  margin-bottom: 0;
+}
+
+/*
+ * Every page heading is a 36px row (a .btn's height) with its text centered, and page actions sit
+ * at the top of the header, so headings and first cards don't jump between pages.
+ */
+.admin .page-header h2,
+.admin .page-title {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
 }
 
 .admin .page-title {
@@ -921,6 +937,11 @@ body:has(> #root > .admin) {
   /* The top bar shows the page's primary action, so the header copy is hidden: it appears once. */
   .admin .page-header .page-action {
     display: none;
+  }
+
+  /* With its h2 and action both hidden, a plain page header is empty: drop its gap like a page-title's. */
+  .admin .page-header:has(> h2) {
+    margin-bottom: 0;
   }
 
   .admin .tap-grid {

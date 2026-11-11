@@ -1,5 +1,6 @@
 import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { apiFetch, Beer, errorMessage, isUnauthenticated, Keg, KegType, Units } from "../api";
 import BeerArt from "./BeerArt";
 import KegCard from "./KegCard";
@@ -41,9 +42,18 @@ const statusLabel: Record<string, string> = { conditioning: "Conditioning", ferm
  * each. Beers show their artwork, name, style, ABV and status. An empty list says "Nothing on
  * deck". "Add keg" opens KegForm with no tap in the "Add keg" dialog, adding a waiting keg;
  * a save closes it and reloads. Volumes follow `units` (default US). Any 401 calls
- * `onSignedOut`; other load errors are shown.
+ * `onSignedOut`; other load errors are shown. Given `actionSlot` (the phone top bar's slot), a
+ * second Add keg is portaled there; CSS shows one of the two.
  */
-export default function OnDeckPanel({ onSignedOut, units = "us" }: { onSignedOut: () => void; units?: Units }) {
+export default function OnDeckPanel({
+  onSignedOut,
+  units = "us",
+  actionSlot,
+}: {
+  onSignedOut: () => void;
+  units?: Units;
+  actionSlot?: HTMLElement | null;
+}) {
   const [items, setItems] = useState<Item[] | null>(null);
   const [types, setTypes] = useState<KegType[]>([]);
   const [adding, setAdding] = useState(false);
@@ -75,15 +85,20 @@ export default function OnDeckPanel({ onSignedOut, units = "us" }: { onSignedOut
     load();
   }
 
+  const addKeg = (
+    <button type="button" className="btn btn-primary page-action" onClick={() => setAdding(true)}>
+      <Plus aria-hidden="true" />
+      Add keg
+    </button>
+  );
+
   return (
     <section className="page">
       <div className="page-header">
         <h2>On Deck</h2>
-        <button type="button" className="btn btn-primary" onClick={() => setAdding(true)}>
-          <Plus aria-hidden="true" />
-          Add keg
-        </button>
+        {addKeg}
       </div>
+      {actionSlot && createPortal(addKeg, actionSlot)}
       {error && <p role="alert">{error}</p>}
       {items?.length === 0 && <p className="card muted">Nothing on deck</p>}
       {items && items.length > 0 && (

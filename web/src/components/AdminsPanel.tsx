@@ -1,16 +1,34 @@
+import { Plus } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Admin, apiFetch, errorMessage, isUnauthenticated } from "../api";
+import Modal from "./Modal";
 
 /**
- * AdminsPanel is the Admin Users page, one card: it lists admins (GET /api/admins), adds one with
- * a username and initial password (POST /api/admins) and removes one after confirmation (DELETE
- * /api/admins/{id}), showing the server's message for a taken username or the last admin. Removing
- * `me` ends this session, so it then calls `onSignedOut`, as it does for any 401.
+ * AdminsPanel is the Admin Users page: the "Admin Users" heading with "Add admin", then a card
+ * listing admins (GET /api/admins), each removable after confirmation (DELETE /api/admins/{id}).
+ * "Add admin" opens the "Add admin" dialog with a username and initial password; Save sends POST
+ * /api/admins, then closes it, clears the fields and reloads the list, while a server error, such
+ * as a taken username, keeps it open with the message. Removing the last admin shows the server's
+ * message. Removing `me` ends this session, so it then calls `onSignedOut`, as it does for any
+ * 401. Given `actionSlot` (the phone top bar's slot), a second Add admin is portaled there; CSS
+ * shows one of the two.
  */
-export default function AdminsPanel({ me, onSignedOut }: { me: Admin; onSignedOut: () => void }) {
+export default function AdminsPanel({
+  me,
+  onSignedOut,
+  actionSlot,
+}: {
+  me: Admin;
+  onSignedOut: () => void;
+  actionSlot?: HTMLElement | null;
+}) {
   const [admins, setAdmins] = useState<Admin[]>([]);
+  const [adding, setAdding] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [formError, setFormError] = useState("");
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   async function run(action: () => Promise<void>) {
@@ -29,14 +47,29 @@ export default function AdminsPanel({ me, onSignedOut }: { me: Admin; onSignedOu
     run(load);
   }, []);
 
-  function add(e: FormEvent) {
+  function close() {
+    setAdding(false);
+    setUsername("");
+    setPassword("");
+    setFormError("");
+  }
+
+  async function add(e: FormEvent) {
     e.preventDefault();
-    run(async () => {
+    if (busy) return;
+    setFormError("");
+    setBusy(true);
+    try {
       await apiFetch("POST", "/api/admins", { username, password });
-      setUsername("");
-      setPassword("");
-      await load();
-    });
+    } catch (err) {
+      if (isUnauthenticated(err)) onSignedOut();
+      else setFormError(errorMessage(err));
+      return;
+    } finally {
+      setBusy(false);
+    }
+    close();
+    run(load);
   }
 
   function remove(a: Admin) {
@@ -49,39 +82,62 @@ export default function AdminsPanel({ me, onSignedOut }: { me: Admin; onSignedOu
     });
   }
 
+  const addAdmin = (
+    <button type="button" className="btn btn-primary page-action" onClick={() => setAdding(true)}>
+      <Plus aria-hidden="true" />
+      Add admin
+    </button>
+  );
+
   return (
-    <section className="card">
-      <h2>Admin Users</h2>
-      <ul className="plain-list">
-        {admins.map((a) => (
-          <li key={a.id}>
-            <span>{a.username}</span> (added {new Date(a.created_at).toLocaleString()}){" "}
-            <button type="button" className="btn" onClick={() => remove(a)}>
-              Remove
-            </button>
-          </li>
-        ))}
-      </ul>
-      <form className="stack-form" onSubmit={add}>
-        <label>
-          Username
-          <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="off" required />
-        </label>
-        <label>
-          Password
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="new-password"
-            required
-          />
-        </label>
-        <button type="submit" className="btn btn-primary">
-          Add admin
-        </button>
-      </form>
-      {error && <p role="alert">{error}</p>}
+    <section className="page">
+      <div className="page-header">
+        <h2>Admin Users</h2>
+        {addAdmin}
+      </div>
+      {actionSlot && createPortal(addAdmin, actionSlot)}
+      <div className="card">
+        <ul className="plain-list">
+          {admins.map((a) => (
+            <li key={a.id}>
+              <span>{a.username}</span> (added {new Date(a.created_at).toLocaleString()}){" "}
+              <button type="button" className="btn" onClick={() => remove(a)}>
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+        {error && <p role="alert">{error}</p>}
+      </div>
+      {adding && (
+        <Modal title="Add admin" onClose={close}>
+          <form className="inline-form" onSubmit={add}>
+            <label>
+              Username
+              <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="off" required />
+            </label>
+            <label>
+              Password
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
+                required
+              />
+            </label>
+            {formError && <p role="alert">{formError}</p>}
+            <div className="btn-row">
+              <button type="submit" className="btn btn-primary" disabled={busy}>
+                Save
+              </button>
+              <button type="button" className="btn" onClick={close}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </section>
   );
 }

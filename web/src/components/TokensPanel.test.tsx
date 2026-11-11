@@ -42,6 +42,18 @@ describe("TokensPanel", () => {
     expect(within(row("old")).queryByRole("button", { name: "Revoke" })).toBeNull();
   });
 
+  it("opens the same New API token dialog from the top bar slot it is given", async () => {
+    stubApi({ "GET /api/tokens": { status: 200, body: [unused] } });
+    const slot = document.createElement("div");
+    document.body.appendChild(slot);
+    render(<TokensPanel onSignedOut={vi.fn()} actionSlot={slot} />);
+    await screen.findByText("script");
+    expect(screen.getAllByRole("button", { name: "New token" })).toHaveLength(2);
+    fireEvent.click(within(slot).getByRole("button", { name: "New token" }));
+    expect(screen.getByRole("dialog", { name: "New API token" })).toBeTruthy();
+    slot.remove();
+  });
+
   it("creates a token in the New API token dialog and shows its secret once", async () => {
     const secret = `bmt_${crypto.randomUUID()}`;
     const routes = {

@@ -126,6 +126,18 @@ describe("OnDeckPanel", () => {
     await waitFor(() => expect(within(item("Bock")).getByRole("button", { name: "Kick" })).toBeTruthy());
   });
 
+  it("opens the same Add keg dialog from the top bar slot it is given", async () => {
+    stubApi(routes());
+    const slot = document.createElement("div");
+    document.body.appendChild(slot);
+    render(<OnDeckPanel onSignedOut={vi.fn()} actionSlot={slot} />);
+    await screen.findByRole("article", { name: "Zwickel" });
+    expect(screen.getAllByRole("button", { name: "Add keg" })).toHaveLength(2);
+    fireEvent.click(within(slot).getByRole("button", { name: "Add keg" }));
+    expect(screen.getByRole("dialog", { name: "Add keg" })).toBeTruthy();
+    slot.remove();
+  });
+
   it("closes the Add keg dialog on Cancel without a request", async () => {
     const calls = stubApi(routes());
     render(<OnDeckPanel onSignedOut={vi.fn()} />);

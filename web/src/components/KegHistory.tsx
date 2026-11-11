@@ -5,7 +5,7 @@ import { formatVolume } from "../units";
 const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString() : "—");
 
 /**
- * KegHistory is the Keg History page, one card: kicked kegs newest kicked first (GET
+ * KegHistory is the Keg History page, the heading above one card: kicked kegs newest kicked first (GET
  * /api/kegs?state=kicked) with beer, the last tap's label, keg type (labels from GET
  * /api/keg-types), size in `units` (US gallons or litres, default US), and tapped and kicked
  * dates, an em dash when a keg was never on a tap. A keg is deleted after a confirm prompt (DELETE
@@ -44,41 +44,43 @@ export default function KegHistory({ onSignedOut, units = "us" }: { onSignedOut:
   }
 
   return (
-    <section className="card">
-      <h2>Keg History</h2>
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Beer</th>
-              <th>Tap</th>
-              <th>Type</th>
-              <th>Size</th>
-              <th>Tapped</th>
-              <th>Kicked</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {kegs.map((k) => (
-              <tr key={k.id}>
-                <td>{k.beer_name}</td>
-                <td>{k.tap_label ?? "—"}</td>
-                <td>{types.find((t) => t.type === k.type)?.label ?? k.type}</td>
-                <td>{formatVolume(k.size_l, units)}</td>
-                <td>{day(k.tapped_at)}</td>
-                <td>{day(k.kicked_at)}</td>
-                <td>
-                  <button type="button" className="btn" onClick={() => remove(k)}>
-                    Delete
-                  </button>
-                </td>
+    <section className="page">
+      <h2 className="page-title">Keg History</h2>
+      <div className="card">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Beer</th>
+                <th>Tap</th>
+                <th>Type</th>
+                <th>Size</th>
+                <th>Tapped</th>
+                <th>Kicked</th>
+                <th>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {kegs.map((k) => (
+                <tr key={k.id}>
+                  <td>{k.beer_name}</td>
+                  <td>{k.tap_label ?? "—"}</td>
+                  <td>{types.find((t) => t.type === k.type)?.label ?? k.type}</td>
+                  <td>{formatVolume(k.size_l, units)}</td>
+                  <td>{day(k.tapped_at)}</td>
+                  <td>{day(k.kicked_at)}</td>
+                  <td>
+                    <button type="button" className="btn" onClick={() => remove(k)}>
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {error && <p role="alert">{error}</p>}
       </div>
-      {error && <p role="alert">{error}</p>}
     </section>
   );
 }
