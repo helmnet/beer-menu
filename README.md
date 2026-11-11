@@ -68,6 +68,10 @@ value that breaks the rules, stops the API with an error. Remove them once the a
 only when you reach the app over plain HTTP by LAN address or hostname; otherwise sign-in
 appears to work but the next request is not signed in. Behind a TLS proxy, leave it on.
 
+**Install as an app.** Browsers offer to install the admin app only over HTTPS, so open it by
+its HTTPS hostname first. On iOS, use Share > Add to Home Screen; the installed app has its own
+sign-in, separate from Safari's.
+
 **Locked out.** If every admin has lost their password, reset one from the server:
 
 ```sh
