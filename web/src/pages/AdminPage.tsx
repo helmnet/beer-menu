@@ -35,8 +35,9 @@ type View =
  * panel, or top bar and drawer on a phone) and a `main` that mounts only the current page. The
  * current page is kept in the URL hash (`#beers`, `#on-deck`): choosing a page in SideNav sets
  * it, adding a browser history entry, so Back and Forward move between pages, and load, reload
- * and every sign-in show the hash's page, or Taps when the hash names no page. A hash, not a
- * path, since the `display` page would clash with the `/display` TV route. The page's primary
+ * and every sign-in show the hash's page, or Taps when the hash names no page; Sign out clears
+ * the hash, so only a sign-in after a 401 returns to the same page. A hash, not a path, since
+ * the `display` page would clash with the `/display` TV route. The page's primary
  * action (Add tap, Add keg, Add beer, Add admin or New token) is also portaled into the top
  * bar's slot. Since a page mounts when shown, it
  * fetches fresh data each time and pages need not refresh each other.
@@ -112,6 +113,9 @@ export default function AdminPage() {
         return;
       }
     }
+    // Replace, not push, and no hashchange: the next sign-in starts on Taps. The absolute href,
+    // since a "//host/..." path read as a relative URL names another origin and throws.
+    window.history.replaceState(null, "", window.location.href.split("#")[0]);
     toLogin();
   }
 
