@@ -7,10 +7,11 @@ import (
 )
 
 // Menu is the public menu GET /api/menu serves to the TV display, with display fields only: no
-// ids, timestamps, sizes or volumes (research R3). It is a compatibility contract: fields may be
-// added but not removed or renamed within a major version. These structs are separate from Tap,
-// Keg and beers.Beer so a field added to a credentialed type can never leak here. Taps and
-// OnDeck are never nil, so they marshal as [] when empty.
+// ids, timestamps, sizes or volumes (research R3); tap beers also carry SRM and description. It
+// is a compatibility contract: fields may be added but not removed or renamed within a major
+// version. These structs are separate from Tap, Keg and beers.Beer so a field added to a
+// credentialed type can never leak here. Taps and OnDeck are never nil, so they marshal as []
+// when empty.
 type Menu struct {
 	// Taps are the enabled taps in position order.
 	Taps []MenuTap `json:"taps"`
@@ -35,14 +36,18 @@ type OnDeckItem struct {
 	Status *string  `json:"status"`
 }
 
-// MenuBeer is the beer as the display draws it. Optional fields are nil when unset and marshal
-// as null. Color is beers.ColorFor of the beer's SRM.
+// MenuBeer is the beer as the display draws it. Style, ABV, IBU and Color are nil when unset and
+// marshal as null. Color is beers.ColorFor of the beer's SRM. SRM and Description are set on tap
+// beers only and are left out of the JSON when nil, so on deck beers never carry them and an
+// older client sees no new null fields (research R9).
 type MenuBeer struct {
-	Name  string   `json:"name"`
-	Style *string  `json:"style"`
-	ABV   *float64 `json:"abv"`
-	IBU   *float64 `json:"ibu"`
-	Color *string  `json:"color"`
+	Name        string   `json:"name"`
+	Style       *string  `json:"style"`
+	ABV         *float64 `json:"abv"`
+	IBU         *float64 `json:"ibu"`
+	Color       *string  `json:"color"`
+	SRM         *float64 `json:"srm,omitempty"`
+	Description *string  `json:"description,omitempty"`
 }
 
 // MenuKeg is a keg as the display draws it: its shape ("corny" or "sanke") and Level, the
@@ -64,7 +69,7 @@ const (
 func GetMenu(db *sql.DB) (Menu, error) {
 	m := Menu{Taps: []MenuTap{}, OnDeck: []OnDeckItem{}}
 
-	rows, err := db.Query(`SELECT t.label, k.id, b.id, ` + menuKegCols + `, ` + menuBeerCols + `
+	rows, err := db.Query(`SELECT t.label, k.id, b.id, ` + menuKegCols + `, ` + menuBeerCols + `, b.description
 		FROM taps t
 		LEFT JOIN kegs k ON k.tap_id = t.id AND k.kicked_at IS NULL
 		LEFT JOIN beers b ON b.id = k.beer_id AND b.archived_at IS NULL
@@ -81,12 +86,12 @@ func GetMenu(db *sql.DB) (Menu, error) {
 		var name sql.NullString
 		var b MenuBeer
 		var srm *float64
-		if err := rows.Scan(&tp.Label, &kegID, &beerID, &kt, &size, &remaining, &name, &b.Style, &b.ABV, &b.IBU, &srm); err != nil {
+		if err := rows.Scan(&tp.Label, &kegID, &beerID, &kt, &size, &remaining, &name, &b.Style, &b.ABV, &b.IBU, &srm, &b.Description); err != nil {
 			return Menu{}, err
 		}
 		// Both or neither: a keg whose beer is archived shows as an empty tap, never half filled.
 		if kegID.Valid && beerID.Valid {
-			b.Name, b.Color = name.String, beers.ColorFor(srm)
+			b.Name, b.Color, b.SRM = name.String, beers.ColorFor(srm), srm
 			k := menuKeg(kt.String, size.Float64, remaining.Float64)
 			tp.Beer, tp.Keg = &b, &k
 		}

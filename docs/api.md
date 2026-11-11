@@ -77,10 +77,11 @@ Conflicts answer 409 with one of these `error` codes: `tap_occupied`, `tap_has_k
 
 `GET /api/menu` is the only public read; the TV display polls it every 10 seconds. It returns
 display fields only (tap label, beer name, style, ABV, IBU, color, keg shape) and the keg level
-as a fraction from 0 to 1: no ids, sizes, volumes or timestamps. Home Assistant and scripts
-that need volumes use the credentialed `GET /api/kegs` and `GET /api/taps` with a token. The
-menu also carries `display`: the title, theme and page interval from the display settings.
-Units are not public.
+as a fraction from 0 to 1: no ids, sizes, volumes or timestamps. Tap beers also carry `srm` and
+`description`, each left out when the beer has none; on deck beers never carry them. Home
+Assistant and scripts that need volumes use the credentialed `GET /api/kegs` and `GET /api/taps`
+with a token. The menu also carries `display`: every display setting below except `units`,
+which is not public.
 
 ## Display settings
 
@@ -90,9 +91,15 @@ Units are not public.
 | `theme` | `dark` or `light` | `dark` | TV only (the admin app is unchanged) |
 | `units` | `us` or `metric` | `us` | admin app volumes |
 | `page_seconds` | whole seconds, 5 to 300 | 15 | TV page rotation |
+| `layout` | `grid`, `list` (one row per item) or `columns` (taps beside on deck) | `grid` | TV |
+| `title_align` | `left`, `center` or `right` | `left` | TV title |
+| `title_font`, `text_font` | `system`, `inter`, `lora`, `roboto-slab`, `oswald`, `nunito`, `bebas-neue` or `pacifico` | `system` | TV title; all other TV text |
+| `show_style`, `show_abv`, `show_ibu` | `true` or `false` | `true` | tap cards only |
+| `show_srm`, `show_description` | `true` or `false` | `false` | tap cards only |
+| `title_color`, `text_color` | `#rrggbb` (returned lowercase), or empty for the theme's color | empty | TV title; tap and on deck text |
 
-`GET /api/settings` (read) returns all four; `PATCH /api/settings` (write) changes the ones
-named, all or nothing.
+`GET /api/settings` (read) returns all of them; `PATCH /api/settings` (write) changes the ones
+named, all or nothing. Switches must be JSON booleans. Colors are not contrast-checked.
 
 ## Brewfather
 

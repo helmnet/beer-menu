@@ -18,8 +18,8 @@ type menuResponse struct {
 // getMenu handles GET /api/menu. Public: no credential, so the TV display needs no secret
 // (constitution V). It returns 200 with the menu (enabled taps and the on-deck list) holding
 // display fields only, never ids, sizes, volumes or timestamps; clients that need those use the
-// credentialed tap and keg reads. display holds the title, theme and page interval the TV uses;
-// units and every other setting are not public. A settings read error is logged and serves the
+// credentialed tap and keg reads. display holds every TV setting (settings.Public); units and
+// every other setting are not public. A settings read error is logged and serves the
 // default display, so it never fails the TV's only read; a menu read error still gives 500. The
 // body is a compatibility contract: fields may be added but not removed or renamed within a
 // major version. withSecurity sends Cache-Control: no-store.

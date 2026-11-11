@@ -75,9 +75,25 @@ The MVP covers five areas: the beer library, taps, keg levels, on deck, and the 
 
 - A full-screen, landscape view designed for a TV at 1080p, readable at 3 m or more.
 - Updates without a manual reload when data changes (polling or server-sent events).
-- Dark theme by default; a light theme, title and page interval set from the admin app. No logo (no image uploads) and no custom colors.
+- Dark theme by default; a light theme, title and page interval set from the admin app. No logo (no image uploads). No custom colors except the TV text colors from feature 10.
 - Kegs on the "on deck" section should have artwork showing the type of keg (5 gallon corny keg by default) and the color of the beer inside
 - Beers on tap should have glassware artwork showing the beer's color that's on tap
+
+**TV display options (feature 10, after feature 9)**
+
+More choices for how the TV looks, set from the admin app's Display Settings page. Each one defaults to what the TV shows today, so an upgrade changes nothing until the owner picks something.
+
+- Layout:
+  - The current layout (default).
+  - Vertical list: taps listed one per row, top to bottom.
+  - Side by side: on tap and on deck as two columns, each listed top to bottom.
+- Title alignment: left, centered or right.
+- Title font.
+- Font for the tap and on deck text.
+- Both font pickers offer today's font plus 6 to 8 free fonts shipped with the app. No fonts are loaded from other sites.
+- Tap details: show or hide each of style, ABV, IBU, SRM and description.
+- Text color, chosen with a color picker: one for the title, one for the tap and on deck text. One color covers both themes. Picked colors are not contrast-checked; the preview shows how they read.
+- A preview inside Display Settings shows how the TV will look with the unsaved changes.
 
 **Admin app (feature 8, after the MVP)**
 
@@ -226,7 +242,7 @@ Four phases, each usable on its own. A phase starts only when the one before it 
 1. **MVP: web tap list.** API, admin app, TV display, Brewfather import, Docker Compose deployment.
 2. **Home Assistant.** A custom integration or REST sensors that read taps and keg levels, and service calls to update levels. Uses `write`-scoped API tokens; no API changes expected.
 3. **Android display APK.** A Fire TV app that replaces Fully Kiosk: auto-start on boot, discovery of the server on the LAN, offline last-known menu.
-4. **More sources and polish.** Additional import providers, flow-meter or scale input for automatic keg levels, multiple display layouts, a bottles and cans list.
+4. **More sources and polish.** Additional import providers, flow-meter or scale input for automatic keg levels, a bottles and cans list. More display layouts moved to feature 10.
 
 ## Spec-kit feature breakdown
 
@@ -244,8 +260,9 @@ Run `/speckit-constitution` once from this brief, then one `/speckit-specify` pe
 | 7 | Display settings | 5 | Title, theme (dark or light, TV only), units (US or metric, admin only) and the TV page rotation interval (default 15 s) editable from the admin app. No logo |
 | 8 | Admin app restyle | 7 | The admin app matches the "Admin app" section under Functional scope: side panel navigation, light, dark and system themes, royal blue accent, modal forms, searchable beer pickers, and an On Deck page matching the TV. Checked by screenshots at laptop and phone widths |
 | 9 | API docs | 8 | The API serves Swagger UI at `/api/docs` and the OpenAPI spec at `/api/openapi.yaml`, both without authentication. Read-only: no "Try it out" or Authorize. Swagger UI assets are a pinned version bundled in the API image, so the page works offline and keeps a `'self'`-only CSP. The API Tokens page links to it |
+| 10 | TV display options | 9 | The admin app sets the TV layout (current, vertical list, or on tap and on deck side by side), title alignment (left, centered, right), title font, tap and on deck text font, which tap details show (style, ABV, IBU, SRM, description), and the title and text colors (color picker). A preview in Display Settings shows unsaved changes. Defaults match the TV before this feature. The TV picks up changes with no reload and no credential |
 
-Features 5 and 6 are independent and can run in either order. Features 8 and 9 follow the MVP (features 0 to 7) and run before roadmap phase 2. An OpenAPI spec is kept in the repo from feature 1 onward so later clients (APK, Home Assistant) have a contract.
+Features 5 and 6 are independent and can run in either order. Features 8, 9 and 10 follow the MVP (features 0 to 7) and run before roadmap phase 2. An OpenAPI spec is kept in the repo from feature 1 onward so later clients (APK, Home Assistant) have a contract.
 
 ## Open questions
 

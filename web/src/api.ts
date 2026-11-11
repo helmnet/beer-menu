@@ -165,13 +165,18 @@ export interface Tap {
   updated_at: string;
 }
 
-/** MenuBeer is a beer as the public menu gives it: display fields only, nulls when empty. */
+/**
+ * MenuBeer is a beer as the public menu gives it: display fields only, nulls when empty. `srm`
+ * and `description` come on tap beers only, each left out when unset.
+ */
 export interface MenuBeer {
   name: string;
   style: string | null;
   abv: number | null;
   ibu: number | null;
   color: string | null;
+  srm?: number;
+  description?: string;
 }
 
 /** MenuKeg is a keg as the public menu gives it: its drawing and the fraction left, 0 to 1. */
@@ -203,19 +208,39 @@ export type Theme = "dark" | "light";
 /** Units picks how the admin app shows and takes volumes; the API always speaks litres. */
 export type Units = "us" | "metric";
 
-/** Settings is the body of GET and PATCH /api/settings: every display setting. */
-export interface Settings {
-  title: string;
-  theme: Theme;
-  units: Units;
-  page_seconds: number;
-}
+/** Layout is the TV layout: today's card grid, one row per item, or taps and on deck side by side. */
+export type Layout = "grid" | "list" | "columns";
 
-/** MenuDisplay is the public subset of Settings the TV reads from the menu: no units. */
+/** TitleAlign is the TV title's alignment. */
+export type TitleAlign = "left" | "center" | "right";
+
+/** FontKey names a font shipped with the app (fonts.ts); `system` is the font from before them. */
+export type FontKey = "system" | "inter" | "lora" | "roboto-slab" | "oswald" | "nunito" | "bebas-neue" | "pacifico";
+
+/**
+ * MenuDisplay is the public subset of Settings the TV reads from the menu: no units. Colors are
+ * lowercase "#rrggbb", or "" for the theme's own color.
+ */
 export interface MenuDisplay {
   title: string;
   theme: Theme;
   page_seconds: number;
+  layout: Layout;
+  title_align: TitleAlign;
+  title_font: FontKey;
+  text_font: FontKey;
+  show_style: boolean;
+  show_abv: boolean;
+  show_ibu: boolean;
+  show_srm: boolean;
+  show_description: boolean;
+  title_color: string;
+  text_color: string;
+}
+
+/** Settings is the body of GET and PATCH /api/settings: every display setting. */
+export interface Settings extends MenuDisplay {
+  units: Units;
 }
 
 /**

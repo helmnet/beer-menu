@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Beer Menu API
-  version: 0.8.0
+  version: 0.9.0
   description: >
     REST API for the Beer Menu self-hosted tap list. Served under /api on the same
     origin as the admin app.
@@ -41,7 +41,7 @@ tags:
   - name: brewfather
     description: Brewfather account connection, batch import and sync
   - name: settings
-    description: Display settings (TV title, theme and page interval; admin volume units)
+    description: Display settings (TV title, theme, page interval, layout, fonts, colors and tap details; admin volume units)
   - name: docs
     description: Read-only API documentation (Swagger UI) and the raw OpenAPI document
 security:
@@ -933,8 +933,9 @@ paths:
       description: >
         Public on the LAN: no credential. Returns enabled taps in position order and the on-deck
         list, with only the fields the TV display draws. No ids, sizes, volumes or timestamps;
-        clients that need those use the credentialed tap and keg reads. `display` holds the
-        title, theme and page interval the TV uses; units are not public. Never cached
+        clients that need those use the credentialed tap and keg reads. Tap beers also carry
+        `srm` and `description` when set; on deck beers never do. `display` holds every TV
+        setting; units are not public. Never cached
         (Cache-Control no-store).
       tags: [menu]
       security: []
@@ -949,7 +950,7 @@ paths:
               example:
                 taps:
                   - label: Tap 1
-                    beer: { name: Pale Ale, style: American Pale Ale, abv: 5.2, ibu: 35, color: "#e58500" }
+                    beer: { name: Pale Ale, style: American Pale Ale, abv: 5.2, ibu: 35, color: "#e58500", srm: 6, description: Bright and hoppy. }
                     keg: { shape: corny, level: 0.6 }
                   - label: Tap 2
                     beer: null
@@ -961,7 +962,21 @@ paths:
                   - beer: { name: Saison, style: null, abv: null, ibu: null, color: null }
                     keg: null
                     status: fermenting
-                display: { title: Helm Taproom, theme: dark, page_seconds: 15 }
+                display:
+                  title: Helm Taproom
+                  theme: dark
+                  page_seconds: 15
+                  layout: grid
+                  title_align: left
+                  title_font: system
+                  text_font: system
+                  show_style: true
+                  show_abv: true
+                  show_ibu: true
+                  show_srm: false
+                  show_description: false
+                  title_color: ""
+                  text_color: ""
 
   /api/docs:
     get:
@@ -1055,7 +1070,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Settings"
-              example: { title: "", theme: dark, units: us, page_seconds: 15 }
+              example:
+                title: ""
+                theme: dark
+                units: us
+                page_seconds: 15
+                layout: grid
+                title_align: left
+                title_font: system
+                text_font: system
+                show_style: true
+                show_abv: true
+                show_ibu: true
+                show_srm: false
+                show_description: false
+                title_color: ""
+                text_color: ""
         "401":
           $ref: "#/components/responses/Unauthenticated"
     patch:
@@ -1073,7 +1103,7 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/SettingsPatch"
-            example: { title: Helm Taproom, page_seconds: 20 }
+            example: { title: Helm Taproom, page_seconds: 20, layout: columns, show_srm: true, title_color: "#ffaa00" }
       responses:
         "200":
           description: All display settings after the change
@@ -1835,6 +1865,9 @@ components:
       type: object
       additionalProperties: false
       required: [name, style, abv, ibu, color]
+      description: >
+        srm and description appear on tap beers only, each omitted when unset; on deck beers
+        never carry them.
       properties:
         name:
           type: string
@@ -1850,6 +1883,13 @@ components:
           oneOf:
             - $ref: "#/components/schemas/HexColor"
             - type: "null"
+        srm:
+          type: number
+          description: SRM color value. Tap beers only; omitted when unset.
+        description:
+          type: string
+          maxLength: 2000
+          description: Plain text the owner wrote. Tap beers only; omitted when unset.
     MenuKeg:
       type: object
       additionalProperties: false
@@ -1884,32 +1924,89 @@ components:
       minimum: 5
       maximum: 300
       description: Seconds each TV page shows before the next. Default 15.
+    Layout:
+      type: string
+      enum: [grid, list, columns]
+      description: >
+        TV layout. grid is the card grid from before feature 10 (default); list is one row per
+        item, taps then on deck; columns is taps and on deck side by side.
+    TitleAlign:
+      type: string
+      enum: [left, center, right]
+      description: Title alignment on the TV. Default left.
+    FontKey:
+      type: string
+      enum: [system, inter, lora, roboto-slab, oswald, nunito, bebas-neue, pacifico]
+      description: A font shipped with the app. system is the font from before feature 10 (default).
+    TextColor:
+      type: string
+      pattern: "^(#[0-9a-fA-F]{6})?$"
+      description: >
+        A #rrggbb color, stored and returned lowercase, or empty for the theme's own color
+        (default). Not contrast-checked.
     Settings:
       type: object
       additionalProperties: false
-      required: [title, theme, units, page_seconds]
+      required: [title, theme, units, page_seconds, layout, title_align, title_font, text_font,
+        show_style, show_abv, show_ibu, show_srm, show_description, title_color, text_color]
       properties:
         title: { $ref: "#/components/schemas/Title" }
         theme: { $ref: "#/components/schemas/Theme" }
         units: { $ref: "#/components/schemas/Units" }
         page_seconds: { $ref: "#/components/schemas/PageSeconds" }
+        layout: { $ref: "#/components/schemas/Layout" }
+        title_align: { $ref: "#/components/schemas/TitleAlign" }
+        title_font: { $ref: "#/components/schemas/FontKey" }
+        text_font: { $ref: "#/components/schemas/FontKey" }
+        show_style: { type: boolean, description: "Show style on tap cards. Default true." }
+        show_abv: { type: boolean, description: "Show ABV on tap cards. Default true." }
+        show_ibu: { type: boolean, description: "Show IBU on tap cards. Default true." }
+        show_srm: { type: boolean, description: "Show SRM as a number on tap cards. Default false." }
+        show_description: { type: boolean, description: "Show the description, clamped to 2 lines, on tap cards. Default false." }
+        title_color: { $ref: "#/components/schemas/TextColor" }
+        text_color: { $ref: "#/components/schemas/TextColor" }
     SettingsPatch:
       type: object
       additionalProperties: false
       minProperties: 1
+      description: Merge patch. Every field is optional; null is refused; all-or-nothing.
       properties:
         title: { $ref: "#/components/schemas/Title" }
         theme: { $ref: "#/components/schemas/Theme" }
         units: { $ref: "#/components/schemas/Units" }
         page_seconds: { $ref: "#/components/schemas/PageSeconds" }
+        layout: { $ref: "#/components/schemas/Layout" }
+        title_align: { $ref: "#/components/schemas/TitleAlign" }
+        title_font: { $ref: "#/components/schemas/FontKey" }
+        text_font: { $ref: "#/components/schemas/FontKey" }
+        show_style: { type: boolean }
+        show_abv: { type: boolean }
+        show_ibu: { type: boolean }
+        show_srm: { type: boolean }
+        show_description: { type: boolean }
+        title_color: { $ref: "#/components/schemas/TextColor" }
+        text_color: { $ref: "#/components/schemas/TextColor" }
     MenuDisplay:
       type: object
       additionalProperties: false
-      required: [title, theme, page_seconds]
+      description: The TV's settings. Never includes units.
+      required: [title, theme, page_seconds, layout, title_align, title_font, text_font,
+        show_style, show_abv, show_ibu, show_srm, show_description, title_color, text_color]
       properties:
         title: { $ref: "#/components/schemas/Title" }
         theme: { $ref: "#/components/schemas/Theme" }
         page_seconds: { $ref: "#/components/schemas/PageSeconds" }
+        layout: { $ref: "#/components/schemas/Layout" }
+        title_align: { $ref: "#/components/schemas/TitleAlign" }
+        title_font: { $ref: "#/components/schemas/FontKey" }
+        text_font: { $ref: "#/components/schemas/FontKey" }
+        show_style: { type: boolean }
+        show_abv: { type: boolean }
+        show_ibu: { type: boolean }
+        show_srm: { type: boolean }
+        show_description: { type: boolean }
+        title_color: { $ref: "#/components/schemas/TextColor" }
+        text_color: { $ref: "#/components/schemas/TextColor" }
     SyncInterval:
       type: string
       enum: ["off", 15m, 1h, 6h, 24h]

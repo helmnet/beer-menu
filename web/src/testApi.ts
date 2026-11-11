@@ -156,12 +156,27 @@ export const kegTypes: KegType[] = [
   { type: "euro_50_l", label: "Euro 50 L", size_l: 50, shape: "sanke" },
 ];
 
+/** tvDefaults is every TV setting added in feature 10 at its default. */
+const tvDefaults = {
+  layout: "grid",
+  title_align: "left",
+  title_font: "system",
+  text_font: "system",
+  show_style: true,
+  show_abv: true,
+  show_ibu: true,
+  show_srm: false,
+  show_description: false,
+  title_color: "",
+  text_color: "",
+} as const;
+
 /** menu returns a GET /api/menu body for stubs: no taps, nothing on deck, default display. */
 export function menu(overrides: Partial<Menu> = {}): Menu {
-  return { taps: [], on_deck: [], display: { title: "", theme: "dark", page_seconds: 15 }, ...overrides };
+  return { taps: [], on_deck: [], display: { title: "", theme: "dark", page_seconds: 15, ...tvDefaults }, ...overrides };
 }
 
 /** settings returns a GET /api/settings body for stubs: the defaults, with overrides. */
 export function settings(overrides: Partial<Settings> = {}): Settings {
-  return { title: "", theme: "dark", units: "us", page_seconds: 15, ...overrides };
+  return { title: "", theme: "dark", units: "us", page_seconds: 15, ...tvDefaults, ...overrides };
 }

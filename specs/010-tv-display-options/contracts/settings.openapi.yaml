@@ -1,0 +1,113 @@
+# Feature 10 changes to api/openapi.yaml (0.8.0 -> 0.9.0). Additions only; no field removed or
+# renamed. Paths are unchanged: GET/PATCH /api/settings and GET /api/menu use these schemas.
+components:
+  schemas:
+    Layout:
+      type: string
+      enum: [grid, list, columns]
+      description: >
+        TV layout. grid is the card grid from before feature 10 (default); list is one row per
+        item, taps then on deck; columns is taps and on deck side by side.
+    TitleAlign:
+      type: string
+      enum: [left, center, right]
+      description: Title alignment on the TV. Default left.
+    FontKey:
+      type: string
+      enum: [system, inter, lora, roboto-slab, oswald, nunito, bebas-neue, pacifico]
+      description: A font shipped with the app. system is the font from before feature 10 (default).
+    TextColor:
+      type: string
+      pattern: "^(#[0-9a-fA-F]{6})?$"
+      description: >
+        A #rrggbb color, stored and returned lowercase, or empty for the theme's own color
+        (default). Not contrast-checked.
+
+    Settings:
+      type: object
+      additionalProperties: false
+      required: [title, theme, units, page_seconds, layout, title_align, title_font, text_font,
+        show_style, show_abv, show_ibu, show_srm, show_description, title_color, text_color]
+      properties:
+        title: { $ref: "#/components/schemas/Title" }
+        theme: { $ref: "#/components/schemas/Theme" }
+        units: { $ref: "#/components/schemas/Units" }
+        page_seconds: { $ref: "#/components/schemas/PageSeconds" }
+        layout: { $ref: "#/components/schemas/Layout" }
+        title_align: { $ref: "#/components/schemas/TitleAlign" }
+        title_font: { $ref: "#/components/schemas/FontKey" }
+        text_font: { $ref: "#/components/schemas/FontKey" }
+        show_style: { type: boolean, description: "Show style on tap cards. Default true." }
+        show_abv: { type: boolean, description: "Show ABV on tap cards. Default true." }
+        show_ibu: { type: boolean, description: "Show IBU on tap cards. Default true." }
+        show_srm: { type: boolean, description: "Show SRM as a number on tap cards. Default false." }
+        show_description: { type: boolean, description: "Show the description, clamped to 2 lines, on tap cards. Default false." }
+        title_color: { $ref: "#/components/schemas/TextColor" }
+        text_color: { $ref: "#/components/schemas/TextColor" }
+
+    SettingsPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: Merge patch. Every field is optional; null is refused; all-or-nothing.
+      properties:
+        title: { $ref: "#/components/schemas/Title" }
+        theme: { $ref: "#/components/schemas/Theme" }
+        units: { $ref: "#/components/schemas/Units" }
+        page_seconds: { $ref: "#/components/schemas/PageSeconds" }
+        layout: { $ref: "#/components/schemas/Layout" }
+        title_align: { $ref: "#/components/schemas/TitleAlign" }
+        title_font: { $ref: "#/components/schemas/FontKey" }
+        text_font: { $ref: "#/components/schemas/FontKey" }
+        show_style: { type: boolean }
+        show_abv: { type: boolean }
+        show_ibu: { type: boolean }
+        show_srm: { type: boolean }
+        show_description: { type: boolean }
+        title_color: { $ref: "#/components/schemas/TextColor" }
+        text_color: { $ref: "#/components/schemas/TextColor" }
+
+    MenuDisplay:
+      type: object
+      additionalProperties: false
+      description: The TV's settings. Never includes units.
+      required: [title, theme, page_seconds, layout, title_align, title_font, text_font,
+        show_style, show_abv, show_ibu, show_srm, show_description, title_color, text_color]
+      properties:
+        title: { $ref: "#/components/schemas/Title" }
+        theme: { $ref: "#/components/schemas/Theme" }
+        page_seconds: { $ref: "#/components/schemas/PageSeconds" }
+        layout: { $ref: "#/components/schemas/Layout" }
+        title_align: { $ref: "#/components/schemas/TitleAlign" }
+        title_font: { $ref: "#/components/schemas/FontKey" }
+        text_font: { $ref: "#/components/schemas/FontKey" }
+        show_style: { type: boolean }
+        show_abv: { type: boolean }
+        show_ibu: { type: boolean }
+        show_srm: { type: boolean }
+        show_description: { type: boolean }
+        title_color: { $ref: "#/components/schemas/TextColor" }
+        text_color: { $ref: "#/components/schemas/TextColor" }
+
+    MenuBeer:
+      type: object
+      additionalProperties: false
+      required: [name, style, abv, ibu, color]
+      description: >
+        srm and description appear on tap beers only, each omitted when unset; on deck beers
+        never carry them.
+      properties:
+        name: { type: string }
+        style: { type: [string, "null"] }
+        abv: { type: [number, "null"], description: Percent alcohol by volume. }
+        ibu: { type: [number, "null"] }
+        color:
+          description: Display color from SRM; null without SRM.
+          oneOf:
+            - $ref: "#/components/schemas/HexColor"
+            - type: "null"
+        srm: { type: number, description: "SRM color value. Tap beers only; omitted when unset." }
+        description:
+          type: string
+          maxLength: 2000
+          description: Plain text the owner wrote. Tap beers only; omitted when unset.
