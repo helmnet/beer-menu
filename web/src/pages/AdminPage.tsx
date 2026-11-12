@@ -1,6 +1,6 @@
 import { Beer } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Admin, apiFetch, errorMessage, isUnauthenticated, Settings, Units } from "../api";
+import { Admin, apiFetch, errorMessage, isUnauthenticated, Settings, TwoFactorState, Units } from "../api";
 import AdminsPanel from "../components/AdminsPanel";
 import BeersPanel from "../components/BeersPanel";
 import BrewfatherPanel from "../components/BrewfatherPanel";
@@ -15,13 +15,15 @@ import TapsPanel from "../components/TapsPanel";
 import ThemeControl from "../components/ThemeControl";
 import TokensPanel from "../components/TokensPanel";
 import TwoFactorPanel from "../components/TwoFactorPanel";
+import TwoFactorSetup from "../components/TwoFactorSetup";
 import { loadTheme, saveTheme, Theme } from "../prefs";
 import "./AdminPage.css";
 
 type View =
   | { kind: "loading" }
   | { kind: "setup" }
-  | { kind: "login" }
+  | { kind: "login"; notice?: string }
+  | { kind: "enroll" }
   | { kind: "signedIn"; admin: Admin }
   | { kind: "error"; message: string };
 
@@ -32,7 +34,8 @@ type View =
  * applied on every view, sign-in and setup included; ThemeControl at the bottom of the side
  * panel changes and saves it, with no server request. On load it asks GET /api/setup and
  * GET /api/session, then shows the first-admin setup form, the sign-in form, a loading note or
- * an error, each in a centered card with no side panel. Signed in, it is a shell: SideNav (side
+ * an error, each in a centered card with no side panel. When 2FA is required and the admin has
+ * no factor (sign-in's 202 `enroll`), that card shows only `Enroll` until a factor is added. Signed in, it is a shell: SideNav (side
  * panel, or top bar and drawer on a phone) and a `main` that mounts only the current page. The
  * current page is kept in the URL hash (`#beers`, `#on-deck`): choosing a page in SideNav sets
  * it, adding a browser history entry, so Back and Forward move between pages, and load, reload
@@ -148,7 +151,12 @@ export default function AdminPage() {
             {view.kind === "loading" && <p className="muted">Loading…</p>}
             {view.kind === "error" && <p role="alert">{view.message}</p>}
             {view.kind === "setup" && <SetupForm onCreated={signedIn} onSetupDone={toLogin} />}
-            {view.kind === "login" && <LoginForm onSignedIn={signedIn} />}
+            {view.kind === "login" && (
+              <LoginForm onSignedIn={signedIn} onEnroll={() => setView({ kind: "enroll" })} notice={view.notice} />
+            )}
+            {view.kind === "enroll" && (
+              <Enroll onSignedIn={signedIn} onEnded={(notice) => setView({ kind: "login", notice })} />
+            )}
           </div>
         </main>
       </div>
@@ -172,6 +180,56 @@ export default function AdminPage() {
           {pageView(page, view.admin, units, actionSlot, toLogin, (s) => setUnits(s.units))}
         </main>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Enroll is all an admin can do after the right password while two-factor sign-in is required
+ * and they have no factor (FR-034): it says why and offers `TwoFactorSetup` on the GET /api/2fa
+ * state of that pending sign-in, which the API accepts on the factor setup routes only. Adding
+ * the first factor shows the recovery codes, then calls `onSignedIn` with the admin the API
+ * returns with them. Sign out cancels the pending sign-in (DELETE /api/session/pending) and
+ * calls `onEnded`; a 401 (it expired or was cancelled) calls `onEnded` with a notice.
+ */
+function Enroll({ onSignedIn, onEnded }: { onSignedIn: (admin: Admin) => void; onEnded: (notice?: string) => void }) {
+  const [state, setState] = useState<TwoFactorState | null>(null);
+  const [error, setError] = useState("");
+  const timedOut = () => onEnded("Sign-in timed out, start again.");
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch<TwoFactorState>("GET", "/api/2fa")
+      .then((s) => {
+        if (!cancelled) setState(s);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        if (isUnauthenticated(err)) timedOut();
+        else setError(errorMessage(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function signOut() {
+    // Best effort: an unreached server leaves the pending sign-in to expire in 5 minutes.
+    await apiFetch("DELETE", "/api/session/pending").catch(() => {});
+    onEnded();
+  }
+
+  return (
+    <div className="stack-form">
+      <h2>Set up two-factor sign-in</h2>
+      <p>Two-factor sign-in is required for every admin. Add a second factor to finish signing in.</p>
+      {state && (
+        <TwoFactorSetup state={state} onDone={(admin) => admin && onSignedIn(admin)} onSignedOut={timedOut} />
+      )}
+      {error && <p role="alert">{error}</p>}
+      <button type="button" className="btn" onClick={signOut}>
+        Sign out
+      </button>
     </div>
   );
 }

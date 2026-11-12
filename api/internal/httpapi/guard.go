@@ -63,6 +63,15 @@ func (p principal) userID() int64 {
 	return p.AdminID
 }
 
+// setupChallenge returns the challenge that holds the principal's factor setup: an enroll
+// pending sign-in itself, or a session's setup row, keyed by the session ID.
+func (p principal) setupChallenge() (string, auth.ChallengeKind) {
+	if p.Pending != "" {
+		return p.Pending, auth.KindEnroll
+	}
+	return p.SessionID, auth.KindSetup
+}
+
 type principalKey struct{}
 
 // principalFrom returns the principal guard stored in ctx; ok is false on public routes.

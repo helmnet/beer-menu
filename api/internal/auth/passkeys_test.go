@@ -40,11 +40,11 @@ func mustJSON(t *testing.T, v any) []byte {
 // recovery codes, failing on any error.
 func registerPasskey(t *testing.T, db *sql.DB, wa *webauthn.WebAuthn, sid string, userID int64, a *authtest.Authenticator, name string, now time.Time) (Passkey, []string) {
 	t.Helper()
-	opts, err := BeginPasskeyRegistration(db, wa, sid, userID, now)
+	opts, err := BeginPasskeyRegistration(db, wa, sid, KindSetup, userID, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pk, codes, err := FinishPasskeyRegistration(db, wa, sid, userID, name, a.Register(t, mustJSON(t, opts)), now)
+	pk, codes, err := FinishPasskeyRegistration(db, wa, sid, KindSetup, userID, name, a.Register(t, mustJSON(t, opts)), now)
 	if err != nil {
 		t.Fatalf("finish registration: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestPasskeyRegistration(t *testing.T) {
 
 	// A second passkey: excludeCredentials names the first, no new codes, sessions kept.
 	third := mustCreateSession(t, db, uid, t0)
-	opts, err := BeginPasskeyRegistration(db, wa, sid, uid, t0)
+	opts, err := BeginPasskeyRegistration(db, wa, sid, KindSetup, uid, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestPasskeyRegistration(t *testing.T) {
 		t.Fatalf("selection = %+v attestation %q", sel, opts.Response.Attestation)
 	}
 	b := authtest.New(t, testOrigin, testRPID)
-	_, codes, err = FinishPasskeyRegistration(db, wa, sid, uid, "Laptop", b.Register(t, mustJSON(t, opts)), t0)
+	_, codes, err = FinishPasskeyRegistration(db, wa, sid, KindSetup, uid, "Laptop", b.Register(t, mustJSON(t, opts)), t0)
 	if err != nil || codes != nil {
 		t.Fatalf("second passkey = %v codes %v", err, codes)
 	}
@@ -132,13 +132,13 @@ func TestPasskeyName(t *testing.T) {
 	wa := newWebAuthn(t)
 	uid := insertUser(t, db, "owner")
 	sid := mustCreateSession(t, db, uid, t0)
-	opts, err := BeginPasskeyRegistration(db, wa, sid, uid, t0)
+	opts, err := BeginPasskeyRegistration(db, wa, sid, KindSetup, uid, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	a := authtest.New(t, testOrigin, testRPID)
 	var ve ValidationError
-	if _, _, err := FinishPasskeyRegistration(db, wa, sid, uid, "", a.Register(t, mustJSON(t, opts)), t0); !errors.As(err, &ve) {
+	if _, _, err := FinishPasskeyRegistration(db, wa, sid, KindSetup, uid, "", a.Register(t, mustJSON(t, opts)), t0); !errors.As(err, &ve) {
 		t.Fatalf("empty name = %v", err)
 	}
 	if n := countRows(t, db, "SELECT count(*) FROM passkeys"); n != 0 {
@@ -163,17 +163,17 @@ func TestPasskeyCap(t *testing.T) {
 	uid := insertUser(t, db, "owner")
 	sid := mustCreateSession(t, db, uid, t0)
 	insertPasskeys(t, db, uid, MaxPasskeys-1)
-	opts, err := BeginPasskeyRegistration(db, wa, sid, uid, t0)
+	opts, err := BeginPasskeyRegistration(db, wa, sid, KindSetup, uid, t0)
 	if err != nil {
 		t.Fatalf("10th passkey begin = %v", err)
 	}
 	// Another tab reached the cap between begin and finish.
 	insertPasskeys(t, db, uid, 1)
 	a := authtest.New(t, testOrigin, testRPID)
-	if _, _, err := FinishPasskeyRegistration(db, wa, sid, uid, "Eleventh", a.Register(t, mustJSON(t, opts)), t0); !errors.Is(err, ErrTooManyPasskeys) {
+	if _, _, err := FinishPasskeyRegistration(db, wa, sid, KindSetup, uid, "Eleventh", a.Register(t, mustJSON(t, opts)), t0); !errors.Is(err, ErrTooManyPasskeys) {
 		t.Fatalf("11th passkey finish = %v, want ErrTooManyPasskeys", err)
 	}
-	if _, err := BeginPasskeyRegistration(db, wa, sid, uid, t0); !errors.Is(err, ErrTooManyPasskeys) {
+	if _, err := BeginPasskeyRegistration(db, wa, sid, KindSetup, uid, t0); !errors.Is(err, ErrTooManyPasskeys) {
 		t.Fatalf("11th passkey begin = %v, want ErrTooManyPasskeys", err)
 	}
 	if n := countRows(t, db, "SELECT count(*) FROM passkeys WHERE user_id = ?", uid); n != MaxPasskeys {
@@ -185,10 +185,10 @@ func TestPasskeysUnavailable(t *testing.T) {
 	db := openDB(t)
 	uid := insertUser(t, db, "owner")
 	sid := mustCreateSession(t, db, uid, t0)
-	if _, err := BeginPasskeyRegistration(db, nil, sid, uid, t0); !errors.Is(err, ErrPasskeysUnavailable) {
+	if _, err := BeginPasskeyRegistration(db, nil, sid, KindSetup, uid, t0); !errors.Is(err, ErrPasskeysUnavailable) {
 		t.Errorf("begin registration = %v", err)
 	}
-	if _, _, err := FinishPasskeyRegistration(db, nil, sid, uid, "Phone", []byte("{}"), t0); !errors.Is(err, ErrPasskeysUnavailable) {
+	if _, _, err := FinishPasskeyRegistration(db, nil, sid, KindSetup, uid, "Phone", []byte("{}"), t0); !errors.Is(err, ErrPasskeysUnavailable) {
 		t.Errorf("finish registration = %v", err)
 	}
 	if _, err := BeginPasskeyLogin(db, nil, sid, KindSetup, uid, t0); !errors.Is(err, ErrPasskeysUnavailable) {
@@ -209,49 +209,49 @@ func TestPasskeyRegistrationRefused(t *testing.T) {
 		"wrong RP ID":  func(a *authtest.Authenticator) { a.RPID = "other.example.org" },
 		"UV off":       func(a *authtest.Authenticator) { a.UV = false },
 	} {
-		opts, err := BeginPasskeyRegistration(db, wa, sid, uid, t0)
+		opts, err := BeginPasskeyRegistration(db, wa, sid, KindSetup, uid, t0)
 		if err != nil {
 			t.Fatal(err)
 		}
 		a := authtest.New(t, testOrigin, testRPID)
 		bend(a)
-		if _, _, err := FinishPasskeyRegistration(db, wa, sid, uid, "Phone", a.Register(t, mustJSON(t, opts)), t0); !errors.Is(err, ErrPasskeyFailed) {
+		if _, _, err := FinishPasskeyRegistration(db, wa, sid, KindSetup, uid, "Phone", a.Register(t, mustJSON(t, opts)), t0); !errors.Is(err, ErrPasskeyFailed) {
 			t.Errorf("%s = %v, want ErrPasskeyFailed", name, err)
 		}
 	}
-	if _, _, err := FinishPasskeyRegistration(db, wa, sid, uid, "Phone", []byte(`{"id":"x"}`), t0); !errors.Is(err, ErrPasskeyFailed) {
+	if _, _, err := FinishPasskeyRegistration(db, wa, sid, KindSetup, uid, "Phone", []byte(`{"id":"x"}`), t0); !errors.Is(err, ErrPasskeyFailed) {
 		t.Errorf("malformed response = %v", err)
 	}
 
 	// Expired: the setup is older than 300 s.
-	opts, err := BeginPasskeyRegistration(db, wa, sid, uid, t0)
+	opts, err := BeginPasskeyRegistration(db, wa, sid, KindSetup, uid, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	resp := authtest.New(t, testOrigin, testRPID).Register(t, mustJSON(t, opts))
-	if _, _, err := FinishPasskeyRegistration(db, wa, sid, uid, "Phone", resp, t0.Add(ChallengeTTL)); !errors.Is(err, ErrPasskeyFailed) {
+	if _, _, err := FinishPasskeyRegistration(db, wa, sid, KindSetup, uid, "Phone", resp, t0.Add(ChallengeTTL)); !errors.Is(err, ErrPasskeyFailed) {
 		t.Errorf("expired setup = %v", err)
 	}
 	// Another session cannot finish this session's setup.
 	sid2 := mustCreateSession(t, db, uid, t0)
-	if _, _, err := FinishPasskeyRegistration(db, wa, sid2, uid, "Phone", resp, t0); !errors.Is(err, ErrPasskeyFailed) {
+	if _, _, err := FinishPasskeyRegistration(db, wa, sid2, KindSetup, uid, "Phone", resp, t0); !errors.Is(err, ErrPasskeyFailed) {
 		t.Errorf("other session = %v", err)
 	}
 	if n := countRows(t, db, "SELECT count(*) FROM passkeys"); n != 0 {
 		t.Fatalf("refused registrations saved %d passkeys", n)
 	}
 	// The right response still works once, then the setup is used up.
-	if _, _, err := FinishPasskeyRegistration(db, wa, sid, uid, "Phone", resp, t0); err != nil {
+	if _, _, err := FinishPasskeyRegistration(db, wa, sid, KindSetup, uid, "Phone", resp, t0); err != nil {
 		t.Fatalf("valid response = %v", err)
 	}
-	if _, _, err := FinishPasskeyRegistration(db, wa, sid, uid, "Phone", resp, t0); !errors.Is(err, ErrPasskeyFailed) {
+	if _, _, err := FinishPasskeyRegistration(db, wa, sid, KindSetup, uid, "Phone", resp, t0); !errors.Is(err, ErrPasskeyFailed) {
 		t.Errorf("replayed registration = %v", err)
 	}
 	// A confirm's request options cannot finish a registration.
 	if _, err := BeginPasskeyLogin(db, wa, sid, KindSetup, uid, t0); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := FinishPasskeyRegistration(db, wa, sid, uid, "Phone", resp, t0); !errors.Is(err, ErrPasskeyFailed) {
+	if _, _, err := FinishPasskeyRegistration(db, wa, sid, KindSetup, uid, "Phone", resp, t0); !errors.Is(err, ErrPasskeyFailed) {
 		t.Errorf("registration on login options = %v", err)
 	}
 }
@@ -401,5 +401,30 @@ func TestPasskeyLoginWithoutPasskeys(t *testing.T) {
 	}
 	if _, err := BeginPasskeyLogin(db, newWebAuthn(t), "unknown", KindSecondFactor, uid, t0); err == nil {
 		t.Fatal("begin on an unknown pending succeeded")
+	}
+}
+
+func TestPasskeyRegistrationOnEnrollPending(t *testing.T) {
+	db := openDB(t)
+	wa := newWebAuthn(t)
+	uid := insertUser(t, db, "owner")
+	other := insertUser(t, db, "other")
+	pending := mustChallenge(t, db, uid, KindEnroll, t0)
+	if _, err := BeginPasskeyRegistration(db, wa, pending, KindEnroll, other, t0); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("another admin's pending = %v, want ErrNotFound", err)
+	}
+	opts, err := BeginPasskeyRegistration(db, wa, pending, KindEnroll, uid, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := countRows(t, db, "SELECT count(*) FROM auth_challenges WHERE kind = 'setup'"); n != 0 {
+		t.Fatalf("enroll setup made %d setup rows", n)
+	}
+	pk, codes, err := FinishPasskeyRegistration(db, wa, pending, KindEnroll, uid, "Phone", authtest.New(t, testOrigin, testRPID).Register(t, mustJSON(t, opts)), t0)
+	if err != nil || pk.Name != "Phone" || len(codes) != 10 {
+		t.Fatalf("finish = %+v, %d codes, %v", pk, len(codes), err)
+	}
+	if _, ok := peek(t, db, pending, KindEnroll, t0); ok {
+		t.Fatal("the enroll pending is still usable")
 	}
 }

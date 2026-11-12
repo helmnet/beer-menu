@@ -1,5 +1,5 @@
 import { FormEvent, useState } from "react";
-import { ApiError, apiFetch, errorMessage, FactorAdded, isUnauthenticated, TotpSetup, TwoFactorState } from "../api";
+import { Admin, ApiError, apiFetch, errorMessage, FactorAdded, isUnauthenticated, TotpSetup, TwoFactorState } from "../api";
 import { createPasskey, passkeysSupported } from "../webauthn";
 import ConfirmIdentity from "./ConfirmIdentity";
 import Modal from "./Modal";
@@ -18,7 +18,8 @@ const TOO_MANY = "You have 10 passkeys. Remove one before adding another.";
  * code and the key in groups of 4; a code from the app is sent to POST /api/2fa/totp. A wrong
  * code shows the error and keeps the dialog open. When the API returns recovery codes (the first
  * factor) they are shown with `RecoveryCodes` before `onDone`; otherwise `onDone` is called at
- * once. A 403 confirm_required opens `ConfirmIdentity` and starts again once confirmed. Without
+ * once. `onDone` gets the admin the API returns when adding the factor finished an enroll
+ * sign-in. A 403 confirm_required opens `ConfirmIdentity` and starts again once confirmed. Without
  * an encryption key on the server it says authenticator apps are not available, and once an
  * authenticator exists it offers no second one.
  *
@@ -36,7 +37,7 @@ export default function TwoFactorSetup({
   onSignedOut,
 }: {
   state: TwoFactorState;
-  onDone: () => void;
+  onDone: (admin?: Admin) => void;
   onSignedOut: () => void;
 }) {
   const [setup, setSetup] = useState<TotpSetup | null>(null);
@@ -45,6 +46,7 @@ export default function TwoFactorSetup({
   const [confirming, setConfirming] = useState<"totp" | "passkey" | null>(null);
   const [code, setCode] = useState("");
   const [codes, setCodes] = useState<string[] | null>(null);
+  const [signedIn, setSignedIn] = useState<Admin | undefined>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -78,8 +80,7 @@ export default function TwoFactorSetup({
     setBusy(true);
     try {
       const added = await apiFetch<FactorAdded>("POST", "/api/2fa/totp", { code });
-      if (added.recovery_codes) setCodes(added.recovery_codes);
-      else finish();
+      shown(added);
     } catch (err) {
       fail(err);
     } finally {
@@ -97,9 +98,7 @@ export default function TwoFactorSetup({
         setError("Passkey setup was cancelled.");
         return;
       }
-      const added = await apiFetch<FactorAdded>("POST", "/api/2fa/passkeys", { name, credential });
-      if (added.recovery_codes) setCodes(added.recovery_codes);
-      else finish();
+      shown(await apiFetch<FactorAdded>("POST", "/api/2fa/passkeys", { name, credential }));
     } catch (err) {
       fail(err, "passkey");
     } finally {
@@ -107,12 +106,19 @@ export default function TwoFactorSetup({
     }
   }
 
-  function finish() {
+  // shown ends an add: the recovery codes first when there are any, else straight to finish.
+  function shown(added: FactorAdded) {
+    if (!added.recovery_codes) return finish(added.admin);
+    setSignedIn(added.admin);
+    setCodes(added.recovery_codes);
+  }
+
+  function finish(admin?: Admin) {
     setSetup(null);
     setNaming(false);
     setName("");
     setCodes(null);
-    onDone();
+    onDone(admin);
   }
 
   function cancel() {
@@ -175,7 +181,7 @@ export default function TwoFactorSetup({
         // While the codes show, only their Done closes the dialog, so they are not lost by accident.
         <Modal title="Add passkey" onClose={codes ? () => {} : cancel}>
           {codes ? (
-            <RecoveryCodes codes={codes} onDone={finish} />
+            <RecoveryCodes codes={codes} onDone={() => finish(signedIn)} />
           ) : (
             <form className="stack-form" onSubmit={addPasskey}>
               <p>Name this passkey so you can tell it apart later, then approve the prompt on your device.</p>
@@ -200,7 +206,7 @@ export default function TwoFactorSetup({
         // While the codes show, only their Done closes the dialog, so they are not lost by accident.
         <Modal title="Add authenticator app" onClose={codes ? () => {} : cancel}>
           {codes ? (
-            <RecoveryCodes codes={codes} onDone={finish} />
+            <RecoveryCodes codes={codes} onDone={() => finish(signedIn)} />
           ) : (
             <form className="stack-form" onSubmit={verify}>
               <p>Scan this QR code with your authenticator app, or type the key into it.</p>

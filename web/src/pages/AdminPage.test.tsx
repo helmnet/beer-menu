@@ -485,4 +485,64 @@ describe("AdminPage", () => {
     render(<AdminPage />);
     expect((await screen.findByRole("alert")).textContent).toBe("Request failed (502).");
   });
+  // enrollRoutes signs in to a 202 enroll: 2FA is required and this admin has no factor yet.
+  const enrollRoutes = (): Record<string, Reply> => ({
+    "GET /api/setup": { status: 200, body: { needed: false } },
+    "GET /api/session": unauthenticated,
+    "POST /api/session": { status: 202, body: { next: "enroll" } },
+    "GET /api/2fa": { status: 200, body: twoFactorState({ required: true }) },
+    "DELETE /api/session/pending": { status: 204 },
+  });
+
+  it("shows only the enroll view after a 202 enroll, and Sign out cancels it", async () => {
+    const calls = stubApi(enrollRoutes());
+    render(<AdminPage />);
+    await screen.findByRole("button", { name: "Sign in" });
+    fillCredentials(testPassword());
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(await screen.findByRole("button", { name: "Add authenticator app" })).toBeTruthy();
+    expect(screen.getByText(/Two-factor sign-in is required for every admin/)).toBeTruthy();
+    expect(screen.queryByRole("navigation", { name: "Admin" })).toBeNull();
+    expect(count(calls, "GET /api/health")).toBe(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    expect(await screen.findByRole("button", { name: "Sign in" })).toBeTruthy();
+    expect(count(calls, "DELETE /api/session/pending")).toBe(1);
+    expect(screen.queryByRole("button", { name: "Add authenticator app" })).toBeNull();
+  });
+
+  it("finishing enroll shows the recovery codes, then the signed-in shell", async () => {
+    const codes = Array.from({ length: 10 }, (_, i) => `abcd${"234567abcd"[i]}-efghi`);
+    stubApi({
+      ...enrollRoutes(),
+      ...panels,
+      "GET /api/2fa": { status: 200, body: twoFactorState({ required: true }) },
+      "POST /api/2fa/totp/setup": { status: 200, body: { secret: "JBSWY3DPEHPK3PXP", uri: "otpauth://totp/x" } },
+      "POST /api/2fa/totp": { status: 201, body: { recovery_codes: codes, admin: { ...owner, two_factor: true } } },
+    });
+    render(<AdminPage />);
+    await screen.findByRole("button", { name: "Sign in" });
+    fillCredentials(testPassword());
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add authenticator app" }));
+    fireEvent.change(await screen.findByLabelText("Authenticator code"), { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: "Verify" }));
+    const list = await screen.findByRole("list", { name: "Recovery codes" });
+    expect(list.querySelectorAll("li")).toHaveLength(10);
+    expect(screen.queryByRole("navigation", { name: "Admin" })).toBeNull();
+    fireEvent.click(screen.getByLabelText("I saved these codes"));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(await screen.findByRole("heading", { level: 2, name: "Taps" })).toBeTruthy();
+    expect(nav()).toBeTruthy();
+  });
+
+  it("returns to sign-in when the enroll step has expired", async () => {
+    stubApi({ ...enrollRoutes(), "GET /api/2fa": unauthenticated });
+    render(<AdminPage />);
+    await screen.findByRole("button", { name: "Sign in" });
+    fillCredentials(testPassword());
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("Sign-in timed out, start again.");
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeTruthy();
+  });
 });

@@ -8,13 +8,15 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+const requireLabel = "Require two-factor sign-in for all admins";
+
 describe("TwoFactorPanel", () => {
   it("shows that two-factor sign-in is off", async () => {
     stubApi({ "GET /api/2fa": { status: 200, body: twoFactorState() } });
     render(<TwoFactorPanel onSignedOut={vi.fn()} />);
     expect(screen.getByRole("heading", { level: 2, name: "Two-Factor Sign-In" })).toBeTruthy();
     expect(await screen.findByText("Two-factor sign-in is off.")).toBeTruthy();
-    expect(screen.queryByText(/required for every admin/)).toBeNull();
+    expect((screen.getByRole("checkbox", { name: requireLabel }) as HTMLInputElement).checked).toBe(false);
     expect(screen.queryByText(/Recovery codes left/)).toBeNull();
   });
 
@@ -32,7 +34,7 @@ describe("TwoFactorPanel", () => {
     });
     render(<TwoFactorPanel onSignedOut={vi.fn()} />);
     expect(await screen.findByText("Two-factor sign-in is on.")).toBeTruthy();
-    expect(screen.getByText("Two-factor sign-in is required for every admin.")).toBeTruthy();
+    expect((screen.getByRole("checkbox", { name: requireLabel }) as HTMLInputElement).checked).toBe(true);
     expect(screen.getByText("Recovery codes left: 7 of 10.")).toBeTruthy();
   });
 
@@ -249,5 +251,57 @@ describe("TwoFactorPanel", () => {
     render(<TwoFactorPanel onSignedOut={onSignedOut} />);
     fireEvent.click(await screen.findByRole("button", { name: "Turn off 2FA" }));
     await waitFor(() => expect(onSignedOut).toHaveBeenCalled());
+  });
+
+  it("disables the require switch with a hint when the caller has no factor", async () => {
+    stubApi({ "GET /api/2fa": { status: 200, body: twoFactorState() } });
+    render(<TwoFactorPanel onSignedOut={vi.fn()} />);
+    const box = (await screen.findByRole("checkbox", { name: requireLabel })) as HTMLInputElement;
+    expect(box.disabled).toBe(true);
+    expect(screen.getByText("Add a second factor for yourself before requiring one for every admin.")).toBeTruthy();
+  });
+
+  it("turns the requirement on after confirming identity", async () => {
+    const routes: Parameters<typeof stubApi>[0] = {
+      "GET /api/2fa": { status: 200, body: twoFactorState({ enabled: true, totp: totpOn, recovery_codes_left: 10 }) },
+      "PUT /api/2fa/required": confirmRequired,
+      "POST /api/2fa/confirm": { status: 204 },
+    };
+    const calls = stubApi(routes);
+    render(<TwoFactorPanel onSignedOut={vi.fn()} />);
+    const box = (await screen.findByRole("checkbox", { name: requireLabel })) as HTMLInputElement;
+    expect(box.disabled).toBe(false);
+    expect(box.checked).toBe(false);
+    fireEvent.click(box);
+    routes["PUT /api/2fa/required"] = { status: 204 };
+    routes["GET /api/2fa"] = {
+      status: 200,
+      body: twoFactorState({ enabled: true, required: true, totp: totpOn, recovery_codes_left: 10 }),
+    };
+    await confirmWithCode();
+    await waitFor(() => expect((screen.getByRole("checkbox", { name: requireLabel }) as HTMLInputElement).checked).toBe(true));
+    const puts = calls.filter((c) => c.key === "PUT /api/2fa/required");
+    expect(puts.map((c) => c.body)).toEqual([{ required: true }, { required: true }]);
+  });
+
+  it("names the require setting when the last factor cannot go", async () => {
+    const required = { status: 409, body: { error: "two_factor_required", message: "x" } };
+    stubApi({
+      "GET /api/2fa": {
+        status: 200,
+        body: twoFactorState({ enabled: true, required: true, totp: totpOn, recovery_codes_left: 10 }),
+      },
+      "DELETE /api/2fa/totp": required,
+      "DELETE /api/2fa": required,
+    });
+    vi.stubGlobal("confirm", () => true);
+    render(<TwoFactorPanel onSignedOut={vi.fn()} />);
+    const row = (await screen.findByText(/Authenticator app/)).closest("li") as HTMLElement;
+    fireEvent.click(within(row).getByRole("button", { name: "Remove" }));
+    expect((await screen.findByRole("alert")).textContent).toContain(`"${requireLabel}" is on`);
+    fireEvent.click(screen.getByRole("button", { name: "Turn off 2FA" }));
+    await waitFor(() => expect(screen.getAllByRole("alert")).toHaveLength(1));
+    expect(screen.getByRole("alert").textContent).toContain(`"${requireLabel}" is on`);
+    expect(screen.getByText(/Authenticator app/)).toBeTruthy();
   });
 });

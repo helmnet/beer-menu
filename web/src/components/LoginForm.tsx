@@ -15,15 +15,24 @@ import { getPasskey, passkeysSupported } from "../webauthn";
  * back), and the recovery code is asked for at once when no other method is usable. A wrong
  * code, a refused passkey or a cancelled prompt keeps the step, and an ended pending sign-in
  * (401 `unauthenticated`) returns to the password step. Cancel deletes the pending sign-in with
- * DELETE /api/session/pending.
+ * DELETE /api/session/pending. When 2FA is required and the admin has no factor (202 `enroll`)
+ * it calls `onEnroll`. `notice` is a message shown when the form first appears.
  */
-export default function LoginForm({ onSignedIn }: { onSignedIn: (admin: Admin) => void }) {
+export default function LoginForm({
+  onSignedIn,
+  onEnroll,
+  notice = "",
+}: {
+  onSignedIn: (admin: Admin) => void;
+  onEnroll: () => void;
+  notice?: string;
+}) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [second, setSecond] = useState<SignInPending | null>(null);
   const [recovery, setRecovery] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(notice);
   const [busy, setBusy] = useState(false);
 
   const totp = !!second?.methods?.includes("totp");
@@ -44,7 +53,7 @@ export default function LoginForm({ onSignedIn }: { onSignedIn: (admin: Admin) =
         setCode("");
         setRecovery(false);
         setSecond(reply);
-      } else setError("Two-factor sign-in is required for this account.");
+      } else onEnroll();
     } catch (err) {
       setError(loginError(err));
     } finally {

@@ -351,12 +351,12 @@ func TestTotpSetupRefusals(t *testing.T) {
 	crossSite := append(session, "Sec-Fetch-Site", "cross-site")
 	wantError(t, do(mux, http.MethodPost, "/api/2fa/totp/setup", "", crossSite...), 403, "forbidden")
 	wantError(t, do(mux, http.MethodPost, "/api/2fa/totp", codeJSON("123456"), crossSite...), 403, "forbidden")
-	// Until the enroll flow (T062), an enroll pending cannot add a factor.
-	enroll, err := auth.CreateChallenge(deps.DB, uid, auth.KindEnroll, deps.Now())
+	// A second_factor pending is not an enroll pending.
+	second, err := auth.CreateChallenge(deps.DB, uid, auth.KindSecondFactor, deps.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	pending := []string{"Cookie", pendingCookieName + "=" + enroll}
+	pending := []string{"Cookie", pendingCookieName + "=" + second}
 	wantError(t, do(mux, http.MethodPost, "/api/2fa/totp/setup", "", pending...), 401, "unauthenticated")
 	wantError(t, do(mux, http.MethodPost, "/api/2fa/totp", codeJSON("123456"), pending...), 401, "unauthenticated")
 	if n, _ := auth.HasTwoFactor(deps.DB, uid); n {
@@ -532,12 +532,12 @@ func TestPasskeySetupRefusals(t *testing.T) {
 	crossSite := append(session, "Sec-Fetch-Site", "cross-site")
 	wantError(t, do(mux, http.MethodPost, "/api/2fa/passkeys/options", "", crossSite...), 403, "forbidden")
 	wantError(t, do(mux, http.MethodPost, "/api/2fa/passkeys", body, crossSite...), 403, "forbidden")
-	// Until the enroll flow (T064), an enroll pending cannot add a factor.
-	enroll, err := auth.CreateChallenge(deps.DB, uid, auth.KindEnroll, deps.Now())
+	// A second_factor pending is not an enroll pending.
+	second, err := auth.CreateChallenge(deps.DB, uid, auth.KindSecondFactor, deps.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	pending := []string{"Cookie", pendingCookieName + "=" + enroll}
+	pending := []string{"Cookie", pendingCookieName + "=" + second}
 	wantError(t, do(mux, http.MethodPost, "/api/2fa/passkeys/options", "", pending...), 401, "unauthenticated")
 	wantError(t, do(mux, http.MethodPost, "/api/2fa/passkeys", body, pending...), 401, "unauthenticated")
 
@@ -869,5 +869,215 @@ func TestRemoveFactorsRefusals(t *testing.T) {
 	state, err := auth.LoadTwoFactorState(deps.DB, uid)
 	if err != nil || state.Totp == nil || len(state.Passkeys) != 2 || state.RecoveryCodesLeft != 10 {
 		t.Fatalf("refused requests changed the state: %+v (%v)", state, err)
+	}
+}
+
+// putRequired sends PUT /api/2fa/required with body and headers.
+func putRequired(mux http.Handler, body string, headers ...string) *httptest.ResponseRecorder {
+	return do(mux, http.MethodPut, "/api/2fa/required", body, headers...)
+}
+
+func TestSetTwoFactorRequired(t *testing.T) {
+	logs := captureLog(t)
+	deps, clock := newTestDeps(t)
+	pw := createAdmin(t, deps)
+	uid := adminID(t, deps, "owner")
+	mux := NewMux(deps)
+	session := signInAs(t, mux, "owner", pw)
+	// An admin without a factor, signed in before the setting goes on (FR-036).
+	otherPW := testPassword()
+	if rec := do(mux, http.MethodPost, "/api/admins", credentials("second", otherPW), session...); rec.Code != 201 {
+		t.Fatalf("add admin = %d", rec.Code)
+	}
+	other := signInAs(t, mux, "second", otherPW)
+
+	wantError(t, putRequired(mux, `{"required":true}`, session...), 409, "no_factor")
+	addTotp(t, deps, uid)
+	for _, bad := range []string{`{"required":"yes"}`, `{"required":1}`, `{"required":null}`, `{}`, `{"required":true,"x":1}`, `true`} {
+		wantError(t, putRequired(mux, bad, session...), 400, "invalid_request")
+	}
+	if on, _ := auth.RequireTwoFactor(deps.DB); on {
+		t.Fatal("a refused request turned the setting on")
+	}
+	if rec := putRequired(mux, `{"required":true}`, session...); rec.Code != 204 {
+		t.Fatalf("turn on = %d %s", rec.Code, rec.Body)
+	}
+	if on, _ := auth.RequireTwoFactor(deps.DB); !on {
+		t.Fatal("setting not stored")
+	}
+	for _, s := range [][]string{session, other} {
+		if rec := do(mux, http.MethodGet, "/api/session", "", s...); rec.Code != 200 {
+			t.Fatalf("a session ended when the setting went on: %d", rec.Code)
+		}
+	}
+	if !strings.Contains(logs.String(), "two-factor requirement changed") || !strings.Contains(logs.String(), "username=owner") || !strings.Contains(logs.String(), "required=true") {
+		t.Errorf("log lacks who changed it to what: %s", logs)
+	}
+
+	// The display settings neither show nor take it (research R10).
+	if rec := do(mux, http.MethodGet, "/api/settings", "", session...); rec.Code != 200 || strings.Contains(rec.Body.String(), "require") {
+		t.Fatalf("GET /api/settings = %d %s", rec.Code, rec.Body)
+	}
+	wantError(t, do(mux, http.MethodPatch, "/api/settings", `{"require_2fa":false}`, session...), 400, "invalid_request")
+
+	for _, scope := range []auth.Scope{auth.ScopeRead, auth.ScopeWrite} {
+		secret, _ := insertToken(t, deps.DB, scope, false)
+		wantError(t, putRequired(mux, `{"required":false}`, "Authorization", "Bearer "+secret), 403, "forbidden")
+	}
+	wantError(t, putRequired(mux, `{"required":false}`), 401, "unauthenticated")
+	wantError(t, putRequired(mux, `{"required":false}`, append(session, "Sec-Fetch-Site", "cross-site")...), 403, "forbidden")
+	clock.Advance(auth.ConfirmWindow + time.Second)
+	wantError(t, putRequired(mux, `{"required":false}`, session...), 403, "confirm_required")
+	if on, _ := auth.RequireTwoFactor(deps.DB); !on {
+		t.Fatal("a refused request turned the setting off")
+	}
+	if rec := do(mux, http.MethodPost, "/api/2fa/confirm", confirmJSON(map[string]string{"password": pw, "code": auth.Code(addedSecret(t, deps, uid), clock.Now().Unix()/30)}), session...); rec.Code != 204 {
+		t.Fatalf("confirm = %d %s", rec.Code, rec.Body)
+	}
+	if rec := putRequired(mux, `{"required":false}`, session...); rec.Code != 204 {
+		t.Fatalf("turn off = %d %s", rec.Code, rec.Body)
+	}
+	if on, _ := auth.RequireTwoFactor(deps.DB); on {
+		t.Fatal("setting still on")
+	}
+}
+
+// addedSecret returns userID's stored authenticator secret, opened with deps.Box.
+func addedSecret(t *testing.T, deps Deps, userID int64) []byte {
+	t.Helper()
+	var sealed string
+	if err := deps.DB.QueryRow("SELECT secret_sealed FROM totp_factors WHERE user_id = ?", userID).Scan(&sealed); err != nil {
+		t.Fatal(err)
+	}
+	secret, err := deps.Box.Open(sealed, "totp:"+strconv.FormatInt(userID, 10))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return []byte(secret)
+}
+
+func TestRemoveLastFactorWhileRequired(t *testing.T) {
+	deps, _, mux, session, _, uid := factorAdmin(t)
+	if err := auth.SetRequireTwoFactor(deps.DB, true, deps.Now()); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range passkeyIDs(t, deps, uid) {
+		if rec := do(mux, http.MethodDelete, "/api/2fa/passkeys/"+id, "", session...); rec.Code != 204 {
+			t.Fatalf("remove a passkey that is not the last = %d %s", rec.Code, rec.Body)
+		}
+	}
+	rec := do(mux, http.MethodDelete, "/api/2fa/totp", "", session...)
+	wantError(t, rec, 409, "two_factor_required")
+	if !strings.Contains(rec.Body.String(), "Require two-factor sign-in") {
+		t.Fatalf("message does not name the setting: %s", rec.Body)
+	}
+	wantError(t, do(mux, http.MethodDelete, "/api/2fa", "", session...), 409, "two_factor_required")
+	state, err := auth.LoadTwoFactorState(deps.DB, uid)
+	if err != nil || state.Totp == nil || state.RecoveryCodesLeft != 10 {
+		t.Fatalf("refused removals changed the state: %+v (%v)", state, err)
+	}
+}
+
+// enrollStep turns "require 2FA" on and gives the password of "owner", who has no factor,
+// failing unless the answer is 202 enroll with a bm_pending cookie, which it returns.
+func enrollStep(t *testing.T, deps Deps, mux http.Handler, pw string) []string {
+	t.Helper()
+	if err := auth.SetRequireTwoFactor(deps.DB, true, deps.Now()); err != nil {
+		t.Fatal(err)
+	}
+	rec := postSession(mux, "owner", pw)
+	c := pendingCookie(rec)
+	if rec.Code != 202 || c == nil || sessionCookie(rec) != nil || !strings.Contains(rec.Body.String(), `"next":"enroll"`) {
+		t.Fatalf("password step = %d %s", rec.Code, rec.Body)
+	}
+	return cookieHeader(c)
+}
+
+// enrolled checks rec is the 201 that finishes an enroll: a FactorAdded with the admin and 10
+// recovery codes, a session cookie that works, and bm_pending cleared. It returns the session.
+func enrolled(t *testing.T, mux http.Handler, rec *httptest.ResponseRecorder) []string {
+	t.Helper()
+	var added struct {
+		Admin         *auth.Admin `json:"admin"`
+		RecoveryCodes []string    `json:"recovery_codes"`
+	}
+	if rec.Code != 201 || json.Unmarshal(rec.Body.Bytes(), &added) != nil || added.Admin == nil || added.Admin.Username != "owner" || !added.Admin.TwoFactor || len(added.RecoveryCodes) != 10 {
+		t.Fatalf("finish = %d %s", rec.Code, rec.Body)
+	}
+	pc := pendingCookie(rec)
+	if pc == nil || pc.MaxAge >= 0 {
+		t.Fatalf("bm_pending not cleared: %v", pc)
+	}
+	c := sessionCookie(rec)
+	if c == nil {
+		t.Fatal("no session cookie")
+	}
+	session := cookieHeader(c)
+	if got := do(mux, http.MethodGet, "/api/session", "", session...); got.Code != 200 {
+		t.Fatalf("new session = %d", got.Code)
+	}
+	return session
+}
+
+func TestEnrollWithTotp(t *testing.T) {
+	logs := captureLog(t)
+	deps, clock := newTestDeps(t)
+	pw := createAdmin(t, deps)
+	mux := NewMux(deps)
+	old := signInAs(t, mux, "owner", pw)
+	pending := enrollStep(t, deps, mux, pw)
+
+	rec := do(mux, http.MethodGet, "/api/2fa", "", pending...)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"required":true`) {
+		t.Fatalf("GET /api/2fa = %d %s", rec.Code, rec.Body)
+	}
+	secret := startTotp(t, mux, pending...)
+	wantError(t, do(mux, http.MethodPost, "/api/2fa/totp", codeJSON("00000x"), pending...), 400, "invalid_code")
+	code := auth.Code(secret, clock.Now().Unix()/30)
+	enrolled(t, mux, do(mux, http.MethodPost, "/api/2fa/totp", codeJSON(code), pending...))
+	// The pending sign-in is used up, and the first factor ended the older session.
+	wantError(t, do(mux, http.MethodGet, "/api/2fa", "", pending...), 401, "unauthenticated")
+	wantError(t, do(mux, http.MethodPost, "/api/2fa/totp", codeJSON(code), pending...), 401, "unauthenticated")
+	wantError(t, do(mux, http.MethodGet, "/api/session", "", old...), 401, "unauthenticated")
+	if !strings.Contains(logs.String(), "admin signed in") || strings.Contains(logs.String(), code) {
+		t.Errorf("log = %s", logs)
+	}
+}
+
+func TestEnrollWithPasskey(t *testing.T) {
+	deps, _ := newTestDeps(t)
+	deps.WebAuthn = testWebAuthn(t)
+	pw := createAdmin(t, deps)
+	mux := NewMux(deps)
+	pending := enrollStep(t, deps, mux, pw)
+	enrolled(t, mux, registerPasskeyHTTP(t, mux, newAuthenticator(t), "Phone", pending...))
+	wantError(t, do(mux, http.MethodPost, "/api/2fa/passkeys/options", "", pending...), 401, "unauthenticated")
+	if n := countPasskeys(t, deps, "owner"); n != 1 {
+		t.Fatalf("%d passkeys, want 1", n)
+	}
+}
+
+func TestEnrollPendingExpiredOrCancelled(t *testing.T) {
+	deps, clock := newTestDeps(t)
+	deps.WebAuthn = testWebAuthn(t)
+	pw := createAdmin(t, deps)
+	mux := NewMux(deps)
+	routes := [][2]string{{http.MethodGet, "/api/2fa"}, {http.MethodPost, "/api/2fa/totp/setup"}, {http.MethodPost, "/api/2fa/passkeys/options"}}
+
+	pending := enrollStep(t, deps, mux, pw)
+	if rec := do(mux, http.MethodDelete, "/api/session/pending", "", pending...); rec.Code != 204 {
+		t.Fatalf("cancel = %d", rec.Code)
+	}
+	for _, r := range routes {
+		wantError(t, do(mux, r[0], r[1], "", pending...), 401, "unauthenticated")
+	}
+
+	pending = enrollStep(t, deps, mux, pw)
+	clock.Advance(auth.ChallengeTTL)
+	for _, r := range routes {
+		wantError(t, do(mux, r[0], r[1], "", pending...), 401, "unauthenticated")
+	}
+	if has, _ := auth.HasTwoFactor(deps.DB, adminID(t, deps, "owner")); has {
+		t.Fatal("a refused enroll added a factor")
 	}
 }

@@ -311,10 +311,10 @@ func TestStartTotpSetup(t *testing.T) {
 	box := testBox(t)
 	uid := insertUser(t, db, "owner")
 	sid := mustCreateSession(t, db, uid, t0)
-	if _, _, err := StartTotpSetup(db, nil, sid, uid, "owner", t0); !errors.Is(err, ErrTotpUnavailable) {
+	if _, _, err := StartTotpSetup(db, nil, sid, KindSetup, uid, "owner", t0); !errors.Is(err, ErrTotpUnavailable) {
 		t.Fatalf("no key = %v, want ErrTotpUnavailable", err)
 	}
-	secret, uri, err := StartTotpSetup(db, box, sid, uid, "owner", t0)
+	secret, uri, err := StartTotpSetup(db, box, sid, KindSetup, uid, "owner", t0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +333,7 @@ func TestStartTotpSetup(t *testing.T) {
 		t.Fatalf("pending secret does not open as totp:<user_id> (err %v)", err)
 	}
 	// A second start replaces the first secret.
-	again, _, err := StartTotpSetup(db, box, sid, uid, "owner", t0)
+	again, _, err := StartTotpSetup(db, box, sid, KindSetup, uid, "owner", t0)
 	if err != nil || again == secret {
 		t.Fatalf("second start = %q (err %v), want a new secret", again, err)
 	}
@@ -341,7 +341,7 @@ func TestStartTotpSetup(t *testing.T) {
 		t.Fatalf("setup rows = %d, want 1", n)
 	}
 	insertTotp(t, db, box, uid, raw, 0)
-	if _, _, err := StartTotpSetup(db, box, sid, uid, "owner", t0); !errors.Is(err, ErrAlreadySetUp) {
+	if _, _, err := StartTotpSetup(db, box, sid, KindSetup, uid, "owner", t0); !errors.Is(err, ErrAlreadySetUp) {
 		t.Fatalf("with an authenticator = %v, want ErrAlreadySetUp", err)
 	}
 }
@@ -354,12 +354,12 @@ func TestFinishTotpSetup(t *testing.T) {
 	other := mustCreateSession(t, db, uid, t0)
 	finish := func(b *secrets.Box, code string, now time.Time) ([]string, bool, error) {
 		t.Helper()
-		return FinishTotpSetup(db, b, sid, uid, code, now)
+		return FinishTotpSetup(db, b, sid, KindSetup, uid, code, now)
 	}
 	if _, ok, err := finish(box, "123456", t0); ok || err != nil {
 		t.Fatalf("no setup open = %v %v, want false", ok, err)
 	}
-	enc, _, err := StartTotpSetup(db, box, sid, uid, "owner", t0)
+	enc, _, err := StartTotpSetup(db, box, sid, KindSetup, uid, "owner", t0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -382,7 +382,7 @@ func TestFinishTotpSetup(t *testing.T) {
 		t.Fatal("wrong code ended the setup")
 	}
 	// Another session cannot finish this session's setup.
-	if _, ok, err := FinishTotpSetup(db, box, other, uid, Code(secret, step), t0); ok || err != nil {
+	if _, ok, err := FinishTotpSetup(db, box, other, KindSetup, uid, Code(secret, step), t0); ok || err != nil {
 		t.Fatalf("other session = %v %v", ok, err)
 	}
 	codes, ok, err := finish(box, Code(secret, step), t0)
@@ -412,7 +412,7 @@ func TestFinishTotpSetup(t *testing.T) {
 	if ok, err := CheckTotp(db, box, uid, Code(secret, step+1), t0.Add(30*time.Second)); !ok || err != nil {
 		t.Fatalf("next code = %v %v", ok, err)
 	}
-	if _, _, err := StartTotpSetup(db, box, sid, uid, "owner", t0); !errors.Is(err, ErrAlreadySetUp) {
+	if _, _, err := StartTotpSetup(db, box, sid, KindSetup, uid, "owner", t0); !errors.Is(err, ErrAlreadySetUp) {
 		t.Fatalf("second authenticator = %v", err)
 	}
 }
@@ -431,12 +431,12 @@ func TestFinishTotpSetupNotFirstFactor(t *testing.T) {
 	}
 	sid := mustCreateSession(t, db, uid, t0)
 	other := mustCreateSession(t, db, uid, t0)
-	enc, _, err := StartTotpSetup(db, box, sid, uid, "owner", t0)
+	enc, _, err := StartTotpSetup(db, box, sid, KindSetup, uid, "owner", t0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	secret, _ := base32NoPad.DecodeString(enc)
-	codes, ok, err := FinishTotpSetup(db, box, sid, uid, Code(secret, t0.Unix()/30), t0)
+	codes, ok, err := FinishTotpSetup(db, box, sid, KindSetup, uid, Code(secret, t0.Unix()/30), t0)
 	if err != nil || !ok || codes != nil {
 		t.Fatalf("second factor = %v %v %v, want no new codes", codes, ok, err)
 	}
@@ -453,13 +453,13 @@ func TestFinishTotpSetupExpired(t *testing.T) {
 	box := testBox(t)
 	uid := insertUser(t, db, "owner")
 	sid := mustCreateSession(t, db, uid, t0)
-	enc, _, err := StartTotpSetup(db, box, sid, uid, "owner", t0)
+	enc, _, err := StartTotpSetup(db, box, sid, KindSetup, uid, "owner", t0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	secret, _ := base32NoPad.DecodeString(enc)
 	later := t0.Add(ChallengeTTL)
-	if _, ok, err := FinishTotpSetup(db, box, sid, uid, Code(secret, later.Unix()/30), later); ok || err != nil {
+	if _, ok, err := FinishTotpSetup(db, box, sid, KindSetup, uid, Code(secret, later.Unix()/30), later); ok || err != nil {
 		t.Fatalf("expired setup = %v %v, want false", ok, err)
 	}
 }
@@ -469,14 +469,14 @@ func TestFinishTotpSetupAfterAnotherSaved(t *testing.T) {
 	box := testBox(t)
 	uid := insertUser(t, db, "owner")
 	sid := mustCreateSession(t, db, uid, t0)
-	enc, _, err := StartTotpSetup(db, box, sid, uid, "owner", t0)
+	enc, _, err := StartTotpSetup(db, box, sid, KindSetup, uid, "owner", t0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	secret, _ := base32NoPad.DecodeString(enc)
 	other, _ := NewSecret()
 	insertTotp(t, db, box, uid, other, 0)
-	if _, ok, err := FinishTotpSetup(db, box, sid, uid, Code(secret, t0.Unix()/30), t0); ok || !errors.Is(err, ErrAlreadySetUp) {
+	if _, ok, err := FinishTotpSetup(db, box, sid, KindSetup, uid, Code(secret, t0.Unix()/30), t0); ok || !errors.Is(err, ErrAlreadySetUp) {
 		t.Fatalf("finish after another was saved = %v %v, want ErrAlreadySetUp", ok, err)
 	}
 	if _, ok := peek(t, db, sid, KindSetup, t0); !ok {
@@ -646,5 +646,93 @@ func TestFindAdmin(t *testing.T) {
 	}
 	if _, err := FindAdmin(db, "nobody"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("unknown = %v, want ErrNotFound", err)
+	}
+}
+
+func TestRemoveLastFactorWhileRequired(t *testing.T) {
+	db := openDB(t)
+	uid := insertUser(t, db, "owner")
+	pks, keep := factorFixture(t, db, uid)
+	if err := SetRequireTwoFactor(db, true, t0); err != nil {
+		t.Fatal(err)
+	}
+	// Factors other than the last still go.
+	for _, id := range pks {
+		if err := RemovePasskey(db, uid, id, keep); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := RemoveTotp(db, uid, keep); !errors.Is(err, ErrTwoFactorRequired) {
+		t.Fatalf("last factor = %v, want ErrTwoFactorRequired", err)
+	}
+	if err := TurnOffTwoFactor(db, uid, keep); !errors.Is(err, ErrTwoFactorRequired) {
+		t.Fatalf("turn off = %v, want ErrTwoFactorRequired", err)
+	}
+	if has, _ := HasTwoFactor(db, uid); !has {
+		t.Fatal("a refused removal deleted the factor")
+	}
+	if n, _ := RecoveryCodesLeft(db, uid); n != 10 {
+		t.Fatalf("codes left = %d after refused removals", n)
+	}
+	// Another admin's clear and the operator's reset still work (FR-035).
+	if err := ClearTwoFactor(db, uid); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSetRequireTwoFactorBy(t *testing.T) {
+	db := openDB(t)
+	uid := insertUser(t, db, "owner")
+	if err := SetRequireTwoFactorBy(db, uid, true, t0); !errors.Is(err, ErrNoFactor) {
+		t.Fatalf("without a factor = %v, want ErrNoFactor", err)
+	}
+	if n := countRows(t, db, "SELECT count(*) FROM settings WHERE key = 'require_2fa'"); n != 0 {
+		t.Fatal("a refused change stored the setting")
+	}
+	insertPasskeyRow(t, db, uid, "Phone")
+	for _, on := range []bool{true, false} {
+		if err := SetRequireTwoFactorBy(db, uid, on, t0); err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := RequireTwoFactor(db); got != on {
+			t.Fatalf("setting = %v, want %v", got, on)
+		}
+	}
+}
+
+func TestTotpSetupOnEnrollPending(t *testing.T) {
+	db := openDB(t)
+	box := testBox(t)
+	uid := insertUser(t, db, "owner")
+	other := insertUser(t, db, "other")
+	old := mustCreateSession(t, db, uid, t0)
+	pending := mustChallenge(t, db, uid, KindEnroll, t0)
+	if _, _, err := StartTotpSetup(db, box, pending, KindEnroll, other, "other", t0); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("another admin's pending = %v, want ErrNotFound", err)
+	}
+	second := mustChallenge(t, db, uid, KindSecondFactor, t0)
+	if _, _, err := StartTotpSetup(db, box, second, KindSecondFactor, uid, "owner", t0); err == nil {
+		t.Fatal("a second_factor pending started a setup")
+	}
+	enc, _, err := StartTotpSetup(db, box, pending, KindEnroll, uid, "owner", t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := countRows(t, db, "SELECT count(*) FROM auth_challenges WHERE kind = 'setup'"); n != 0 {
+		t.Fatalf("enroll setup made %d setup rows", n)
+	}
+	secret, _ := base32NoPad.DecodeString(enc)
+	codes, ok, err := FinishTotpSetup(db, box, pending, KindEnroll, uid, Code(secret, t0.Unix()/30), t0)
+	if err != nil || !ok || len(codes) != 10 {
+		t.Fatalf("finish = %v %v %v, want 10 recovery codes", codes, ok, err)
+	}
+	if _, ok := peek(t, db, pending, KindEnroll, t0); ok {
+		t.Fatal("the enroll pending is still usable")
+	}
+	if _, ok := lookup(t, db, old, t0); ok {
+		t.Fatal("an older session kept after the first factor")
+	}
+	if _, _, err := StartTotpSetup(db, box, pending, KindEnroll, uid, "owner", t0); !errors.Is(err, ErrAlreadySetUp) && !errors.Is(err, ErrNotFound) {
+		t.Fatalf("reused pending = %v", err)
 	}
 }

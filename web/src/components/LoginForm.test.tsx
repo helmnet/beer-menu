@@ -18,11 +18,26 @@ describe("LoginForm", () => {
   it("signs in", async () => {
     const calls = stubApi({ "POST /api/session": { status: 200, body: owner } });
     const onSignedIn = vi.fn();
-    render(<LoginForm onSignedIn={onSignedIn} />);
+    render(<LoginForm onSignedIn={onSignedIn} onEnroll={vi.fn()} />);
     const pw = testPassword();
     submit("owner", pw);
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith(owner));
     expect(calls).toEqual([{ key: "POST /api/session", body: { username: "owner", password: pw } }]);
+  });
+
+  it("hands a 202 enroll to onEnroll", async () => {
+    stubApi({ "POST /api/session": { status: 202, body: { next: "enroll" } } });
+    const onSignedIn = vi.fn();
+    const onEnroll = vi.fn();
+    render(<LoginForm onSignedIn={onSignedIn} onEnroll={onEnroll} />);
+    submit("owner", testPassword());
+    await waitFor(() => expect(onEnroll).toHaveBeenCalled());
+    expect(onSignedIn).not.toHaveBeenCalled();
+  });
+
+  it("shows a notice it was opened with", () => {
+    render(<LoginForm onSignedIn={vi.fn()} onEnroll={vi.fn()} notice="Sign-in timed out, start again." />);
+    expect(screen.getByRole("alert").textContent).toBe("Sign-in timed out, start again.");
   });
 
   it("shows a generic message on 401", async () => {
@@ -30,7 +45,7 @@ describe("LoginForm", () => {
       "POST /api/session": { status: 401, body: { error: "invalid_credentials", message: "x" } },
     });
     const onSignedIn = vi.fn();
-    render(<LoginForm onSignedIn={onSignedIn} />);
+    render(<LoginForm onSignedIn={onSignedIn} onEnroll={vi.fn()} />);
     submit("owner", testPassword());
     expect((await screen.findByRole("alert")).textContent).toBe("Wrong username or password.");
     expect(onSignedIn).not.toHaveBeenCalled();
@@ -44,7 +59,7 @@ describe("LoginForm", () => {
         headers: { "Retry-After": "811" },
       },
     });
-    render(<LoginForm onSignedIn={vi.fn()} />);
+    render(<LoginForm onSignedIn={vi.fn()} onEnroll={vi.fn()} />);
     submit("owner", testPassword());
     expect((await screen.findByRole("alert")).textContent).toBe(
       "Too many failed attempts. Try again in 14 minutes.",
@@ -59,7 +74,7 @@ describe("LoginForm", () => {
         headers: { "Retry-After": "30" },
       },
     });
-    render(<LoginForm onSignedIn={vi.fn()} />);
+    render(<LoginForm onSignedIn={vi.fn()} onEnroll={vi.fn()} />);
     submit("owner", testPassword());
     expect((await screen.findByRole("alert")).textContent).toBe(
       "Too many failed attempts. Try again in 1 minute.",
@@ -73,7 +88,7 @@ describe("LoginForm", () => {
     async function toCodeStep(routes: Parameters<typeof stubApi>[0]) {
       const calls = stubApi({ "POST /api/session": pending, ...routes });
       const onSignedIn = vi.fn();
-      render(<LoginForm onSignedIn={onSignedIn} />);
+      render(<LoginForm onSignedIn={onSignedIn} onEnroll={vi.fn()} />);
       submit("owner", testPassword());
       await screen.findByLabelText("Authenticator code");
       return { calls, onSignedIn };
@@ -160,7 +175,7 @@ describe("LoginForm", () => {
 
     it("asks for a recovery code at once when it is the only method", async () => {
       stubApi({ "POST /api/session": { status: 202, body: { next: "second_factor", methods: ["recovery"] } } });
-      render(<LoginForm onSignedIn={vi.fn()} />);
+      render(<LoginForm onSignedIn={vi.fn()} onEnroll={vi.fn()} />);
       submit("owner", testPassword());
       expect(await screen.findByLabelText("Recovery code")).toBeTruthy();
       expect(screen.queryByRole("button", { name: "Use another method" })).toBeNull();
@@ -191,7 +206,7 @@ describe("LoginForm passkey step", () => {
   async function toSecondStep(methods: string[], routes: Parameters<typeof stubApi>[0], origin?: string) {
     const calls = stubApi({ "POST /api/session": pendingWith(methods, origin), ...routes });
     const onSignedIn = vi.fn();
-    render(<LoginForm onSignedIn={onSignedIn} />);
+    render(<LoginForm onSignedIn={onSignedIn} onEnroll={vi.fn()} />);
     submit("owner", testPassword());
     await waitFor(() => expect(screen.queryByLabelText("Password")).toBeNull());
     return { calls, onSignedIn };

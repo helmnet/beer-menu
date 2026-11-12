@@ -160,17 +160,14 @@ func decodeCode(w http.ResponseWriter, r *http.Request) (string, bool) {
 	return body.Code, true
 }
 
-// setupCaller returns the session principal and admin of a factor setup or removal route once
-// the caller may make the change: an enroll pending is 401 until the enroll flow exists (tasks T064), an admin
-// removed since the session lookup is 401, and a session without a recent confirm is 403
-// confirm_required. Otherwise it answers and returns false.
+// setupCaller returns the principal (a session, or on AccessEnroll routes an enroll pending)
+// and admin of a factor setup or removal route once the caller may make the change: an admin
+// removed since the credential lookup is 401, and a session without a recent confirm is 403
+// confirm_required; an enroll pending counts as confirmed. Otherwise it answers and returns
+// false.
 func setupCaller(w http.ResponseWriter, r *http.Request, deps Deps) (principal, auth.Admin, bool) {
 	p, _ := principalFrom(r.Context())
-	if p.Pending != "" {
-		writeError(w, http.StatusUnauthorized, "unauthenticated", "Sign in or send a valid API token.")
-		return p, auth.Admin{}, false
-	}
-	admin, err := auth.GetAdmin(deps.DB, p.AdminID)
+	admin, err := auth.GetAdmin(deps.DB, p.userID())
 	if errors.Is(err, auth.ErrNotFound) {
 		writeError(w, http.StatusUnauthorized, "unauthenticated", "Sign in or send a valid API token.")
 		return p, admin, false
@@ -184,9 +181,11 @@ func setupCaller(w http.ResponseWriter, r *http.Request, deps Deps) (principal, 
 
 // writeTotpSetupError answers an error of auth.StartTotpSetup or auth.FinishTotpSetup: 409
 // totp_unavailable without an encryption key, 409 already_set_up for a second authenticator,
-// else 500.
+// 401 for an enroll pending gone meanwhile, else 500.
 func writeTotpSetupError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, auth.ErrNotFound):
+		writeError(w, http.StatusUnauthorized, "unauthenticated", "Sign in or send a valid API token.")
 	case errors.Is(err, auth.ErrTotpUnavailable):
 		writeError(w, http.StatusConflict, "totp_unavailable", "Authenticator apps are off: the server has no encryption key.")
 	case errors.Is(err, auth.ErrAlreadySetUp):
@@ -202,9 +201,9 @@ type totpSetupReply struct {
 	URI    string `json:"uri"`
 }
 
-// startTotpSetup handles POST /api/2fa/totp/setup (enroll; a session only until T064): after
-// the setupCaller checks it answers 200 with a new authenticator secret (base32) and its
-// otpauth URI, held unconfirmed on the server for 5 minutes. 409 totp_unavailable without an
+// startTotpSetup handles POST /api/2fa/totp/setup (enroll): after the setupCaller checks it
+// answers 200 with a new authenticator secret (base32) and its otpauth URI, held unconfirmed on
+// the server for 5 minutes (with an enroll pending, until that sign-in expires). 409 totp_unavailable without an
 // encryption key, 409 already_set_up when the caller has an authenticator.
 func startTotpSetup(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -212,7 +211,8 @@ func startTotpSetup(deps Deps) http.Handler {
 		if !ok {
 			return
 		}
-		secret, uri, err := auth.StartTotpSetup(deps.DB, deps.Box, p.SessionID, admin.ID, admin.Username, deps.Now())
+		id, kind := p.setupChallenge()
+		secret, uri, err := auth.StartTotpSetup(deps.DB, deps.Box, id, kind, admin.ID, admin.Username, deps.Now())
 		if err != nil {
 			writeTotpSetupError(w, r, err)
 			return
@@ -221,17 +221,35 @@ func startTotpSetup(deps Deps) http.Handler {
 	})
 }
 
-// factorAdded is the FactorAdded body: the passkey when one was added, and recovery codes only
-// when this was the first factor.
+// factorAdded is the FactorAdded body: the passkey when one was added, recovery codes only
+// when this was the first factor, and the admin only when it finished an enroll sign-in.
 type factorAdded struct {
 	Passkey       *auth.Passkey `json:"passkey,omitempty"`
 	RecoveryCodes []string      `json:"recovery_codes,omitempty"`
+	Admin         *auth.Admin   `json:"admin,omitempty"`
 }
 
-// finishTotpSetup handles POST /api/2fa/totp (enroll; a session only until T064): after the
-// setupCaller checks, a CodeBody valid for the secret from POST /api/2fa/totp/setup saves the
-// authenticator and answers 201 FactorAdded; for the first factor that carries 10 recovery
-// codes and the caller's other sessions end. A wrong code, or no open setup, is 400
+// writeFactorAdded answers 201 with reply for a factor admin added. For an enroll principal
+// the factor finishes the sign-in (research R10): the auth finish already used up the pending
+// sign-in, so it clears bm_pending, starts a session as POST /api/session does and adds the
+// admin to reply.
+func writeFactorAdded(w http.ResponseWriter, r *http.Request, deps Deps, p principal, admin auth.Admin, reply factorAdded) {
+	if p.Pending != "" {
+		clearPendingCookie(w, deps)
+		if !startSession(w, r, deps, admin.ID) {
+			return
+		}
+		admin.TwoFactor = true
+		reply.Admin = &admin
+		slog.InfoContext(r.Context(), "admin signed in", "username", admin.Username, "enrolled", true)
+	}
+	writeJSON(w, http.StatusCreated, reply)
+}
+
+// finishTotpSetup handles POST /api/2fa/totp (enroll): after the setupCaller checks, a CodeBody
+// valid for the secret from POST /api/2fa/totp/setup saves the authenticator and answers 201
+// FactorAdded; for the first factor that carries 10 recovery codes and the caller's other
+// sessions end. With an enroll pending it also signs in (see writeFactorAdded). A wrong code, or no open setup, is 400
 // invalid_code and saves nothing; 409 as for the setup start.
 func finishTotpSetup(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -243,7 +261,8 @@ func finishTotpSetup(deps Deps) http.Handler {
 		if !ok {
 			return
 		}
-		codes, ok, err := auth.FinishTotpSetup(deps.DB, deps.Box, p.SessionID, admin.ID, code, deps.Now())
+		id, kind := p.setupChallenge()
+		codes, ok, err := auth.FinishTotpSetup(deps.DB, deps.Box, id, kind, admin.ID, code, deps.Now())
 		if err != nil {
 			writeTotpSetupError(w, r, err)
 			return
@@ -253,7 +272,7 @@ func finishTotpSetup(deps Deps) http.Handler {
 			return
 		}
 		slog.InfoContext(r.Context(), "authenticator added", "username", admin.Username, "first_factor", codes != nil)
-		writeJSON(w, http.StatusCreated, factorAdded{RecoveryCodes: codes})
+		writeFactorAdded(w, r, deps, p, admin, factorAdded{RecoveryCodes: codes})
 	})
 }
 
@@ -290,10 +309,10 @@ func writePasskeyError(w http.ResponseWriter, r *http.Request, err error) {
 	}
 }
 
-// startPasskeySetup handles POST /api/2fa/passkeys/options (enroll; a session only until T064):
-// after the setupCaller checks it answers 200 with WebAuthn creation options for a new passkey
-// (user verification required, resident key preferred, no attestation, the caller's passkeys
-// excluded), held on the server for 5 minutes. 409 passkeys_unavailable without
+// startPasskeySetup handles POST /api/2fa/passkeys/options (enroll): after the setupCaller
+// checks it answers 200 with WebAuthn creation options for a new passkey (user verification
+// required, resident key preferred, no attestation, the caller's passkeys excluded), held on
+// the server for 5 minutes (with an enroll pending, until that sign-in expires). 409 passkeys_unavailable without
 // BEER_MENU_PUBLIC_URL, 409 too_many_passkeys at 10.
 func startPasskeySetup(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -301,7 +320,8 @@ func startPasskeySetup(deps Deps) http.Handler {
 		if !ok {
 			return
 		}
-		opts, err := auth.BeginPasskeyRegistration(deps.DB, deps.WebAuthn, p.SessionID, admin.ID, deps.Now())
+		id, kind := p.setupChallenge()
+		opts, err := auth.BeginPasskeyRegistration(deps.DB, deps.WebAuthn, id, kind, admin.ID, deps.Now())
 		if err != nil {
 			writePasskeyError(w, r, err)
 			return
@@ -316,11 +336,11 @@ type passkeySetupBody struct {
 	Credential json.RawMessage `json:"credential"`
 }
 
-// finishPasskeySetup handles POST /api/2fa/passkeys (enroll; a session only until T064): after
-// the setupCaller checks, a name (1 to 64 characters, trimmed, no control characters) and the
+// finishPasskeySetup handles POST /api/2fa/passkeys (enroll): after the setupCaller checks, a name (1 to 64 characters, trimmed, no control characters) and the
 // credential.toJSON() of a creation for the options of POST /api/2fa/passkeys/options save the
 // passkey and answer 201 FactorAdded with it; for the first factor that carries 10 recovery
-// codes and the caller's other sessions end. A bad name or body (over 16 KiB) is 400
+// codes and the caller's other sessions end. With an enroll pending it also signs in (see
+// writeFactorAdded). A bad name or body (over 16 KiB) is 400
 // invalid_request, a refused credential or no open setup 400 passkey_failed; 409 as for the
 // options.
 func finishPasskeySetup(deps Deps) http.Handler {
@@ -337,7 +357,8 @@ func finishPasskeySetup(deps Deps) http.Handler {
 		if !ok {
 			return
 		}
-		pk, codes, err := auth.FinishPasskeyRegistration(deps.DB, deps.WebAuthn, p.SessionID, admin.ID, body.Name, body.Credential, deps.Now())
+		id, kind := p.setupChallenge()
+		pk, codes, err := auth.FinishPasskeyRegistration(deps.DB, deps.WebAuthn, id, kind, admin.ID, body.Name, body.Credential, deps.Now())
 		if errors.Is(err, auth.ErrPasskeyFailed) {
 			slog.WarnContext(r.Context(), "passkey not added", "username", admin.Username, "reason", err.Error())
 			writeError(w, http.StatusBadRequest, "passkey_failed", "The passkey could not be added. Try again.")
@@ -348,7 +369,7 @@ func finishPasskeySetup(deps Deps) http.Handler {
 			return
 		}
 		slog.InfoContext(r.Context(), "passkey added", "username", admin.Username, "first_factor", codes != nil)
-		writeJSON(w, http.StatusCreated, factorAdded{Passkey: &pk, RecoveryCodes: codes})
+		writeFactorAdded(w, r, deps, p, admin, factorAdded{Passkey: &pk, RecoveryCodes: codes})
 	})
 }
 
@@ -436,7 +457,8 @@ func renamePasskey(deps Deps) http.Handler {
 
 // removeFactor answers a factor removal route: after the setupCaller checks it runs remove for
 // the caller, keeping this session, and answers 204 logging event. remove's auth.ErrNotFound is
-// 404 not_found and auth.ErrNoFactor 409 no_factor.
+// 404 not_found, auth.ErrNoFactor 409 no_factor and auth.ErrTwoFactorRequired 409
+// two_factor_required, whose message names the setting.
 func removeFactor(w http.ResponseWriter, r *http.Request, deps Deps, event string, remove func(userID int64, keepSessionID string) error) {
 	p, admin, ok := setupCaller(w, r, deps)
 	if !ok {
@@ -448,6 +470,8 @@ func removeFactor(w http.ResponseWriter, r *http.Request, deps Deps, event strin
 		writeNotFound(w)
 	case errors.Is(err, auth.ErrNoFactor):
 		writeError(w, http.StatusConflict, "no_factor", "Two-factor sign-in is already off.")
+	case errors.Is(err, auth.ErrTwoFactorRequired):
+		writeError(w, http.StatusConflict, "two_factor_required", requiredMessage)
 	case err != nil:
 		writeInternal(w, r, err)
 	default:
@@ -489,5 +513,47 @@ func turnOffTwoFactor(deps Deps) http.Handler {
 		removeFactor(w, r, deps, "two-factor turned off", func(userID int64, keep string) error {
 			return auth.TurnOffTwoFactor(deps.DB, userID, keep)
 		})
+	})
+}
+
+// requiredMessage answers a change refused because it would leave the caller without a factor
+// while every admin must have one; it names the setting (FR-035).
+const requiredMessage = "\"Require two-factor sign-in for all admins\" is on, so you must keep at least one way to sign in. Add another first, or turn that setting off."
+
+// requiredBody is the body of PUT /api/2fa/required. Required is a pointer so a missing or null
+// field is told apart from false.
+type requiredBody struct {
+	Required *bool `json:"required"`
+}
+
+// setTwoFactorRequired handles PUT /api/2fa/required (admin): after the setupCaller checks
+// (a recent confirm), it stores whether every admin must have 2FA and answers 204, logging who
+// changed it to what. The caller must have a factor of their own, else 409 no_factor (FR-033).
+// A body without a boolean required is 400. It ends no sessions: admins without a factor enroll
+// at their next sign-in (FR-036).
+func setTwoFactorRequired(deps Deps) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body requiredBody
+		if !decodeJSON(w, r, &body, maxBody) {
+			return
+		}
+		if body.Required == nil {
+			writeError(w, http.StatusBadRequest, "invalid_request", "Send required as true or false.")
+			return
+		}
+		_, admin, ok := setupCaller(w, r, deps)
+		if !ok {
+			return
+		}
+		err := auth.SetRequireTwoFactorBy(deps.DB, admin.ID, *body.Required, deps.Now())
+		switch {
+		case errors.Is(err, auth.ErrNoFactor):
+			writeError(w, http.StatusConflict, "no_factor", "Turn on two-factor sign-in for yourself first.")
+		case err != nil:
+			writeInternal(w, r, err)
+		default:
+			slog.InfoContext(r.Context(), "two-factor requirement changed", "username", admin.Username, "required", *body.Required)
+			w.WriteHeader(http.StatusNoContent)
+		}
 	})
 }

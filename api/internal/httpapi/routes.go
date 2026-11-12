@@ -79,6 +79,7 @@ var Routes = []Route{
 	{Method: http.MethodPatch, Path: "/api/2fa/passkeys/{id}", Access: AccessAdmin, Handler: renamePasskey},
 	{Method: http.MethodDelete, Path: "/api/2fa/passkeys/{id}", Access: AccessAdmin, Handler: removePasskey},
 	{Method: http.MethodPost, Path: "/api/2fa/recovery-codes", Access: AccessAdmin, Handler: replaceRecoveryCodes},
+	{Method: http.MethodPut, Path: "/api/2fa/required", Access: AccessAdmin, Handler: setTwoFactorRequired},
 	{Method: http.MethodGet, Path: "/api/admins", Access: AccessAdmin, Handler: listAdmins},
 	{Method: http.MethodPost, Path: "/api/admins", Access: AccessAdmin, Handler: addAdmin},
 	{Method: http.MethodDelete, Path: "/api/admins/{id}", Access: AccessAdmin, Handler: removeAdmin},

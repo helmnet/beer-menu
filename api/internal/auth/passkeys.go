@@ -125,12 +125,12 @@ func RemovePasskey(db *sql.DB, userID, id int64, keepSessionID string) error {
 	return removeFactors(db, userID, keepSessionID, ErrNotFound, []any{userID, id}, "DELETE FROM passkeys WHERE user_id = ? AND id = ?")
 }
 
-// BeginPasskeyRegistration starts adding a passkey for userID, signed in with sessionID: it
-// keeps the creation ceremony in the session's setup challenge for ChallengeTTL, replacing any
-// earlier setup of that session, and returns the options for the browser (user verification
+// BeginPasskeyRegistration starts adding a passkey for userID on setup challenge id of kind
+// (see openSetup): it keeps the creation ceremony on that challenge until it expires,
+// replacing any earlier ceremony, and returns the options for the browser (user verification
 // required, resident key preferred, no attestation, the admin's passkeys excluded). It returns
 // ErrPasskeysUnavailable when wa is nil and ErrTooManyPasskeys at MaxPasskeys.
-func BeginPasskeyRegistration(db *sql.DB, wa *webauthn.WebAuthn, sessionID string, userID int64, now time.Time) (*protocol.CredentialCreation, error) {
+func BeginPasskeyRegistration(db *sql.DB, wa *webauthn.WebAuthn, id string, kind ChallengeKind, userID int64, now time.Time) (*protocol.CredentialCreation, error) {
 	if wa == nil {
 		return nil, ErrPasskeysUnavailable
 	}
@@ -149,23 +149,24 @@ func BeginPasskeyRegistration(db *sql.DB, wa *webauthn.WebAuthn, sessionID strin
 	if err != nil {
 		return nil, err
 	}
-	if err := SetupChallenge(db, sessionID, userID, now); err != nil {
+	if err := openSetup(db, id, kind, userID, now); err != nil {
 		return nil, err
 	}
-	if err := storeCeremony(db, sessionID, KindSetup, ceremony{Create: true, Session: *session}, now); err != nil {
+	if err := storeCeremony(db, id, kind, ceremony{Create: true, Session: *session}, now); err != nil {
 		return nil, err
 	}
 	return opts, nil
 }
 
 // FinishPasskeyRegistration saves the passkey in response (credential.toJSON() of the
-// creation) under name when it answers sessionID's open registration for userID, and ends the
-// setup. When it is userID's first factor it also makes and returns 10 recovery codes and ends
-// userID's other sessions (FR-017, FR-024), all in one transaction. A bad name is a
+// creation) under name when it answers the open registration on setup challenge id of kind for
+// userID, and uses up the challenge (for KindEnroll, the pending sign-in). When it is userID's
+// first factor it also makes and returns 10 recovery codes and ends userID's sessions other
+// than id (FR-017, FR-024), all in one transaction. A bad name is a
 // ValidationError. A refused response, or no open registration, is ErrPasskeyFailed and leaves
 // the setup open until it expires. It returns ErrPasskeysUnavailable when wa is nil and
 // ErrTooManyPasskeys at MaxPasskeys.
-func FinishPasskeyRegistration(db *sql.DB, wa *webauthn.WebAuthn, sessionID string, userID int64, name string, response []byte, now time.Time) (Passkey, []string, error) {
+func FinishPasskeyRegistration(db *sql.DB, wa *webauthn.WebAuthn, id string, kind ChallengeKind, userID int64, name string, response []byte, now time.Time) (Passkey, []string, error) {
 	if wa == nil {
 		return Passkey{}, nil, ErrPasskeysUnavailable
 	}
@@ -173,7 +174,7 @@ func FinishPasskeyRegistration(db *sql.DB, wa *webauthn.WebAuthn, sessionID stri
 	if err != nil {
 		return Passkey{}, nil, err
 	}
-	c, ok, err := PeekChallenge(db, sessionID, KindSetup, now)
+	c, ok, err := PeekChallenge(db, id, kind, now)
 	if err != nil {
 		return Passkey{}, nil, err
 	}
@@ -210,7 +211,7 @@ func FinishPasskeyRegistration(db *sql.DB, wa *webauthn.WebAuthn, sessionID stri
 	}
 	defer tx.Rollback()
 	// Taking the setup in the transaction makes a response accepted by two concurrent calls save once.
-	if _, ok, err := TakeChallenge(tx, sessionID, KindSetup, now); err != nil {
+	if _, ok, err := TakeChallenge(tx, id, kind, now); err != nil {
 		return Passkey{}, nil, err
 	} else if !ok {
 		return Passkey{}, nil, ErrPasskeyFailed
@@ -241,7 +242,7 @@ func FinishPasskeyRegistration(db *sql.DB, wa *webauthn.WebAuthn, sessionID stri
 		if codes, err = replaceRecoveryCodes(tx, userID); err != nil {
 			return Passkey{}, nil, err
 		}
-		if err := DeleteOtherSessions(tx, userID, sessionID); err != nil {
+		if err := DeleteOtherSessions(tx, userID, id); err != nil {
 			return Passkey{}, nil, err
 		}
 	}

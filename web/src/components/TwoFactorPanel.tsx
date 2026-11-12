@@ -5,6 +5,9 @@ import Modal from "./Modal";
 import RecoveryCodes from "./RecoveryCodes";
 import TwoFactorSetup from "./TwoFactorSetup";
 
+/** REQUIRE_LABEL names the require setting, on its switch and in the refusal it causes. */
+const REQUIRE_LABEL = "Require two-factor sign-in for all admins";
+
 /** when describes a factor's added and last-used times. */
 function when(created: string, lastUsed: string | null): string {
   const used = lastUsed ? `last used ${new Date(lastUsed).toLocaleString()}` : "never used";
@@ -13,13 +16,15 @@ function when(created: string, lastUsed: string | null): string {
 
 /**
  * TwoFactorPanel is the Two-Factor Sign-In page: the heading above one card showing the
- * signed-in admin's state from GET /api/2fa: whether two-factor sign-in is on, whether it is
- * required for every admin, and, when on, how many recovery codes are left (with a warning at 2
+ * signed-in admin's state from GET /api/2fa: whether two-factor sign-in is on, a switch for
+ * whether it is required for every admin (PUT /api/2fa/required; disabled with a hint until the
+ * admin has a factor of their own), and, when on, how many recovery codes are left (with a warning at 2
  * or fewer) and a list of the second factors, each with its type, name, added and last-used
  * time, never a secret. A passkey can be renamed inline (PATCH /api/2fa/passkeys/{id}). Each
  * factor can be removed (DELETE /api/2fa/totp or /api/2fa/passkeys/{id}) and 2FA turned off
  * (DELETE /api/2fa), each after the browser asks to be sure. "New recovery codes"
- * (POST /api/2fa/recovery-codes) shows the new set once with `RecoveryCodes`. A 403
+ * (POST /api/2fa/recovery-codes) shows the new set once with `RecoveryCodes`. A removal refused
+ * with 409 two_factor_required says the require setting is on, naming it. A 403
  * confirm_required on any of these opens `ConfirmIdentity` and runs the action again once
  * confirmed. `TwoFactorSetup` adds a factor. The state reloads after every change. Errors show
  * the API's message; a 401 calls `onSignedOut`.
@@ -60,6 +65,8 @@ export default function TwoFactorPanel({ onSignedOut }: { onSignedOut: () => voi
     } catch (err) {
       if (isUnauthenticated(err)) onSignedOut();
       else if (err instanceof ApiError && err.code === "confirm_required") setRetry(() => action);
+      else if (err instanceof ApiError && err.code === "two_factor_required")
+        setError(`"${REQUIRE_LABEL}" is on, so you must keep at least one second factor. Add another first, or turn that setting off.`);
       else setError(errorMessage(err));
     }
   }
@@ -76,6 +83,13 @@ export default function TwoFactorPanel({ onSignedOut }: { onSignedOut: () => voi
     if (!window.confirm("Turn off two-factor sign-in? This removes every factor and recovery code.")) return;
     run(async () => {
       await apiFetch("DELETE", "/api/2fa");
+      reload();
+    });
+  }
+
+  function setRequired(required: boolean) {
+    run(async () => {
+      await apiFetch("PUT", "/api/2fa/required", { required });
       reload();
     });
   }
@@ -112,7 +126,16 @@ export default function TwoFactorPanel({ onSignedOut }: { onSignedOut: () => voi
         {state && (
           <>
             <p>Two-factor sign-in is {state.enabled ? "on" : "off"}.</p>
-            {state.required && <p>Two-factor sign-in is required for every admin.</p>}
+            <label>
+              <input
+                type="checkbox"
+                checked={state.required}
+                disabled={!state.enabled}
+                onChange={(e) => setRequired(e.target.checked)}
+              />
+              {REQUIRE_LABEL}
+            </label>
+            {!state.enabled && <p>Add a second factor for yourself before requiring one for every admin.</p>}
             {state.enabled && (
               <>
                 <p>Recovery codes left: {state.recovery_codes_left} of 10.</p>

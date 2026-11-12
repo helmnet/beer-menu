@@ -422,7 +422,8 @@ paths:
       summary: Remove all of the caller's factors and recovery codes
       description: >
         Needs a recent confirm. Ends the caller's other sessions and pending sign-ins; this
-        session stays. 409 no_factor when two-factor sign-in is already off.
+        session stays. 409 no_factor when two-factor sign-in is already off, two_factor_required
+        while 2FA is required for every admin.
       tags: [two-factor]
       x-access: admin
       responses:
@@ -502,10 +503,11 @@ paths:
       operationId: startTotpSetup
       summary: Start adding an authenticator app
       description: >
-        Needs a recent confirm (sign-in or POST /api/2fa/confirm in the last 5 minutes). Returns
-        a new secret, held unconfirmed on the server for 5 minutes; a new call replaces it. 409
-        already_set_up if the caller has an authenticator, totp_unavailable without an
-        encryption key. An enroll pending is 401 until the enroll flow is added.
+        Needs a recent confirm (sign-in or POST /api/2fa/confirm in the last 5 minutes); an
+        enroll pending counts as confirmed. Returns a new secret, held unconfirmed on the server
+        for 5 minutes (with an enroll pending, until that sign-in expires); a new call replaces
+        it. 409 already_set_up if the caller has an authenticator, totp_unavailable without an
+        encryption key.
       tags: [two-factor]
       x-access: enroll
       responses:
@@ -527,10 +529,12 @@ paths:
       operationId: finishTotpSetup
       summary: Confirm the authenticator with a current code and save it
       description: >
-        Needs a recent confirm. A wrong code, or no setup open, is 400 invalid_code and saves
-        nothing (the setup stays open until it expires). If this is the caller's first factor,
-        the response carries 10 recovery codes and the caller's other sessions end. An enroll
-        pending is 401 until the enroll flow is added.
+        Needs a recent confirm (an enroll pending counts). A wrong code, or no setup open, is
+        400 invalid_code and saves nothing (the setup stays open until it expires). If this is
+        the caller's first factor, the response carries 10 recovery codes and the caller's other
+        sessions end. With an enroll pending, it also ends that pending sign-in, clears
+        bm_pending, starts a session (Set-Cookie as from POST /api/session) and returns the
+        admin.
       tags: [two-factor]
       x-access: enroll
       requestBody:
@@ -566,7 +570,8 @@ paths:
       summary: Remove the authenticator app
       description: >
         Needs a recent confirm. Ends the caller's other sessions and pending sign-ins; this
-        session stays. Removing the last factor also deletes the recovery codes. 404 when no
+        session stays. Removing the last factor also deletes the recovery codes, and is refused
+        (409 two_factor_required) while 2FA is required for every admin. 404 when no
         authenticator is set up.
       tags: [two-factor]
       x-access: admin
@@ -579,17 +584,19 @@ paths:
           $ref: "#/components/responses/ConfirmRequired"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TwoFactorConflict"
 
   /api/2fa/passkeys/options:
     post:
       operationId: startPasskeySetup
       summary: WebAuthn creation options for a new passkey
       description: >
-        Needs a recent confirm. excludeCredentials lists the caller's passkeys;
-        userVerification required; attestation none; residentKey preferred. Held on the server
-        for 5 minutes; a new call replaces it. 409 passkeys_unavailable without
-        BEER_MENU_PUBLIC_URL, too_many_passkeys at 10. An enroll pending is 401 until the enroll
-        flow is added.
+        Needs a recent confirm (an enroll pending counts). excludeCredentials lists the caller's
+        passkeys; userVerification required; attestation none; residentKey preferred. Held on
+        the server for 5 minutes (with an enroll pending, until that sign-in expires); a new
+        call replaces it. 409 passkeys_unavailable without BEER_MENU_PUBLIC_URL,
+        too_many_passkeys at 10.
       tags: [two-factor]
       x-access: enroll
       responses:
@@ -615,7 +622,7 @@ paths:
         options. A refused credential, or no setup open, is 400 passkey_failed and saves nothing.
         At most 10 passkeys per admin: an 11th is 409 too_many_passkeys. If this is the caller's
         first factor, the response carries 10 recovery codes and the caller's other sessions
-        end. An enroll pending is 401 until the enroll flow is added.
+        end. An enroll pending counts as confirmed and is finished as by POST /api/2fa/totp.
       tags: [two-factor]
       x-access: enroll
       requestBody:
@@ -706,6 +713,8 @@ paths:
           $ref: "#/components/responses/ConfirmRequired"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TwoFactorConflict"
 
   /api/2fa/recovery-codes:
     post:
@@ -723,6 +732,40 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RecoveryCodes"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ConfirmRequired"
+        "409":
+          $ref: "#/components/responses/TwoFactorConflict"
+
+  /api/2fa/required:
+    put:
+      operationId: setTwoFactorRequired
+      summary: Turn "require 2FA for all admins" on or off
+      description: >
+        Needs a recent confirm and a second factor of the caller's own (409 no_factor). Turning
+        it on ends no sessions; admins without a factor must set one up at their next sign-in.
+        While it is on, no admin can remove their last factor or turn 2FA off. Not part of
+        GET or PATCH /api/settings.
+      tags: [two-factor]
+      x-access: admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [required]
+              properties:
+                required:
+                  type: boolean
+      responses:
+        "204":
+          description: Saved
+        "400":
+          $ref: "#/components/responses/Invalid"
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -1986,8 +2029,9 @@ components:
             message: Confirm it is you first.
     TwoFactorConflict:
       description: >
-        The change conflicts with two-factor state. `error` is `totp_unavailable` (no
-        encryption key), `already_set_up`, `passkeys_unavailable` (no BEER_MENU_PUBLIC_URL),
+        The change conflicts with two-factor state. `error` is `two_factor_required` (it would
+        leave the caller without a factor while 2FA is required for every admin),
+        `totp_unavailable` (no encryption key), `already_set_up`, `passkeys_unavailable` (no BEER_MENU_PUBLIC_URL),
         `too_many_passkeys` (10 already), `no_factor` (no passkey to check, or no second factor
         at all) or `cannot_clear_self` (clearing the caller's own factors as another admin).
       content:
@@ -2269,6 +2313,8 @@ components:
           items:
             type: string
             pattern: "^[a-z2-7]{5}-[a-z2-7]{5}$"
+        admin:
+          $ref: "#/components/schemas/Admin"
     RecoveryCodes:
       type: object
       additionalProperties: false

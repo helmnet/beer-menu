@@ -22,6 +22,9 @@ var (
 	ErrTotpUnavailable = errors.New("authenticator apps need an encryption key")
 	// ErrNoFactor means the admin has no second factor to turn off.
 	ErrNoFactor = errors.New("no second factor is set up")
+	// ErrTwoFactorRequired means the change would leave the admin without a second factor while
+	// 2FA is required for every admin (FR-035).
+	ErrTwoFactorRequired = errors.New("two-factor sign-in is required")
 )
 
 // requireKey is the settings key of "require 2FA for every admin" (FR-026).
@@ -138,12 +141,12 @@ func CheckTotp(db *sql.DB, box *secrets.Box, userID int64, code string, now time
 	return n == 1, err
 }
 
-// StartTotpSetup starts adding an authenticator for userID, signed in with sessionID: it makes
-// a new secret, keeps it sealed for userID (purpose totp:<user_id>) in the session's setup
-// challenge for ChallengeTTL, replacing any earlier setup of that session, and returns it as
-// base32 and as the otpauth URI for username. It returns ErrTotpUnavailable when box is nil
-// and ErrAlreadySetUp when userID has an authenticator.
-func StartTotpSetup(db *sql.DB, box *secrets.Box, sessionID string, userID int64, username string, now time.Time) (secret, uri string, err error) {
+// StartTotpSetup starts adding an authenticator for userID on setup challenge id of kind (see
+// openSetup): it makes a new secret, keeps it sealed for userID (purpose totp:<user_id>) on
+// that challenge until it expires, replacing any earlier secret, and returns it as base32 and
+// as the otpauth URI for username. It returns ErrTotpUnavailable when box is nil and
+// ErrAlreadySetUp when userID has an authenticator.
+func StartTotpSetup(db *sql.DB, box *secrets.Box, id string, kind ChallengeKind, userID int64, username string, now time.Time) (secret, uri string, err error) {
 	if box == nil {
 		return "", "", ErrTotpUnavailable
 	}
@@ -162,27 +165,28 @@ func StartTotpSetup(db *sql.DB, box *secrets.Box, sessionID string, userID int64
 	if err != nil {
 		return "", "", err
 	}
-	if err := SetupChallenge(db, sessionID, userID, now); err != nil {
+	if err := openSetup(db, id, kind, userID, now); err != nil {
 		return "", "", err
 	}
-	if ok, err := SetChallengeData(db, sessionID, KindSetup, "", sealed, now); err != nil || !ok {
+	if ok, err := SetChallengeData(db, id, kind, "", sealed, now); err != nil || !ok {
 		return "", "", errors.Join(errors.New("store pending authenticator secret"), err)
 	}
 	return EncodeSecret(raw), URI(username, raw), nil
 }
 
-// FinishTotpSetup saves the authenticator that sessionID's setup holds for userID when code is
-// valid for it now, and ends the setup. The accepted step is stored as last_step, so the same
-// code cannot then sign in. When it is userID's first factor it also makes and returns 10
-// recovery codes and ends userID's other sessions (FR-017, FR-024), all in one transaction.
-// ok is false, and nothing changes, for a wrong code or when no unexpired setup with a secret
-// is open for sessionID and userID. It returns ErrTotpUnavailable when box is nil and
-// ErrAlreadySetUp when userID has an authenticator.
-func FinishTotpSetup(db *sql.DB, box *secrets.Box, sessionID string, userID int64, code string, now time.Time) (recoveryCodes []string, ok bool, err error) {
+// FinishTotpSetup saves the authenticator that setup challenge id of kind holds for userID
+// when code is valid for it now, and uses up the challenge (for KindEnroll, the pending
+// sign-in). The accepted step is stored as last_step, so the same code cannot then sign in.
+// When it is userID's first factor it also makes and returns 10 recovery codes and ends
+// userID's sessions other than id (FR-017, FR-024), all in one transaction. ok is false, and
+// nothing changes, for a wrong code or when no unexpired challenge with a secret is open for
+// id and userID. It returns ErrTotpUnavailable when box is nil and ErrAlreadySetUp when userID
+// has an authenticator.
+func FinishTotpSetup(db *sql.DB, box *secrets.Box, id string, kind ChallengeKind, userID int64, code string, now time.Time) (recoveryCodes []string, ok bool, err error) {
 	if box == nil {
 		return nil, false, ErrTotpUnavailable
 	}
-	c, ok, err := PeekChallenge(db, sessionID, KindSetup, now)
+	c, ok, err := PeekChallenge(db, id, kind, now)
 	if err != nil || !ok || c.UserID != userID || c.TotpPendingSealed == "" {
 		return nil, false, err
 	}
@@ -200,7 +204,7 @@ func FinishTotpSetup(db *sql.DB, box *secrets.Box, sessionID string, userID int6
 	}
 	defer tx.Rollback()
 	// Taking the setup in the transaction makes a code accepted by two concurrent calls save once.
-	if _, ok, err := TakeChallenge(tx, sessionID, KindSetup, now); err != nil || !ok {
+	if _, ok, err := TakeChallenge(tx, id, kind, now); err != nil || !ok {
 		return nil, false, err
 	}
 	has, err := HasTwoFactor(tx, userID)
@@ -221,11 +225,30 @@ func FinishTotpSetup(db *sql.DB, box *secrets.Box, sessionID string, userID int6
 		if recoveryCodes, err = replaceRecoveryCodes(tx, userID); err != nil {
 			return nil, false, err
 		}
-		if err := DeleteOtherSessions(tx, userID, sessionID); err != nil {
+		if err := DeleteOtherSessions(tx, userID, id); err != nil {
 			return nil, false, err
 		}
 	}
 	return recoveryCodes, true, tx.Commit()
+}
+
+// openSetup readies challenge id of kind to hold a factor setup for userID. For KindSetup, id is
+// the signed-in session's ID and it starts that session's setup, replacing any earlier one. For
+// KindEnroll, id is an enroll pending sign-in, which must be unexpired and userID's, else
+// ErrNotFound; the setup lives on it, so it ends with that sign-in (research R10). Any other
+// kind is an error.
+func openSetup(db *sql.DB, id string, kind ChallengeKind, userID int64, now time.Time) error {
+	switch kind {
+	case KindSetup:
+		return SetupChallenge(db, id, userID, now)
+	case KindEnroll:
+		c, ok, err := PeekChallenge(db, id, kind, now)
+		if err == nil && (!ok || c.UserID != userID) {
+			err = ErrNotFound
+		}
+		return err
+	}
+	return errors.New("factor setup needs a setup or enroll challenge")
 }
 
 // normalizeRecoveryCode drops spaces and dashes and lowercases code (research R7).
@@ -351,7 +374,8 @@ func TurnOffTwoFactor(db *sql.DB, userID int64, keepSessionID string) error {
 }
 
 // removeFactors runs each of dels with args in one transaction with its cleanup, returning
-// missing when they delete no row. The cleanup ends userID's sessions other than keepSessionID (FR-024) and
+// missing when they delete no row, and ErrTwoFactorRequired, changing nothing, when they would
+// leave userID without a factor while 2FA is required (FR-035). The cleanup ends userID's sessions other than keepSessionID (FR-024) and
 // their pending steps, and when no factor is left deletes their recovery codes (FR-025).
 func removeFactors(db *sql.DB, userID int64, keepSessionID string, missing error, args []any, dels ...string) error {
 	tx, err := db.Begin()
@@ -379,6 +403,12 @@ func removeFactors(db *sql.DB, userID int64, keepSessionID string, missing error
 		return err
 	}
 	if !has {
+		// Read in the transaction that deleted, so a concurrent "require" cannot slip in between.
+		if required, err := RequireTwoFactor(tx); err != nil {
+			return err
+		} else if required {
+			return ErrTwoFactorRequired
+		}
 		if _, err := tx.Exec("DELETE FROM recovery_codes WHERE user_id = ?", userID); err != nil {
 			return err
 		}
@@ -406,4 +436,27 @@ func SetRequireTwoFactor(q settings.Querier, on bool, now time.Time) error {
 		v = "1"
 	}
 	return settings.Set(q, requireKey, v, now)
+}
+
+// SetRequireTwoFactorBy stores the require setting as on for admin userID, who must have a
+// second factor (FR-033): otherwise it returns ErrNoFactor and stores nothing. The write comes
+// first in one transaction with the check, so a factor removed meanwhile cannot leave the
+// setting on while its admin has none.
+func SetRequireTwoFactorBy(db *sql.DB, userID int64, on bool, now time.Time) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := SetRequireTwoFactor(tx, on, now); err != nil {
+		return err
+	}
+	has, err := HasTwoFactor(tx, userID)
+	if err != nil {
+		return err
+	}
+	if !has {
+		return ErrNoFactor
+	}
+	return tx.Commit()
 }
