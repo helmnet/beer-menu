@@ -14,8 +14,10 @@ Each operation's `x-access` in `api/openapi.yaml` says who may call it:
 | `read` | An admin session, or any token (`read` or `write`) |
 | `write` | An admin session, or a `write` token |
 | `admin` | An admin session only |
+| `enroll` | An admin session, or an unfinished sign-in of an admin who must set up two-factor sign-in (the factor setup routes only) |
 
-With no credential, a `read` call gets 401. A `read` token on a `write` call gets 403.
+With no credential, a `read` call gets 401. A `read` token on a `write` call gets 403. No
+token can call an `admin` or `enroll` route.
 
 **Tokens.** Admins create tokens in the admin app with scope `read` or `write`. Clients send
 them as `Authorization: Bearer <token>`. A token's secret is shown once, when it is created;
@@ -23,6 +25,32 @@ only its hash is stored. Every secret starts with `bmt_`, so secret scanners can
 ones (`.gitleaks.toml` has a rule for them). Revoke a leaked token in the admin app.
 
 `GET /api/health` is public and reports the app version and whether the database answers.
+
+## Two-factor sign-in
+
+Admin sign-in (`POST /api/session`) answers 200 with a session, as before, for an admin with no
+second factor. Otherwise it answers 202 with a short-lived `bm_pending` cookie (5 minutes,
+single use) and no session:
+
+- `{"next": "second_factor", "methods": [...]}`: finish with `POST /api/session/totp` (an
+  authenticator code), `/api/session/recovery` (a recovery code) or `/api/session/passkey`
+  (after `/api/session/passkey/options`). Wrong codes count toward the sign-in limit of 5
+  failures per username per 15 minutes.
+- `{"next": "enroll"}`: two-factor sign-in is required and this admin has none; set one up
+  with the `enroll` routes under `/api/2fa`, which then starts the session.
+
+`DELETE /api/session/pending` cancels an unfinished sign-in.
+
+The routes under `/api/2fa` manage the signed-in admin's own authenticator, passkeys and
+recovery codes, and `PUT /api/2fa/required` turns "require for all admins" on or off. Changes
+there need a recent proof of identity: a sign-in, or `POST /api/2fa/confirm`, in the last 5
+minutes (else 403 `confirm_required`). Adding the first factor returns 10 recovery codes,
+shown once; `POST /api/2fa/recovery-codes` replaces the set. `DELETE /api/admins/{id}/2fa`
+clears another admin's factors. Turning the require setting on is 409
+`two_factor_unavailable` when the server can set up no factor (no encryption key and no
+`BEER_MENU_PUBLIC_URL`). Passkeys work only at `BEER_MENU_PUBLIC_URL`; setup is in the
+[README](../README.md#admins-and-sign-in). Scripts and Home Assistant use tokens, which two-factor
+sign-in does not affect.
 
 ## Beers
 

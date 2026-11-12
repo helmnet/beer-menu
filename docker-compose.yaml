@@ -19,12 +19,16 @@ services:
     #   BEER_MENU_ADMIN_PASSWORD: ${BEER_MENU_ADMIN_PASSWORD}
     #   # Default true; set false only for plain-HTTP access by LAN address (see README.md).
     #   BEER_MENU_COOKIE_SECURE: "false"
-    #   # Encryption key for the stored Brewfather API key (see README.md); read from the
-    #   # secret below. Without it, Brewfather import is off.
+    #   # Encryption key for the stored Brewfather API key and authenticator-app secrets (see
+    #   # README.md); read from the secret below. Without it, Brewfather import and
+    #   # authenticator apps are off.
     #   BEER_MENU_SECRET_KEY_FILE: /run/secrets/beer_menu_secret_key
     #   # Or pass the key as a plain env var instead of the secret (the _FILE one wins if both
     #   # are set). Env values show in `docker inspect`, so the secret file is safer.
     #   BEER_MENU_SECRET_KEY: ${BEER_MENU_SECRET_KEY}
+    #   # The address admins open the app at (scheme, host name and port if any, exactly as
+    #   # the browser shows it). Needed for passkeys; unset, passkeys are off (see README.md).
+    #   BEER_MENU_PUBLIC_URL: https://taplist.example.org
     # secrets:
     #   - beer_menu_secret_key
     restart: unless-stopped

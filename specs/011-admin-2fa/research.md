@@ -18,6 +18,17 @@ New indirect modules it brings: `fxamacker/cbor/v2`, `go-webauthn/x`, `golang-jw
 attestation), `go-viper/mapstructure/v2`, `tinylib/msgp`, `x448/float16`. All pure Go, so the
 static binary rule (II) holds. `govulncheck` runs in the security review.
 
+**govulncheck, 2026-11-12** (T069): `govulncheck ./...` in `api/` (govulncheck v1.9.0, Go
+1.27.3, vulnerability DB updated 2026-11-11) finds no vulnerability the code calls and none in
+an imported package. The go.mod additions are `go-webauthn/webauthn` v0.18.2 and the indirect
+`fxamacker/cbor/v2` v2.9.4, `go-viper/mapstructure/v2` v2.5.0, `go-webauthn/x` v0.3.1,
+`golang-jwt/jwt/v5` v5.3.1, `google/go-tpm` v0.9.8, `philhofer/fwd` v1.2.0 (pulled in by
+`tinylib/msgp`), `tinylib/msgp` v1.6.4 and `x448/float16` v0.8.4; none has a known
+vulnerability. The TOTP code is our own on the standard library, so it adds no module. The one
+module-level finding, GO-2026-5932 (`golang.org/x/crypto/openpgp` is unmaintained and unsafe),
+is in `golang.org/x/crypto` v0.58.0, which predates this feature; we never import `openpgp`,
+and the fix is only in an untagged pseudo-version, so the module stays until a tagged release.
+
 **Alternatives considered**:
 - Own WebAuthn verification on `crypto/ecdsa` and a hand-written CBOR reader: rejected, too much
   security-critical parsing to own.
