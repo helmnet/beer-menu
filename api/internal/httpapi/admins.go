@@ -22,10 +22,14 @@ func listAdmins(deps Deps) http.Handler {
 }
 
 // addAdmin handles POST /api/admins (admin): it creates an admin from the Credentials body and
-// returns 201 with the Admin. A username taken ignoring case gives 409 username_taken, bad
-// input 400 invalid_request, saturated hashing 503 busy.
+// returns 201 with the Admin. The setupCaller checks run first (403 confirm_required without a
+// recent confirm), so an unconfirmed caller cannot probe usernames. A username taken ignoring
+// case gives 409 username_taken, bad input 400 invalid_request, saturated hashing 503 busy.
 func addAdmin(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, _, ok := setupCaller(w, r, deps); !ok {
+			return
+		}
 		var body credentialsBody
 		if !decodeJSON(w, r, &body, maxBody) {
 			return
@@ -46,11 +50,15 @@ func addAdmin(deps Deps) http.Handler {
 
 // removeAdmin handles DELETE /api/admins/{id} (admin): it removes the admin and ends all their
 // sessions at once (FR-011), then returns 204. Removing yourself also clears your cookie. The
+// setupCaller checks run before any lookup (403 confirm_required without a recent confirm). The
 // last admin gives 409 last_admin; an unknown or non-positive id gives 404 not_found.
 func removeAdmin(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, ok := pathID(w, r)
 		if !ok {
+			return
+		}
+		if _, _, ok := setupCaller(w, r, deps); !ok {
 			return
 		}
 		username, err := auth.RemoveAdmin(deps.DB, id)

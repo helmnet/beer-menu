@@ -278,6 +278,8 @@ last factor while the setting is on.
   one). This MUST end all of that admin's sessions. An admin MUST NOT use this to clear their own
   factors.
 - **FR-028**: The admin list MUST show whether each admin has 2FA turned on.
+- **FR-037**: Adding an admin or removing an admin (including yourself) MUST also need a confirmed
+  identity, as in FR-027.
 - **FR-029**: The API program MUST provide a server-side command, run inside the API container
   like the existing `reset-password` command, that clears all second factors and recovery codes
   of a named admin, ends their sessions, and logs the username and time. This MUST NOT be
@@ -331,5 +333,5 @@ last factor while the setting is on.
 - The existing per-username sign-in rate limit is reused for the second step; no new limit is
   added.
 - Signing in counts as proving identity for 5 minutes: right after sign-in (password, plus a
-  second factor if the admin has one), the changes in FR-023 and FR-027 need no new prompt.
+  second factor if the admin has one), the changes in FR-023, FR-027 and FR-037 need no new prompt.
   After that, they ask again.

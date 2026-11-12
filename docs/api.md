@@ -46,7 +46,8 @@ recovery codes, and `PUT /api/2fa/required` turns "require for all admins" on or
 there need a recent proof of identity: a sign-in, or `POST /api/2fa/confirm`, in the last 5
 minutes (else 403 `confirm_required`). Adding the first factor returns 10 recovery codes,
 shown once; `POST /api/2fa/recovery-codes` replaces the set. `DELETE /api/admins/{id}/2fa`
-clears another admin's factors, and needs the same proof. Turning the require setting on is 409
+clears another admin's factors; it, `POST /api/admins` and `DELETE /api/admins/{id}` need the
+same proof. Turning the require setting on is 409
 `two_factor_unavailable` when the server can set up no factor (no encryption key and no
 `BEER_MENU_PUBLIC_URL`). Passkeys work only at `BEER_MENU_PUBLIC_URL`; setup is in the
 [README](../README.md#admins-and-sign-in). Scripts and Home Assistant use tokens, which two-factor

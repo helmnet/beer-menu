@@ -194,6 +194,85 @@ describe("AdminsPanel", () => {
     expect(calls.filter((c) => c.key === "POST /api/admins")).toHaveLength(1);
   });
 
+  describe("confirm identity", () => {
+    const confirmRequired = { status: 403, body: { error: "confirm_required", message: "Confirm it is you first." } };
+
+    it("confirms over the Add admin dialog, then adds", async () => {
+      const routes: Parameters<typeof stubApi>[0] = {
+        "GET /api/admins": { status: 200, body: [owner] },
+        "POST /api/admins": confirmRequired,
+        "GET /api/2fa": { status: 200, body: twoFactorState({}) },
+        "POST /api/2fa/confirm": { status: 204 },
+      };
+      const calls = stubApi(routes);
+      render(<AdminsPanel me={owner} onSignedOut={vi.fn()} />);
+      await screen.findByText("owner");
+      fireEvent.click(screen.getByRole("button", { name: "Add admin" }));
+      const add = screen.getByRole("dialog", { name: "Add admin" });
+      const pw = testPassword();
+      fireEvent.change(within(add).getByLabelText("Username"), { target: { value: "second" } });
+      fireEvent.change(within(add).getByLabelText("Password"), { target: { value: pw } });
+      fireEvent.click(within(add).getByRole("button", { name: "Save" }));
+      const confirm = await screen.findByRole("dialog", { name: "Confirm it is you" });
+      expect(screen.getByRole("dialog", { name: "Add admin" })).toBe(add);
+      expect(within(add).queryByRole("alert")).toBeNull();
+      routes["POST /api/admins"] = { status: 201, body: second };
+      routes["GET /api/admins"] = { status: 200, body: [owner, second] };
+      const myPw = testPassword();
+      fireEvent.change(within(confirm).getByLabelText("Password"), { target: { value: myPw } });
+      fireEvent.click(within(confirm).getByRole("button", { name: "Confirm" }));
+      expect(await screen.findByText("second")).toBeTruthy();
+      expect(screen.queryByRole("dialog", { name: "Add admin" })).toBeNull();
+      expect(screen.queryByRole("dialog", { name: "Confirm it is you" })).toBeNull();
+      const posts = calls.filter((c) => c.key === "POST /api/admins");
+      expect(posts).toHaveLength(2);
+      expect(posts[1].body).toEqual({ username: "second", password: pw });
+      expect(calls.find((c) => c.key === "POST /api/2fa/confirm")?.body).toEqual({ password: myPw });
+    });
+
+    it("keeps the Add admin dialog and sends nothing more when the confirm is cancelled", async () => {
+      const calls = stubApi({
+        "GET /api/admins": { status: 200, body: [owner] },
+        "POST /api/admins": confirmRequired,
+        "GET /api/2fa": { status: 200, body: twoFactorState({}) },
+      });
+      render(<AdminsPanel me={owner} onSignedOut={vi.fn()} />);
+      await screen.findByText("owner");
+      fireEvent.click(screen.getByRole("button", { name: "Add admin" }));
+      const add = screen.getByRole("dialog", { name: "Add admin" });
+      fireEvent.change(within(add).getByLabelText("Username"), { target: { value: "second" } });
+      fireEvent.change(within(add).getByLabelText("Password"), { target: { value: testPassword() } });
+      fireEvent.click(within(add).getByRole("button", { name: "Save" }));
+      const confirm = await screen.findByRole("dialog", { name: "Confirm it is you" });
+      fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
+      expect(screen.queryByRole("dialog", { name: "Confirm it is you" })).toBeNull();
+      expect(screen.getByRole("dialog", { name: "Add admin" })).toBe(add);
+      expect(calls.filter((c) => c.key === "POST /api/admins")).toHaveLength(1);
+    });
+
+    it("confirms, then removes", async () => {
+      const routes: Parameters<typeof stubApi>[0] = {
+        "GET /api/admins": { status: 200, body: [owner, second] },
+        "DELETE /api/admins/2": confirmRequired,
+        "GET /api/2fa": { status: 200, body: twoFactorState({}) },
+        "POST /api/2fa/confirm": { status: 204 },
+      };
+      const calls = stubApi(routes);
+      vi.stubGlobal("confirm", () => true);
+      render(<AdminsPanel me={owner} onSignedOut={vi.fn()} />);
+      await screen.findByText("second");
+      fireEvent.click(removeButton("second"));
+      const dialog = await screen.findByRole("dialog", { name: "Confirm it is you" });
+      expect(screen.getByText("second")).toBeTruthy();
+      routes["DELETE /api/admins/2"] = { status: 204 };
+      routes["GET /api/admins"] = { status: 200, body: [owner] };
+      fireEvent.change(within(dialog).getByLabelText("Password"), { target: { value: testPassword() } });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Confirm" }));
+      await waitFor(() => expect(screen.queryByText("second")).toBeNull());
+      expect(calls.filter((c) => c.key === "DELETE /api/admins/2")).toHaveLength(2);
+    });
+  });
+
   describe("two-factor", () => {
     const withTwoFactor = { ...second, two_factor: true };
     const clearButton = (username: string) =>

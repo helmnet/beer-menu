@@ -5,13 +5,16 @@ import { Admin, ApiError, apiFetch, errorMessage, isUnauthenticated, TwoFactorSt
 import ConfirmIdentity from "./ConfirmIdentity";
 import Modal from "./Modal";
 
+const isConfirmRequired = (err: unknown) => err instanceof ApiError && err.code === "confirm_required";
+
 /**
  * AdminsPanel is the Admin Users page: the "Admin Users" heading with "Add admin", then a card
  * listing admins (GET /api/admins), each removable after confirmation (DELETE /api/admins/{id}).
  * Admins with two-factor sign-in show a "2FA" badge, and every other admin with it gets "Clear
  * 2FA", which asks first, then removes their factors and recovery codes and ends their sessions
- * (DELETE /api/admins/{id}/2fa) and reloads the list. A 403 confirm_required loads the caller's
- * factors (GET /api/2fa), opens `ConfirmIdentity` and runs the action again once confirmed.
+ * (DELETE /api/admins/{id}/2fa) and reloads the list. A 403 confirm_required (on add, remove or
+ * clear) loads the caller's factors (GET /api/2fa), opens `ConfirmIdentity` (over the Add admin
+ * dialog when open) and runs the action again once confirmed.
  * "Add admin" opens the "Add admin" dialog with a username and initial password; Save sends POST
  * /api/admins, then closes it, clears the fields and reloads the list, while a server error, such
  * as a taken username, keeps it open with the message. Removing the last admin shows the server's
@@ -44,11 +47,13 @@ export default function AdminsPanel({
       await action();
     } catch (err) {
       if (isUnauthenticated(err)) onSignedOut();
-      else if (err instanceof ApiError && err.code === "confirm_required")
-        run(async () => setRetry({ state: await apiFetch<TwoFactorState>("GET", "/api/2fa"), action }));
+      else if (isConfirmRequired(err)) askConfirm(action);
       else setError(errorMessage(err));
     }
   }
+
+  const askConfirm = (action: () => Promise<void>) =>
+    run(async () => setRetry({ state: await apiFetch<TwoFactorState>("GET", "/api/2fa"), action }));
 
   const load = async () => setAdmins(await apiFetch<Admin[]>("GET", "/api/admins"));
 
@@ -63,15 +68,20 @@ export default function AdminsPanel({
     setFormError("");
   }
 
-  async function add(e: FormEvent) {
+  function add(e: FormEvent) {
     e.preventDefault();
-    if (busy) return;
+    if (!busy) save({ username, password });
+  }
+
+  // save posts the new admin; on confirm_required the retry holds creds only until confirm or cancel.
+  async function save(creds: { username: string; password: string }) {
     setFormError("");
     setBusy(true);
     try {
-      await apiFetch("POST", "/api/admins", { username, password });
+      await apiFetch("POST", "/api/admins", creds);
     } catch (err) {
       if (isUnauthenticated(err)) onSignedOut();
+      else if (isConfirmRequired(err)) askConfirm(() => save(creds));
       else setFormError(errorMessage(err));
       return;
     } finally {

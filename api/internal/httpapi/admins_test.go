@@ -92,6 +92,44 @@ func TestRemoveSelfSignsOut(t *testing.T) {
 	}
 }
 
+func TestAddRemoveAdminNeedConfirm(t *testing.T) {
+	deps, clock := newTestDeps(t)
+	ownerPW := createAdmin(t, deps)
+	mux := NewMux(deps)
+	owner := signInAs(t, mux, "owner", ownerPW)
+	pw := testPassword()
+	if rec := do(mux, http.MethodPost, "/api/admins", credentials("second", pw), owner...); rec.Code != 201 {
+		t.Fatalf("add = %d", rec.Code)
+	}
+	second := adminID(t, deps, "second")
+	// The owner's sign-in no longer counts as a recent confirm.
+	clock.Advance(auth.ConfirmWindow + time.Second)
+
+	wantError(t, do(mux, http.MethodPost, "/api/admins", credentials("third", testPassword()), owner...), 403, "confirm_required")
+	// The confirm check runs before the body is read, so a taken username is not revealed.
+	wantError(t, do(mux, http.MethodPost, "/api/admins", credentials("second", testPassword()), owner...), 403, "confirm_required")
+	path := "/api/admins/" + strconv.FormatInt(second, 10)
+	wantError(t, do(mux, http.MethodDelete, path, "", owner...), 403, "confirm_required")
+	// The confirm check runs before the lookup, so an unconfirmed caller cannot probe ids.
+	wantError(t, do(mux, http.MethodDelete, "/api/admins/999", "", owner...), 403, "confirm_required")
+	if n, _ := auth.AdminCount(deps.DB); n != 2 {
+		t.Fatalf("AdminCount = %d, want 2 (nothing added or removed)", n)
+	}
+
+	if rec := do(mux, http.MethodPost, "/api/2fa/confirm", confirmJSON(map[string]string{"password": ownerPW}), owner...); rec.Code != 204 {
+		t.Fatalf("confirm = %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(mux, http.MethodPost, "/api/admins", credentials("third", testPassword()), owner...); rec.Code != 201 {
+		t.Fatalf("add after confirm = %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(mux, http.MethodDelete, path, "", owner...); rec.Code != 204 {
+		t.Fatalf("remove after confirm = %d %s", rec.Code, rec.Body)
+	}
+	if n, _ := auth.AdminCount(deps.DB); n != 2 {
+		t.Fatalf("AdminCount = %d, want 2", n)
+	}
+}
+
 func TestAdminRoutesRefuseTokens(t *testing.T) {
 	deps, _ := newTestDeps(t)
 	createAdmin(t, deps)

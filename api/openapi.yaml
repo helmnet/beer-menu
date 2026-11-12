@@ -798,6 +798,9 @@ paths:
     post:
       operationId: addAdmin
       summary: Add an admin
+      description: >
+        Needs a recent confirm (403 confirm_required), checked before the body, so an unconfirmed
+        caller learns nothing about usernames.
       tags: [admins]
       x-access: admin
       requestBody:
@@ -818,7 +821,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
-          $ref: "#/components/responses/Forbidden"
+          $ref: "#/components/responses/ConfirmRequired"
         "409":
           description: Username taken (ignoring case)
           content:
@@ -835,7 +838,9 @@ paths:
     delete:
       operationId: removeAdmin
       summary: Remove an admin and end all their sessions
-      description: Any admin, including the caller, except the last one.
+      description: >
+        Any admin, including the caller, except the last one. Needs a recent confirm (403
+        confirm_required), checked before the id is looked up.
       tags: [admins]
       x-access: admin
       parameters:
@@ -846,7 +851,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
-          $ref: "#/components/responses/Forbidden"
+          $ref: "#/components/responses/ConfirmRequired"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
