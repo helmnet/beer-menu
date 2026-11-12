@@ -721,6 +721,7 @@ func TestTotpSetupOnEnrollPending(t *testing.T) {
 	if n := countRows(t, db, "SELECT count(*) FROM auth_challenges WHERE kind = 'setup'"); n != 0 {
 		t.Fatalf("enroll setup made %d setup rows", n)
 	}
+	rival := mustChallenge(t, db, uid, KindEnroll, t0) // another browser that gave the password
 	secret, _ := base32NoPad.DecodeString(enc)
 	codes, ok, err := FinishTotpSetup(db, box, pending, KindEnroll, uid, Code(secret, t0.Unix()/30), t0)
 	if err != nil || !ok || len(codes) != 10 {
@@ -728,6 +729,9 @@ func TestTotpSetupOnEnrollPending(t *testing.T) {
 	}
 	if _, ok := peek(t, db, pending, KindEnroll, t0); ok {
 		t.Fatal("the enroll pending is still usable")
+	}
+	if _, ok := peek(t, db, rival, KindEnroll, t0); ok {
+		t.Fatal("another enroll pending survived the first factor")
 	}
 	if _, ok := lookup(t, db, old, t0); ok {
 		t.Fatal("an older session kept after the first factor")

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/helmnet/beer-menu/api/internal/auth"
 	"github.com/helmnet/beer-menu/api/internal/auth/authtest"
+	"github.com/helmnet/beer-menu/api/internal/secrets"
 )
 
 // createAdmin makes the first admin "owner" with a random password and returns the password.
@@ -576,6 +578,45 @@ func TestSignInTotpReusedCode(t *testing.T) {
 	}
 	again := passwordStep(t, mux, "owner", pw)
 	wantError(t, do(mux, http.MethodPost, "/api/session/totp", `{"code":"`+code+`"}`, again...), 401, "invalid_code")
+}
+
+// TestSignInAfterKeyChange walks the README's path after the encryption key changes: the
+// authenticator's codes are refused (not a 500), recovery signs in, and the authenticator can be
+// removed and added again.
+func TestSignInAfterKeyChange(t *testing.T) {
+	logs := captureLog(t)
+	deps, clock := newTestDeps(t)
+	pw := createAdmin(t, deps)
+	uid := adminID(t, deps, "owner")
+	secret := addTotp(t, deps, uid)
+	codes, err := auth.NewRecoveryCodes(deps.DB, uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := make([]byte, 32)
+	rand.Read(key)
+	if deps.Box, err = secrets.NewBox(key); err != nil {
+		t.Fatal(err)
+	}
+	mux := NewMux(deps)
+	pending := passwordStep(t, mux, "owner", pw)
+	code := auth.Code(secret, clock.Now().Unix()/30)
+	wantError(t, do(mux, http.MethodPost, "/api/session/totp", codeJSON(code), pending...), 401, "invalid_code")
+	if !strings.Contains(logs.String(), "authenticator secret cannot be opened") {
+		t.Fatalf("log lacks the key hint: %s", logs)
+	}
+	rec := do(mux, http.MethodPost, "/api/session/recovery", codeJSON(codes[0]), pending...)
+	session := sessionCookie(rec)
+	if rec.Code != 200 || session == nil {
+		t.Fatalf("recovery sign-in = %d %s", rec.Code, rec.Body)
+	}
+	wantError(t, do(mux, http.MethodPost, "/api/2fa/confirm", confirmJSON(map[string]string{"password": pw, "code": code}), cookieHeader(session)...), 403, "invalid_code")
+	if rec := do(mux, http.MethodDelete, "/api/2fa/totp", "", cookieHeader(session)...); rec.Code != 204 {
+		t.Fatalf("remove authenticator = %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(mux, http.MethodPost, "/api/2fa/totp/setup", "", cookieHeader(session)...); rec.Code != 200 {
+		t.Fatalf("add authenticator again = %d %s", rec.Code, rec.Body)
+	}
 }
 
 func TestSignInTotpPendingExpiresAndLimits(t *testing.T) {

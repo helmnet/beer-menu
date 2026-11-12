@@ -104,6 +104,7 @@ describe("LoginForm", () => {
       const input = screen.getByLabelText("Authenticator code");
       expect(input.getAttribute("autocomplete")).toBe("one-time-code");
       expect(input.getAttribute("inputmode")).toBe("numeric");
+      expect(document.activeElement).toBe(input);
       expect(screen.queryByLabelText("Password")).toBeNull();
       expect(onSignedIn).not.toHaveBeenCalled();
       sendCode("123 456");
@@ -177,7 +178,9 @@ describe("LoginForm", () => {
       stubApi({ "POST /api/session": { status: 202, body: { next: "second_factor", methods: ["recovery"] } } });
       render(<LoginForm onSignedIn={vi.fn()} onEnroll={vi.fn()} />);
       submit("owner", testPassword());
-      expect(await screen.findByLabelText("Recovery code")).toBeTruthy();
+      const input = await screen.findByLabelText("Recovery code");
+      expect(input.getAttribute("type")).toBeNull();
+      expect(document.activeElement).toBe(input);
       expect(screen.queryByRole("button", { name: "Use another method" })).toBeNull();
     });
 

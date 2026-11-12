@@ -28,8 +28,8 @@ var (
 	// ErrNoPasskeys means the admin has no passkey to sign in with.
 	ErrNoPasskeys = errors.New("no passkey is set up")
 	// ErrPasskeyFailed means a passkey response was refused: no open ceremony for it, or it
-	// failed a WebAuthn check. Its message carries only the library's fixed reason, never the
-	// response, so it can be logged.
+	// failed a WebAuthn check. Its message carries only the library's short reason, never the
+	// raw response, so it can be logged.
 	ErrPasskeyFailed = errors.New("passkey refused")
 )
 
@@ -80,8 +80,9 @@ type ceremony struct {
 	Session webauthn.SessionData `json:"session"`
 }
 
-// refused wraps a WebAuthn check failure as ErrPasskeyFailed with the library's fixed reason.
-// Other errors (such as JSON syntax errors that quote the input) give no reason.
+// refused wraps a WebAuthn check failure as ErrPasskeyFailed with the library's reason
+// (protocol.Error.Details: a fixed text, at most with an algorithm or a parse error, never
+// Info, which can quote values). Other errors (such as JSON syntax errors that quote the input) give no reason.
 func refused(err error) error {
 	var pe *protocol.Error
 	if errors.As(err, &pe) {
@@ -239,10 +240,7 @@ func FinishPasskeyRegistration(db *sql.DB, wa *webauthn.WebAuthn, id string, kin
 	}
 	var codes []string
 	if !has {
-		if codes, err = replaceRecoveryCodes(tx, userID); err != nil {
-			return Passkey{}, nil, err
-		}
-		if err := DeleteOtherSessions(tx, userID, id); err != nil {
+		if codes, err = firstFactorAdded(tx, userID, id); err != nil {
 			return Passkey{}, nil, err
 		}
 	}

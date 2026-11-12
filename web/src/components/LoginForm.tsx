@@ -114,12 +114,20 @@ export default function LoginForm({
 
   if (second && recoveryStep) {
     return (
-      <form className="stack-form" onSubmit={submitCode}>
+      // Keyed forms remount on each step, so autoFocus moves focus off the button that just went away.
+      <form key="recovery" className="stack-form" onSubmit={submitCode}>
         <h2>Sign in</h2>
         <p>Enter one of your saved recovery codes. Each code works once.</p>
         <label>
           Recovery code
-          <input value={code} onChange={(e) => setCode(e.target.value)} autoComplete="off" maxLength={32} required />
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            autoComplete="off"
+            maxLength={32}
+            required
+            autoFocus
+          />
         </label>
         {otherMethod && (
           <button type="button" className="btn" onClick={() => switchRecovery(false)}>
@@ -141,10 +149,10 @@ export default function LoginForm({
 
   if (second) {
     return (
-      <form className="stack-form" onSubmit={submitCode}>
+      <form key="second" className="stack-form" onSubmit={submitCode}>
         <h2>Sign in</h2>
         {passkey && (
-          <button type="button" className="btn" onClick={signInWithPasskey} disabled={busy}>
+          <button type="button" className="btn" onClick={signInWithPasskey} disabled={busy} autoFocus={!totp}>
             Use a passkey
           </button>
         )}
@@ -167,6 +175,7 @@ export default function LoginForm({
                 inputMode="numeric"
                 maxLength={32}
                 required
+                autoFocus
               />
             </label>
           </>

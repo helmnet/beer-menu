@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/helmnet/beer-menu/api/internal/auth"
+	"github.com/helmnet/beer-menu/api/internal/secrets"
 )
 
 // getTwoFactor handles GET /api/2fa (enroll): 200 with the caller's TwoFactorState. The
@@ -96,7 +97,7 @@ func confirmIdentity(deps Deps) http.Handler {
 		ok, failCode, failMsg := true, "invalid_code", "That code did not work."
 		switch {
 		case body.Code != nil:
-			ok, err = auth.CheckTotp(deps.DB, deps.Box, admin.ID, *body.Code, deps.Now())
+			ok, err = checkTotp(r, deps, admin, *body.Code)
 		case body.RecoveryCode != nil:
 			ok, err = auth.UseRecoveryCode(deps.DB, admin.ID, *body.RecoveryCode, deps.Now())
 		case len(body.Passkey) > 0:
@@ -276,9 +277,21 @@ func finishTotpSetup(deps Deps) http.Handler {
 	})
 }
 
+// checkTotp reports whether code is valid now for admin's authenticator (see auth.CheckTotp).
+// A secret the server's key cannot open (the key changed) is logged and refused like a wrong
+// code, so the admin falls back to another factor as the README says.
+func checkTotp(r *http.Request, deps Deps, admin auth.Admin, code string) (bool, error) {
+	ok, err := auth.CheckTotp(deps.DB, deps.Box, admin.ID, code, deps.Now())
+	if errors.Is(err, secrets.ErrCannotOpen) {
+		slog.ErrorContext(r.Context(), "authenticator secret cannot be opened; was the encryption key changed?", "username", admin.Username)
+		return false, nil
+	}
+	return ok, err
+}
+
 // checkPasskey reports whether assertion passes the passkey check that BeginPasskeyLogin stored
 // on challenge id of kind for admin. A refusal, or passkeys being off, is false with a nil error
-// and logs the library's fixed reason, never the assertion.
+// and logs the library's short reason, never the assertion.
 func checkPasskey(r *http.Request, deps Deps, id string, kind auth.ChallengeKind, admin auth.Admin, assertion []byte) (bool, error) {
 	err := auth.FinishPasskeyLogin(deps.DB, deps.WebAuthn, id, kind, admin.ID, assertion, deps.Now())
 	if errors.Is(err, auth.ErrPasskeyFailed) || errors.Is(err, auth.ErrPasskeysUnavailable) {

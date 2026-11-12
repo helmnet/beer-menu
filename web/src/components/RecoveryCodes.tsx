@@ -43,7 +43,7 @@ export default function RecoveryCodes({ codes, onDone }: { codes: string[]; onDo
           </li>
         ))}
       </ul>
-      {copied && <p>{copied}</p>}
+      <p role="status">{copied}</p>
       <div className="btn-row">
         <button type="button" className="btn" onClick={copy}>
           Copy

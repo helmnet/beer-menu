@@ -222,14 +222,25 @@ func FinishTotpSetup(db *sql.DB, box *secrets.Box, id string, kind ChallengeKind
 		return nil, false, ErrAlreadySetUp
 	}
 	if !has {
-		if recoveryCodes, err = replaceRecoveryCodes(tx, userID); err != nil {
-			return nil, false, err
-		}
-		if err := DeleteOtherSessions(tx, userID, id); err != nil {
+		if recoveryCodes, err = firstFactorAdded(tx, userID, id); err != nil {
 			return nil, false, err
 		}
 	}
 	return recoveryCodes, true, tx.Commit()
+}
+
+// firstFactorAdded makes userID's 10 recovery codes and ends their sessions other than keepID
+// and every pending step (FR-017, FR-024), in tx, when a first factor was just added. Ending the
+// pending steps stops another browser's enroll sign-in from adding a factor without this one.
+func firstFactorAdded(tx *sql.Tx, userID int64, keepID string) ([]string, error) {
+	codes, err := replaceRecoveryCodes(tx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if err := DeleteOtherSessions(tx, userID, keepID); err != nil {
+		return nil, err
+	}
+	return codes, DeleteChallengesFor(tx, userID)
 }
 
 // openSetup readies challenge id of kind to hold a factor setup for userID. For KindSetup, id is

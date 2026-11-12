@@ -420,11 +420,15 @@ func TestPasskeyRegistrationOnEnrollPending(t *testing.T) {
 	if n := countRows(t, db, "SELECT count(*) FROM auth_challenges WHERE kind = 'setup'"); n != 0 {
 		t.Fatalf("enroll setup made %d setup rows", n)
 	}
+	rival := mustChallenge(t, db, uid, KindEnroll, t0) // another browser that gave the password
 	pk, codes, err := FinishPasskeyRegistration(db, wa, pending, KindEnroll, uid, "Phone", authtest.New(t, testOrigin, testRPID).Register(t, mustJSON(t, opts)), t0)
 	if err != nil || pk.Name != "Phone" || len(codes) != 10 {
 		t.Fatalf("finish = %+v, %d codes, %v", pk, len(codes), err)
 	}
 	if _, ok := peek(t, db, pending, KindEnroll, t0); ok {
 		t.Fatal("the enroll pending is still usable")
+	}
+	if _, ok := peek(t, db, rival, KindEnroll, t0); ok {
+		t.Fatal("another enroll pending survived the first factor")
 	}
 }

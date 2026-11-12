@@ -145,7 +145,7 @@ func signInTotp(deps Deps) http.Handler {
 		}
 		finishSecondStep(w, r, deps, "totp", stepFailure{"invalid_code", "That code did not work.", "sign-in failed, wrong code"}, false,
 			func(_ string, admin auth.Admin) (bool, error) {
-				return auth.CheckTotp(deps.DB, deps.Box, admin.ID, code, deps.Now())
+				return checkTotp(r, deps, admin, code)
 			})
 	})
 }
