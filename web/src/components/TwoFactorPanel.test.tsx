@@ -284,6 +284,58 @@ describe("TwoFactorPanel", () => {
     expect(puts.map((c) => c.body)).toEqual([{ required: true }, { required: true }]);
   });
 
+  it("disables turning the requirement on when the server can set up no factor", async () => {
+    stubApi({
+      "GET /api/2fa": {
+        status: 200,
+        body: twoFactorState({
+          enabled: true,
+          totp: totpOn,
+          recovery_codes_left: 10,
+          totp_available: false,
+          passkeys_available: false,
+          passkeys_origin: null,
+        }),
+      },
+    });
+    render(<TwoFactorPanel onSignedOut={vi.fn()} />);
+    const box = (await screen.findByRole("checkbox", { name: requireLabel })) as HTMLInputElement;
+    expect(box.disabled).toBe(true);
+    expect(screen.getByText(/no encryption key and no public URL/)).toBeTruthy();
+  });
+
+  it("still lets the requirement go off when the server can set up no factor", async () => {
+    stubApi({
+      "GET /api/2fa": {
+        status: 200,
+        body: twoFactorState({
+          enabled: true,
+          required: true,
+          totp: totpOn,
+          recovery_codes_left: 10,
+          totp_available: false,
+          passkeys_available: false,
+          passkeys_origin: null,
+        }),
+      },
+    });
+    render(<TwoFactorPanel onSignedOut={vi.fn()} />);
+    const box = (await screen.findByRole("checkbox", { name: requireLabel })) as HTMLInputElement;
+    expect(box.disabled).toBe(false);
+    expect(screen.queryByText(/no encryption key and no public URL/)).toBeNull();
+  });
+
+  it("shows the API's message when the requirement cannot go on", async () => {
+    const message = "No admin could set up two-factor sign-in: the server has no encryption key and no public URL.";
+    stubApi({
+      "GET /api/2fa": { status: 200, body: twoFactorState({ enabled: true, totp: totpOn, recovery_codes_left: 10 }) },
+      "PUT /api/2fa/required": { status: 409, body: { error: "two_factor_unavailable", message } },
+    });
+    render(<TwoFactorPanel onSignedOut={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("checkbox", { name: requireLabel }));
+    expect((await screen.findByRole("alert")).textContent).toContain(message);
+  });
+
   it("names the require setting when the last factor cannot go", async () => {
     const required = { status: 409, body: { error: "two_factor_required", message: "x" } };
     stubApi({

@@ -942,6 +942,34 @@ func TestSetTwoFactorRequired(t *testing.T) {
 	}
 }
 
+// TestSetTwoFactorRequiredUnavailable: the setting cannot go on while the server can enroll no
+// factor (no encryption key and no public URL); it can still go off, and either method is enough.
+func TestSetTwoFactorRequiredUnavailable(t *testing.T) {
+	deps, _ := newTestDeps(t)
+	pw := createAdmin(t, deps)
+	session := signInAs(t, NewMux(deps), "owner", pw)
+	addTotp(t, deps, adminID(t, deps, "owner"))
+
+	none := deps
+	none.Box, none.WebAuthn = nil, nil
+	wantError(t, putRequired(NewMux(none), `{"required":true}`, session...), 409, "two_factor_unavailable")
+	if on, _ := auth.RequireTwoFactor(deps.DB); on {
+		t.Fatal("a refused request turned the setting on")
+	}
+
+	passkeysOnly := none
+	passkeysOnly.WebAuthn = testWebAuthn(t)
+	if rec := putRequired(NewMux(passkeysOnly), `{"required":true}`, session...); rec.Code != 204 {
+		t.Fatalf("turn on with passkeys only = %d %s", rec.Code, rec.Body)
+	}
+	if rec := putRequired(NewMux(none), `{"required":false}`, session...); rec.Code != 204 {
+		t.Fatalf("turn off with no method = %d %s", rec.Code, rec.Body)
+	}
+	if on, _ := auth.RequireTwoFactor(deps.DB); on {
+		t.Fatal("setting still on")
+	}
+}
+
 // addedSecret returns userID's stored authenticator secret, opened with deps.Box.
 func addedSecret(t *testing.T, deps Deps, userID int64) []byte {
 	t.Helper()

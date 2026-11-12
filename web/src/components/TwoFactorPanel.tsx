@@ -18,9 +18,10 @@ function when(created: string, lastUsed: string | null): string {
  * TwoFactorPanel is the Two-Factor Sign-In page: the heading above one card showing the
  * signed-in admin's state from GET /api/2fa: whether two-factor sign-in is on, a switch for
  * whether it is required for every admin (PUT /api/2fa/required; disabled with a hint until the
- * admin has a factor of their own), and, when on, how many recovery codes are left (with a warning at 2
- * or fewer) and a list of the second factors, each with its type, name, added and last-used
- * time, never a secret. A passkey can be renamed inline (PATCH /api/2fa/passkeys/{id}). Each
+ * admin has a factor of their own, or, to turn it on, while the server can set up neither
+ * method), and, when on, how many recovery codes are left (with a warning at 2 or fewer) and a
+ * list of the second factors, each with its type, name, added and last-used time, never a
+ * secret. A passkey can be renamed inline (PATCH /api/2fa/passkeys/{id}). Each
  * factor can be removed (DELETE /api/2fa/totp or /api/2fa/passkeys/{id}) and 2FA turned off
  * (DELETE /api/2fa), each after the browser asks to be sure. "New recovery codes"
  * (POST /api/2fa/recovery-codes) shows the new set once with `RecoveryCodes`. A removal refused
@@ -119,6 +120,9 @@ export default function TwoFactorPanel({ onSignedOut }: { onSignedOut: () => voi
     reload();
   }
 
+  // noMethod: the server can enroll no factor, so the API refuses to turn the requirement on.
+  const noMethod = state !== null && !state.totp_available && !state.passkeys_available;
+
   return (
     <section className="page">
       <h2 className="page-title">Two-Factor Sign-In</h2>
@@ -130,12 +134,18 @@ export default function TwoFactorPanel({ onSignedOut }: { onSignedOut: () => voi
               <input
                 type="checkbox"
                 checked={state.required}
-                disabled={!state.enabled}
+                disabled={!state.enabled || (!state.required && noMethod)}
                 onChange={(e) => setRequired(e.target.checked)}
               />
               {REQUIRE_LABEL}
             </label>
             {!state.enabled && <p>Add a second factor for yourself before requiring one for every admin.</p>}
+            {state.enabled && !state.required && noMethod && (
+              <p>
+                The server has no encryption key and no public URL, so no admin could set up a second factor. Ask the
+                server's operator to set one before requiring it.
+              </p>
+            )}
             {state.enabled && (
               <>
                 <p>Recovery codes left: {state.recovery_codes_left} of 10.</p>

@@ -529,6 +529,8 @@ type requiredBody struct {
 // setTwoFactorRequired handles PUT /api/2fa/required (admin): after the setupCaller checks
 // (a recent confirm), it stores whether every admin must have 2FA and answers 204, logging who
 // changed it to what. The caller must have a factor of their own, else 409 no_factor (FR-033).
+// Turning it on when the server can enroll no factor (no encryption key and no
+// BEER_MENU_PUBLIC_URL) is 409 two_factor_unavailable, so no admin is locked out of enrolling.
 // A body without a boolean required is 400. It ends no sessions: admins without a factor enroll
 // at their next sign-in (FR-036).
 func setTwoFactorRequired(deps Deps) http.Handler {
@@ -543,6 +545,10 @@ func setTwoFactorRequired(deps Deps) http.Handler {
 		}
 		_, admin, ok := setupCaller(w, r, deps)
 		if !ok {
+			return
+		}
+		if *body.Required && deps.Box == nil && deps.WebAuthn == nil {
+			writeError(w, http.StatusConflict, "two_factor_unavailable", "No admin could set up two-factor sign-in: the server has no encryption key and no public URL.")
 			return
 		}
 		err := auth.SetRequireTwoFactorBy(deps.DB, admin.ID, *body.Required, deps.Now())

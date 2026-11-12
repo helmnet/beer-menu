@@ -745,7 +745,9 @@ paths:
       summary: Turn "require 2FA for all admins" on or off
       description: >
         Needs a recent confirm and a second factor of the caller's own (409 no_factor). Turning
-        it on ends no sessions; admins without a factor must set one up at their next sign-in.
+        it on is 409 two_factor_unavailable while the server can set up no factor (no encryption
+        key and no BEER_MENU_PUBLIC_URL); turning it off is unaffected. Turning it on ends no
+        sessions; admins without a factor must set one up at their next sign-in.
         While it is on, no admin can remove their last factor or turn 2FA off. Not part of
         GET or PATCH /api/settings.
       tags: [two-factor]
@@ -2033,7 +2035,9 @@ components:
         leave the caller without a factor while 2FA is required for every admin),
         `totp_unavailable` (no encryption key), `already_set_up`, `passkeys_unavailable` (no BEER_MENU_PUBLIC_URL),
         `too_many_passkeys` (10 already), `no_factor` (no passkey to check, or no second factor
-        at all) or `cannot_clear_self` (clearing the caller's own factors as another admin).
+        at all), `cannot_clear_self` (clearing the caller's own factors as another admin) or
+        `two_factor_unavailable` (requiring 2FA while the server has neither an encryption key
+        nor BEER_MENU_PUBLIC_URL, so no admin could set up a factor).
       content:
         application/json:
           schema:

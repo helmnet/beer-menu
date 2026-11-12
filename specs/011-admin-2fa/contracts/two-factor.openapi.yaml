@@ -359,7 +359,9 @@ paths:
       x-access: admin
       description: >
         Needs a recent confirm and a factor of the caller's own (409 no_factor). Turning it on
-        ends no sessions; admins without a factor enroll at next sign-in.
+        is 409 two_factor_unavailable while the server has no encryption key and no
+        BEER_MENU_PUBLIC_URL (no factor could be enrolled); turning it off is unaffected. Turning
+        it on ends no sessions; admins without a factor enroll at next sign-in.
       requestBody:
         required: true
         content:
@@ -419,8 +421,8 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     TwoFactorConflict:
       description: >
-        two_factor_required, totp_unavailable, passkeys_unavailable, already_set_up, no_factor
-        cannot_clear_self or too_many_passkeys
+        two_factor_required, totp_unavailable, passkeys_unavailable, already_set_up, no_factor,
+        cannot_clear_self, too_many_passkeys or two_factor_unavailable
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
