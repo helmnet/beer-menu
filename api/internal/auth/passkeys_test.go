@@ -432,3 +432,23 @@ func TestPasskeyRegistrationOnEnrollPending(t *testing.T) {
 		t.Fatal("another enroll pending survived the first factor")
 	}
 }
+
+// See TestEnrollFinishRefusedOnceFactorExists.
+func TestEnrollPasskeyRefusedOnceFactorExists(t *testing.T) {
+	db := openDB(t)
+	wa := newWebAuthn(t)
+	uid := insertUser(t, db, "owner")
+	pending := mustChallenge(t, db, uid, KindEnroll, t0)
+	opts, err := BeginPasskeyRegistration(db, wa, pending, KindEnroll, uid, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	insertPasskeyRow(t, db, uid, "Old")
+	resp := authtest.New(t, testOrigin, testRPID).Register(t, mustJSON(t, opts))
+	if _, _, err := FinishPasskeyRegistration(db, wa, pending, KindEnroll, uid, "New", resp, t0); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("finish = %v, want ErrNotFound", err)
+	}
+	if n := countRows(t, db, "SELECT count(*) FROM passkeys"); n != 1 {
+		t.Fatalf("passkeys = %d, want 1", n)
+	}
+}

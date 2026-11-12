@@ -340,6 +340,10 @@ func TestStartTotpSetup(t *testing.T) {
 	if n := countRows(t, db, "SELECT count(*) FROM auth_challenges WHERE user_id = ?", uid); n != 1 {
 		t.Fatalf("setup rows = %d, want 1", n)
 	}
+	// A stale finish for the replaced (for example abandoned in the UI) secret saves nothing.
+	if _, ok, err := FinishTotpSetup(db, box, sid, KindSetup, uid, Code(raw, t0.Unix()/30), t0); ok || err != nil {
+		t.Fatalf("finish with the replaced secret = %v %v, want false", ok, err)
+	}
 	insertTotp(t, db, box, uid, raw, 0)
 	if _, _, err := StartTotpSetup(db, box, sid, KindSetup, uid, "owner", t0); !errors.Is(err, ErrAlreadySetUp) {
 		t.Fatalf("with an authenticator = %v, want ErrAlreadySetUp", err)
@@ -738,5 +742,26 @@ func TestTotpSetupOnEnrollPending(t *testing.T) {
 	}
 	if _, _, err := StartTotpSetup(db, box, pending, KindEnroll, uid, "owner", t0); !errors.Is(err, ErrAlreadySetUp) && !errors.Is(err, ErrNotFound) {
 		t.Fatalf("reused pending = %v", err)
+	}
+}
+
+// An enroll pending is only for an admin without a factor. If one appears meanwhile (a sign-in
+// racing the admin's own first enrollment), the pending must not add another factor and sign in.
+func TestEnrollFinishRefusedOnceFactorExists(t *testing.T) {
+	db := openDB(t)
+	box := testBox(t)
+	uid := insertUser(t, db, "owner")
+	pending := mustChallenge(t, db, uid, KindEnroll, t0)
+	enc, _, err := StartTotpSetup(db, box, pending, KindEnroll, uid, "owner", t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	insertPasskeyRow(t, db, uid, "Phone") // bypasses firstFactorAdded, as the race would
+	secret, _ := base32NoPad.DecodeString(enc)
+	if _, ok, err := FinishTotpSetup(db, box, pending, KindEnroll, uid, Code(secret, t0.Unix()/30), t0); ok || !errors.Is(err, ErrNotFound) {
+		t.Fatalf("finish = %v %v, want ErrNotFound", ok, err)
+	}
+	if n := countRows(t, db, "SELECT count(*) FROM totp_factors"); n != 0 {
+		t.Fatalf("authenticators = %d, want 0", n)
 	}
 }

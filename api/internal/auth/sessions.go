@@ -135,10 +135,11 @@ type execer interface {
 	Exec(query string, args ...any) (sql.Result, error)
 }
 
-// DeleteUserSessions ends every session of userID and their factor setups. db is a *sql.DB or
-// *sql.Tx.
+// DeleteUserSessions ends every session of userID, their factor setups and userID's pending
+// sign-ins, so a pending started with an old password cannot finish after a reset. db is a
+// *sql.DB or *sql.Tx.
 func DeleteUserSessions(db execer, userID int64) error {
-	if _, err := db.Exec("DELETE FROM auth_challenges WHERE user_id = ? AND kind = ?", userID, KindSetup); err != nil {
+	if err := DeleteChallengesFor(db, userID); err != nil {
 		return err
 	}
 	_, err := db.Exec("DELETE FROM sessions WHERE user_id = ?", userID)
@@ -146,10 +147,11 @@ func DeleteUserSessions(db execer, userID int64) error {
 }
 
 // DeleteOtherSessions ends every session of userID except keepID (after a password change),
-// and their factor setups. db is a *sql.DB or *sql.Tx.
+// their factor setups and userID's pending sign-ins, so a pending started with an old password
+// cannot finish after the change. db is a *sql.DB or *sql.Tx.
 func DeleteOtherSessions(db execer, userID int64, keepID string) error {
 	key, _ := sessionHash(keepID) // a malformed keepID keeps nothing, which is the safe side
-	if _, err := db.Exec("DELETE FROM auth_challenges WHERE user_id = ? AND kind = ? AND id_hash IS NOT ?", userID, KindSetup, key); err != nil {
+	if _, err := db.Exec("DELETE FROM auth_challenges WHERE user_id = ? AND NOT (kind = ? AND id_hash IS ?)", userID, KindSetup, key); err != nil {
 		return err
 	}
 	_, err := db.Exec("DELETE FROM sessions WHERE user_id = ? AND id_hash IS NOT ?", userID, key)

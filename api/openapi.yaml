@@ -366,7 +366,8 @@ paths:
       summary: Change the signed-in admin's password
       description: >
         Needs the current password. Wrong current passwords count toward the sign-in rate
-        limit for this username. Ends the admin's other sessions; this one stays.
+        limit for this username. Ends the admin's other sessions and pending sign-ins; this
+        one stays.
       tags: [auth]
       x-access: admin
       requestBody:

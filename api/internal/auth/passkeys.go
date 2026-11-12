@@ -166,7 +166,8 @@ func BeginPasskeyRegistration(db *sql.DB, wa *webauthn.WebAuthn, id string, kind
 // than id (FR-017, FR-024), all in one transaction. A bad name is a
 // ValidationError. A refused response, or no open registration, is ErrPasskeyFailed and leaves
 // the setup open until it expires. It returns ErrPasskeysUnavailable when wa is nil and
-// ErrTooManyPasskeys at MaxPasskeys.
+// ErrTooManyPasskeys at MaxPasskeys. For KindEnroll it returns ErrNotFound, changing nothing,
+// when userID already has a factor.
 func FinishPasskeyRegistration(db *sql.DB, wa *webauthn.WebAuthn, id string, kind ChallengeKind, userID int64, name string, response []byte, now time.Time) (Passkey, []string, error) {
 	if wa == nil {
 		return Passkey{}, nil, ErrPasskeysUnavailable
@@ -227,6 +228,10 @@ func FinishPasskeyRegistration(db *sql.DB, wa *webauthn.WebAuthn, id string, kin
 	has, err := HasTwoFactor(tx, userID)
 	if err != nil {
 		return Passkey{}, nil, err
+	}
+	if has && kind == KindEnroll {
+		// A factor added since this enroll pending began (a race with sign-in) must be proven instead.
+		return Passkey{}, nil, ErrNotFound
 	}
 	pk := Passkey{Name: name, CreatedAt: unixTime(now.Unix())}
 	err = tx.QueryRow(`INSERT INTO passkeys (user_id, name, credential_id, public_key, sign_count, transports, backup_eligible, created_at)

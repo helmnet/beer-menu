@@ -181,7 +181,8 @@ func StartTotpSetup(db *sql.DB, box *secrets.Box, id string, kind ChallengeKind,
 // userID's sessions other than id (FR-017, FR-024), all in one transaction. ok is false, and
 // nothing changes, for a wrong code or when no unexpired challenge with a secret is open for
 // id and userID. It returns ErrTotpUnavailable when box is nil and ErrAlreadySetUp when userID
-// has an authenticator.
+// has an authenticator. For KindEnroll it returns ErrNotFound, changing nothing, when userID
+// already has a factor.
 func FinishTotpSetup(db *sql.DB, box *secrets.Box, id string, kind ChallengeKind, userID int64, code string, now time.Time) (recoveryCodes []string, ok bool, err error) {
 	if box == nil {
 		return nil, false, ErrTotpUnavailable
@@ -210,6 +211,10 @@ func FinishTotpSetup(db *sql.DB, box *secrets.Box, id string, kind ChallengeKind
 	has, err := HasTwoFactor(tx, userID)
 	if err != nil {
 		return nil, false, err
+	}
+	if has && kind == KindEnroll {
+		// A factor added since this enroll pending began (a race with sign-in) must be proven instead.
+		return nil, false, ErrNotFound
 	}
 	res, err := tx.Exec("INSERT INTO totp_factors (user_id, secret_sealed, last_step, created_at) VALUES (?, ?, ?, ?) ON CONFLICT (user_id) DO NOTHING",
 		userID, c.TotpPendingSealed, step, now.Unix())

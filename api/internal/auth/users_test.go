@@ -337,3 +337,41 @@ func TestCheckPassword(t *testing.T) {
 		t.Fatalf("unknown admin: %v, want ErrNotFound", err)
 	}
 }
+
+// A pending sign-in started with the old password must not finish after the password changes:
+// an enroll pending would let whoever knew the old password add their own factor and sign in.
+func TestPasswordChangeEndsPendingSignIns(t *testing.T) {
+	db := openDB(t)
+	old := testPassword(t)
+	a, err := CreateFirstAdmin(db, "owner", old, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keep := newSession(t, db, a.ID)
+	if err := SetupChallenge(db, keep, a.ID, t0); err != nil {
+		t.Fatal(err)
+	}
+	enroll := mustChallenge(t, db, a.ID, KindEnroll, t0)
+	second := mustChallenge(t, db, a.ID, KindSecondFactor, t0)
+	next := testPassword(t)
+	if err := ChangePassword(db, a.ID, old, next, keep); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := peek(t, db, enroll, KindEnroll, t0); ok {
+		t.Fatal("enroll pending survived a password change")
+	}
+	if _, ok := peek(t, db, second, KindSecondFactor, t0); ok {
+		t.Fatal("second_factor pending survived a password change")
+	}
+	if _, ok := peek(t, db, keep, KindSetup, t0); !ok {
+		t.Fatal("the changing session lost its setup")
+	}
+
+	enroll = mustChallenge(t, db, a.ID, KindEnroll, t0)
+	if err := ResetPassword(db, "owner", testPassword(t)); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := peek(t, db, enroll, KindEnroll, t0); ok {
+		t.Fatal("enroll pending survived a password reset")
+	}
+}
