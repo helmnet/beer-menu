@@ -37,6 +37,6 @@
   design is named.
 - Three clarifications resolved with the owner on 2026-11-08 (first-admin method, rate-limit key,
   account recovery command).
-- Defaults chosen without asking (see Assumptions): 12 to 256 character passwords, 7-day idle and
+- Defaults chosen without asking (see Assumptions): 12 to 256 character passwords, 1-hour idle and
   30-day absolute sessions, 5 failures per username per 15 minutes, tokens never
   expire and are not tied to an admin, write tokens cannot manage admins or tokens.

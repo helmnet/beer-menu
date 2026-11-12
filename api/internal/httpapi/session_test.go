@@ -78,7 +78,7 @@ func TestSignInAndOut(t *testing.T) {
 	wantError(t, do(mux, http.MethodGet, "/api/session", "", cookieHeader(c)...), 401, "unauthenticated")
 
 	again := sessionCookie(postSession(mux, "owner", pw))
-	clock.Advance(7 * 24 * time.Hour)
+	clock.Advance(time.Hour)
 	wantError(t, do(mux, http.MethodGet, "/api/session", "", cookieHeader(again)...), 401, "unauthenticated")
 
 	if !strings.Contains(logs.String(), "admin signed in") || !strings.Contains(logs.String(), "username=owner") {

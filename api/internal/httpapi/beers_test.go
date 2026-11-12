@@ -173,7 +173,7 @@ func TestUpdateBeer(t *testing.T) {
 	id := decodeObject(t, rec.Body.String())["id"].(float64)
 	path := "/api/beers/" + strconv.FormatFloat(id, 'f', -1, 64)
 
-	clock.Advance(time.Hour)
+	clock.Advance(time.Minute)
 	rec = do(mux, http.MethodPatch, path, `{"abv":5.4}`, c.write...)
 	b := decodeObject(t, rec.Body.String())
 	if rec.Code != 200 || b["abv"] != 5.4 || b["style"] != "APA" || b["name"] != "Pale" || b["updated_at"] == b["created_at"] {
