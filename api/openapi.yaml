@@ -865,8 +865,8 @@ paths:
       summary: Clear another admin's factors and recovery codes
       description: >
         Deletes all of that admin's factors, recovery codes, pending sign-ins and sessions.
-        Needs no confirm, and works while 2FA is required. The caller's own id is 409
-        cannot_clear_self.
+        Needs a recent confirm (403 confirm_required), and works while 2FA is required. The
+        caller's own id is 409 cannot_clear_self.
       tags: [admins]
       x-access: admin
       parameters:
@@ -877,7 +877,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
-          $ref: "#/components/responses/Forbidden"
+          $ref: "#/components/responses/ConfirmRequired"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":

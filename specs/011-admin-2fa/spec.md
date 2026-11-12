@@ -273,8 +273,10 @@ last factor while the setting is on.
 
 **Recovery by others**
 
-- **FR-027**: A signed-in admin MUST be able to clear all second factors of another admin. This
-  MUST end all of that admin's sessions. An admin MUST NOT use this to clear their own factors.
+- **FR-027**: A signed-in admin MUST be able to clear all second factors of another admin, after
+  confirming their identity (FR-023: their current password, plus a second factor if they have
+  one). This MUST end all of that admin's sessions. An admin MUST NOT use this to clear their own
+  factors.
 - **FR-028**: The admin list MUST show whether each admin has 2FA turned on.
 - **FR-029**: The API program MUST provide a server-side command, run inside the API container
   like the existing `reset-password` command, that clears all second factors and recovery codes
@@ -329,5 +331,5 @@ last factor while the setting is on.
 - The existing per-username sign-in rate limit is reused for the second step; no new limit is
   added.
 - Signing in counts as proving identity for 5 minutes: right after sign-in (password, plus a
-  second factor if the admin has one), the changes in FR-023 need no new prompt. After that,
-  they ask again.
+  second factor if the admin has one), the changes in FR-023 and FR-027 need no new prompt.
+  After that, they ask again.

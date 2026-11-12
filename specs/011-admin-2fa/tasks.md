@@ -252,6 +252,8 @@ factor while the setting is on (quickstart 6).
 - [X] T065 [US5] Implement the enroll view in `web/src/pages/AdminPage.tsx` (driven by `LoginForm`'s 202 `enroll`) and the require switch in `web/src/components/TwoFactorPanel.tsx` per T063
 - [X] T065a [US5] Owner decision 2026-11-12: `PUT /api/2fa/required` refuses to turn the setting ON when the server has no encryption key AND no `BEER_MENU_PUBLIC_URL` (no factor could be enrolled; turning OFF is unaffected and still needs the admin's own factor); add the error to `api/openapi.yaml` and `contracts/two-factor.openapi.yaml`, show it in `web/src/components/TwoFactorPanel.tsx`, with Go and web tests
 - [X] T065b [US5] Owner decision 2026-11-12: at startup, `api/cmd/beer-menu-api` logs a warning when `require_2fa` is on and the server has neither an encryption key nor `BEER_MENU_PUBLIC_URL` (admins without a factor cannot finish signing in), with a Go test
+- [X] T065c [US4] Owner decision 2026-11-12 (security review): `DELETE /api/admins/{id}/2fa` (clear another admin's 2FA) requires a recent identity confirm (`requireConfirmed`, 403 `confirm_required`) like the other 2FA changes; update `api/openapi.yaml`, `contracts/two-factor.openapi.yaml`, spec FR-027, and `web/src/components/AdminsPanel.tsx` (confirm then retry, as `TwoFactorPanel` does), with Go and web tests
+- [ ] T065d [US4] Owner decision 2026-11-12 (security review): `POST /api/admins` (add admin) requires a recent identity confirm (`setupCaller`, 403 `confirm_required`), like T065c; update `api/openapi.yaml`, `contracts/two-factor.openapi.yaml` if it lists confirm routes, spec, docs, and `web/src/components/AdminsPanel.tsx` (Add admin modal: confirm then retry), with Go and web tests
 
 **Checkpoint**: quickstart 6.
 

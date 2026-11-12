@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/helmnet/beer-menu/api/internal/auth"
 )
@@ -110,7 +111,7 @@ func TestAdminRoutesRefuseTokens(t *testing.T) {
 
 func TestClearAdminTwoFactor(t *testing.T) {
 	logs := captureLog(t)
-	deps, _ := newTestDeps(t)
+	deps, clock := newTestDeps(t)
 	ownerPW := createAdmin(t, deps)
 	mux := NewMux(deps)
 	owner := signInAs(t, mux, "owner", ownerPW)
@@ -118,6 +119,8 @@ func TestClearAdminTwoFactor(t *testing.T) {
 	if rec := do(mux, http.MethodPost, "/api/admins", credentials("second", pw), owner...); rec.Code != 201 {
 		t.Fatalf("add = %d", rec.Code)
 	}
+	// The owner's sign-in no longer counts as a recent confirm.
+	clock.Advance(auth.ConfirmWindow + time.Second)
 	second := adminID(t, deps, "second")
 	secondSession := signInAs(t, mux, "second", pw)
 	addTotp(t, deps, second)
@@ -136,6 +139,16 @@ func TestClearAdminTwoFactor(t *testing.T) {
 	}
 
 	path := "/api/admins/" + strconv.FormatInt(second, 10) + "/2fa"
+	wantError(t, do(mux, http.MethodDelete, path, "", owner...), 403, "confirm_required")
+	// The confirm check runs before the lookup, so an unconfirmed caller cannot probe ids.
+	wantError(t, do(mux, http.MethodDelete, "/api/admins/999/2fa", "", owner...), 403, "confirm_required")
+	if has, _ := auth.HasTwoFactor(deps.DB, second); !has {
+		t.Fatal("cleared without a confirm")
+	}
+	// The owner has no factor of their own, so the password alone confirms.
+	if rec := do(mux, http.MethodPost, "/api/2fa/confirm", confirmJSON(map[string]string{"password": ownerPW}), owner...); rec.Code != 204 {
+		t.Fatalf("confirm = %d %s", rec.Code, rec.Body)
+	}
 	if rec := do(mux, http.MethodDelete, path, "", owner...); rec.Code != 204 {
 		t.Fatalf("DELETE %s = %d %s", path, rec.Code, rec.Body)
 	}
@@ -154,6 +167,8 @@ func TestClearAdminTwoFactor(t *testing.T) {
 	wantError(t, do(mux, http.MethodDelete, "/api/admins/1/2fa", "", owner...), 409, "cannot_clear_self")
 	wantError(t, do(mux, http.MethodDelete, "/api/admins/999/2fa", "", owner...), 404, "not_found")
 	wantError(t, do(mux, http.MethodDelete, "/api/admins/0/2fa", "", owner...), 404, "not_found")
+	clock.Advance(auth.ConfirmWindow + time.Second)
+	wantError(t, do(mux, http.MethodDelete, path, "", owner...), 403, "confirm_required")
 	wantError(t, do(mux, http.MethodDelete, path, "", append(owner, "Sec-Fetch-Site", "cross-site")...), 403, "forbidden")
 	for _, scope := range []auth.Scope{auth.ScopeRead, auth.ScopeWrite} {
 		secret, _ := insertToken(t, deps.DB, scope, false)

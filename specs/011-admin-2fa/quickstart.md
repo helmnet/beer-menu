@@ -61,8 +61,8 @@ curl -s -o /dev/null -w '%{http_code}\n' localhost:8080/api/2fa -H "Authorizatio
 1. Sign in as `alice` with a recovery code. Expected: signed in; the same code is refused next
    time; the page shows 9 remaining.
 2. Make a new set: an old unused code is refused afterwards.
-3. As `bob`, open Admin Users: `alice` shows 2FA on. Clear it. Expected: `alice` is signed out
-   everywhere and signs in with the password alone.
+3. As `bob`, open Admin Users: `alice` shows 2FA on. Clear it, confirming it is you if asked.
+   Expected: `alice` is signed out everywhere and signs in with the password alone.
 4. Operator path:
 
    ```sh

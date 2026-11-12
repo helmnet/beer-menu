@@ -156,9 +156,9 @@ token (rejected: cannot be single-use or revoked).
 
 **Decision**: `POST /api/2fa/confirm` takes the current password and, if the admin has any
 factor, one second factor (code, recovery code or passkey assertion). Success stamps the session
-with `confirmed_at`. Adding or removing a factor, new recovery codes, turning 2FA off and
-changing the "require" setting all need `confirmed_at` within the last 5 minutes, else 403
-`confirm_required`. Renaming a passkey does not.
+with `confirmed_at`. Adding or removing a factor, new recovery codes, turning 2FA off,
+changing the "require" setting and clearing another admin's factors all need `confirmed_at`
+within the last 5 minutes, else 403 `confirm_required`. Renaming a passkey does not.
 
 This is slightly stricter than FR-023 for adding a factor (it also asks for an existing factor):
 a stolen session plus a known password must not be able to add the thief's own passkey.

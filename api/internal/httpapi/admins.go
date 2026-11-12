@@ -76,23 +76,23 @@ func removeAdmin(deps Deps) http.Handler {
 // clearAdminTwoFactor handles DELETE /api/admins/{id}/2fa (admin): it deletes all of another
 // admin's factors, recovery codes, pending steps and sessions (FR-027), logs both usernames and
 // answers 204. It works while 2FA is required; that admin then enrolls at next sign-in. The
-// caller's own id is 409 cannot_clear_self; an unknown or non-positive id is 404 not_found.
+// caller's own id is 409 cannot_clear_self; then the setupCaller checks apply (403
+// confirm_required without a recent confirm); an unknown or non-positive id is 404 not_found.
 func clearAdminTwoFactor(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, ok := pathID(w, r)
 		if !ok {
 			return
 		}
-		p, _ := principalFrom(r.Context())
-		if id == p.AdminID {
+		if p, _ := principalFrom(r.Context()); id == p.AdminID {
 			writeError(w, http.StatusConflict, "cannot_clear_self", "You cannot clear your own two-factor sign-in here.")
 			return
 		}
-		caller, err := auth.GetAdmin(deps.DB, p.AdminID)
-		var target auth.Admin
-		if err == nil {
-			target, err = auth.GetAdmin(deps.DB, id)
+		_, caller, ok := setupCaller(w, r, deps)
+		if !ok {
+			return
 		}
+		target, err := auth.GetAdmin(deps.DB, id)
 		if err == nil {
 			err = auth.ClearTwoFactor(deps.DB, id)
 		}

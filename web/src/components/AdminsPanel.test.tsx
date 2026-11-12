@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { owner, stubApi, testPassword } from "../testApi";
+import { owner, stubApi, testPassword, twoFactorState } from "../testApi";
 import AdminsPanel from "./AdminsPanel";
 
 afterEach(() => {
@@ -237,6 +237,33 @@ describe("AdminsPanel", () => {
       await waitFor(() => expect(clearButton("second")).toBeNull());
       expect(calls.map((c) => c.key)).toContain("DELETE /api/admins/2/2fa");
       expect(within(screen.getByText("second").closest("li") as HTMLElement).queryByText("2FA")).toBeNull();
+    });
+
+    it("confirms identity when asked, then clears", async () => {
+      const routes: Parameters<typeof stubApi>[0] = {
+        "GET /api/admins": { status: 200, body: [owner, withTwoFactor] },
+        "DELETE /api/admins/2/2fa": { status: 403, body: { error: "confirm_required", message: "Confirm it is you first." } },
+        "GET /api/2fa": { status: 200, body: twoFactorState({}) },
+        "POST /api/2fa/confirm": { status: 204 },
+      };
+      const calls = stubApi(routes);
+      vi.stubGlobal("confirm", () => true);
+      render(<AdminsPanel me={owner} onSignedOut={vi.fn()} />);
+      await screen.findByText("second");
+      fireEvent.click(clearButton("second")!);
+      // The caller has no factor of their own, so the password alone confirms.
+      const dialog = await screen.findByRole("dialog", { name: "Confirm it is you" });
+      expect(within(dialog).queryByLabelText("Authenticator code")).toBeNull();
+      expect(clearButton("second")).toBeTruthy();
+      routes["DELETE /api/admins/2/2fa"] = { status: 204 };
+      routes["GET /api/admins"] = { status: 200, body: [owner, second] };
+      const pw = testPassword();
+      fireEvent.change(within(dialog).getByLabelText("Password"), { target: { value: pw } });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Confirm" }));
+      await waitFor(() => expect(clearButton("second")).toBeNull());
+      expect(screen.queryByRole("dialog", { name: "Confirm it is you" })).toBeNull();
+      expect(calls.filter((c) => c.key === "DELETE /api/admins/2/2fa")).toHaveLength(2);
+      expect(calls.find((c) => c.key === "POST /api/2fa/confirm")?.body).toEqual({ password: pw });
     });
   });
 });

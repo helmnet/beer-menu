@@ -87,7 +87,7 @@ or a security key; up to 10), or both. Adding the first one shows 10 single-use 
 once; keep them somewhere safe, and make a new set there when they run low. Any admin can turn
 on "Require two-factor sign-in for all admins"; an admin without a second factor must then set
 one up at their next sign-in before using the app. Another admin can clear a colleague's
-factors under Administration › Admin Users.
+factors under Administration › Admin Users, after confirming it is them.
 
 Each method needs a setting on the `api` service:
 

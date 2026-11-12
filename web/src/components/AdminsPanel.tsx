@@ -1,7 +1,8 @@
 import { Plus } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Admin, apiFetch, errorMessage, isUnauthenticated } from "../api";
+import { Admin, ApiError, apiFetch, errorMessage, isUnauthenticated, TwoFactorState } from "../api";
+import ConfirmIdentity from "./ConfirmIdentity";
 import Modal from "./Modal";
 
 /**
@@ -9,7 +10,8 @@ import Modal from "./Modal";
  * listing admins (GET /api/admins), each removable after confirmation (DELETE /api/admins/{id}).
  * Admins with two-factor sign-in show a "2FA" badge, and every other admin with it gets "Clear
  * 2FA", which asks first, then removes their factors and recovery codes and ends their sessions
- * (DELETE /api/admins/{id}/2fa) and reloads the list.
+ * (DELETE /api/admins/{id}/2fa) and reloads the list. A 403 confirm_required loads the caller's
+ * factors (GET /api/2fa), opens `ConfirmIdentity` and runs the action again once confirmed.
  * "Add admin" opens the "Add admin" dialog with a username and initial password; Save sends POST
  * /api/admins, then closes it, clears the fields and reloads the list, while a server error, such
  * as a taken username, keeps it open with the message. Removing the last admin shows the server's
@@ -33,13 +35,17 @@ export default function AdminsPanel({
   const [formError, setFormError] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [retry, setRetry] = useState<{ state: TwoFactorState; action: () => Promise<void> } | null>(null);
 
+  // run does an action; confirm_required asks to confirm (with the caller's factors), then runs it again.
   async function run(action: () => Promise<void>) {
     setError("");
     try {
       await action();
     } catch (err) {
       if (isUnauthenticated(err)) onSignedOut();
+      else if (err instanceof ApiError && err.code === "confirm_required")
+        run(async () => setRetry({ state: await apiFetch<TwoFactorState>("GET", "/api/2fa"), action }));
       else setError(errorMessage(err));
     }
   }
@@ -126,6 +132,21 @@ export default function AdminsPanel({
         </ul>
         {error && <p role="alert">{error}</p>}
       </div>
+      {retry && (
+        <ConfirmIdentity
+          hasFactor={retry.state.enabled}
+          hasTotp={!!retry.state.totp}
+          passkeyOrigin={
+            retry.state.passkeys.length > 0 && retry.state.passkeys_available ? retry.state.passkeys_origin : null
+          }
+          onConfirmed={() => {
+            setRetry(null);
+            run(retry.action);
+          }}
+          onCancel={() => setRetry(null)}
+          onSignedOut={onSignedOut}
+        />
+      )}
       {adding && (
         <Modal title="Add admin" onClose={close}>
           <form className="inline-form" onSubmit={add}>
