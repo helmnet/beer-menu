@@ -193,4 +193,50 @@ describe("AdminsPanel", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add admin" })).toBeNull());
     expect(calls.filter((c) => c.key === "POST /api/admins")).toHaveLength(1);
   });
+
+  describe("two-factor", () => {
+    const withTwoFactor = { ...second, two_factor: true };
+    const clearButton = (username: string) =>
+      within(screen.getByText(username).closest("li") as HTMLElement).queryByRole("button", { name: "Clear 2FA" });
+
+    it("shows a 2FA badge on admins who have it", async () => {
+      stubApi({ "GET /api/admins": { status: 200, body: [owner, withTwoFactor] } });
+      render(<AdminsPanel me={owner} onSignedOut={vi.fn()} />);
+      const row = (await screen.findByText("second")).closest("li") as HTMLElement;
+      expect(within(row).getByText("2FA")).toBeTruthy();
+      expect(within(screen.getByText("owner").closest("li") as HTMLElement).queryByText("2FA")).toBeNull();
+    });
+
+    it("offers Clear 2FA only on other admins with 2FA", async () => {
+      const me = { ...owner, two_factor: true };
+      stubApi({ "GET /api/admins": { status: 200, body: [me, second, { ...withTwoFactor, id: 3, username: "third" }] } });
+      render(<AdminsPanel me={me} onSignedOut={vi.fn()} />);
+      await screen.findByText("third");
+      expect(clearButton("owner")).toBeNull();
+      expect(clearButton("second")).toBeNull();
+      expect(clearButton("third")).toBeTruthy();
+    });
+
+    it("asks before clearing, then clears and reloads", async () => {
+      const routes = {
+        "GET /api/admins": { status: 200, body: [owner, withTwoFactor] as unknown[] },
+        "DELETE /api/admins/2/2fa": { status: 204 },
+      };
+      const calls = stubApi(routes);
+      const confirm = vi.fn(() => false);
+      vi.stubGlobal("confirm", confirm);
+      render(<AdminsPanel me={owner} onSignedOut={vi.fn()} />);
+      await screen.findByText("second");
+      fireEvent.click(clearButton("second")!);
+      expect(confirm).toHaveBeenCalled();
+      expect(calls.map((c) => c.key)).not.toContain("DELETE /api/admins/2/2fa");
+
+      confirm.mockReturnValue(true);
+      routes["GET /api/admins"] = { status: 200, body: [owner, second] };
+      fireEvent.click(clearButton("second")!);
+      await waitFor(() => expect(clearButton("second")).toBeNull());
+      expect(calls.map((c) => c.key)).toContain("DELETE /api/admins/2/2fa");
+      expect(within(screen.getByText("second").closest("li") as HTMLElement).queryByText("2FA")).toBeNull();
+    });
+  });
 });

@@ -28,7 +28,12 @@ type Admin struct {
 	ID        int64     `json:"id"`
 	Username  string    `json:"username"`
 	CreatedAt time.Time `json:"created_at"`
+	// TwoFactor is whether the admin has a second factor. Only GetAdmin and ListAdmins fill it.
+	TwoFactor bool `json:"two_factor"`
 }
+
+// hasFactorSQL is true for the users row u that has a second factor (FR-028).
+const hasFactorSQL = "(EXISTS (SELECT 1 FROM totp_factors WHERE user_id = u.id) OR EXISTS (SELECT 1 FROM passkeys WHERE user_id = u.id))"
 
 // AdminCount returns how many admins exist.
 func AdminCount(db *sql.DB) (int, error) {
@@ -120,7 +125,8 @@ func Authenticate(db *sql.DB, username, password string) (Admin, error) {
 func GetAdmin(db *sql.DB, id int64) (Admin, error) {
 	var a Admin
 	var created int64
-	err := db.QueryRow("SELECT id, username, created_at FROM users WHERE id = ?", id).Scan(&a.ID, &a.Username, &created)
+	err := db.QueryRow("SELECT id, username, created_at, "+hasFactorSQL+" FROM users u WHERE id = ?", id).
+		Scan(&a.ID, &a.Username, &created, &a.TwoFactor)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Admin{}, ErrNotFound
 	}
@@ -129,6 +135,20 @@ func GetAdmin(db *sql.DB, id int64) (Admin, error) {
 	}
 	a.CreatedAt = unixTime(created)
 	return a, nil
+}
+
+// FindAdmin returns the admin named username (trimmed, compared ignoring case), or
+// ErrNotFound.
+func FindAdmin(db *sql.DB, username string) (Admin, error) {
+	var id int64
+	err := db.QueryRow("SELECT id FROM users WHERE username = ?", strings.TrimSpace(username)).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Admin{}, ErrNotFound
+	}
+	if err != nil {
+		return Admin{}, err
+	}
+	return GetAdmin(db, id)
 }
 
 // AddAdmin creates an admin with username (trimmed) and password at now. It returns
@@ -167,7 +187,7 @@ func AddAdmin(db *sql.DB, username, password string, now time.Time) (Admin, erro
 
 // ListAdmins returns every admin, oldest first, with no password data.
 func ListAdmins(db *sql.DB) ([]Admin, error) {
-	rows, err := db.Query("SELECT id, username, created_at FROM users ORDER BY created_at, id")
+	rows, err := db.Query("SELECT id, username, created_at, " + hasFactorSQL + " FROM users u ORDER BY created_at, id")
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +196,7 @@ func ListAdmins(db *sql.DB) ([]Admin, error) {
 	for rows.Next() {
 		var a Admin
 		var created int64
-		if err := rows.Scan(&a.ID, &a.Username, &created); err != nil {
+		if err := rows.Scan(&a.ID, &a.Username, &created, &a.TwoFactor); err != nil {
 			return nil, err
 		}
 		a.CreatedAt = unixTime(created)
@@ -210,22 +230,11 @@ func ChangePassword(db *sql.DB, userID int64, current, next, keepSessionID strin
 	if err := ValidatePassword(next); err != nil {
 		return err
 	}
-	var hash string
-	err := db.QueryRow("SELECT password_hash FROM users WHERE id = ?", userID).Scan(&hash)
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrNotFound
-	}
-	if err != nil {
+	if err := CheckPassword(db, userID, current); err != nil {
 		return err
 	}
-	ok, err := VerifyPassword(hash, current)
+	hash, err := HashPassword(next)
 	if err != nil {
-		return err
-	}
-	if !ok {
-		return ErrWrongPassword
-	}
-	if hash, err = HashPassword(next); err != nil {
 		return err
 	}
 	tx, err := db.Begin()
@@ -240,6 +249,27 @@ func ChangePassword(db *sql.DB, userID int64, current, next, keepSessionID strin
 		return err
 	}
 	return tx.Commit()
+}
+
+// CheckPassword returns nil when password is admin userID's password, ErrWrongPassword when
+// it is not, ErrNotFound for an unknown admin and ErrBusy when no hash slot frees up.
+func CheckPassword(db *sql.DB, userID int64, password string) error {
+	var hash string
+	err := db.QueryRow("SELECT password_hash FROM users WHERE id = ?", userID).Scan(&hash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	ok, err := VerifyPassword(hash, password)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrWrongPassword
+	}
+	return nil
 }
 
 // ResetPassword sets the password of the admin named username (compared ignoring case) and

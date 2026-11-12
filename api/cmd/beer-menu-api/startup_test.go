@@ -375,3 +375,59 @@ func TestLoadSecretKey(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadPublicURL(t *testing.T) {
+	env := func(v string) func(string) string {
+		return func(k string) string {
+			if k == "BEER_MENU_PUBLIC_URL" {
+				return v
+			}
+			return ""
+		}
+	}
+	origin, rpID, err := loadPublicURL(env(""))
+	if err != nil || origin != "" || rpID != "" {
+		t.Fatalf("unset = %q %q (err %v), want passkeys off", origin, rpID, err)
+	}
+	good := []struct{ in, origin, rpID string }{
+		{"https://taplist.example.org", "https://taplist.example.org", "taplist.example.org"},
+		{"https://taplist.example.org/", "https://taplist.example.org", "taplist.example.org"},
+		{"https://Taplist.Example.org:8443", "https://taplist.example.org:8443", "taplist.example.org"},
+		{"http://localhost:5173", "http://localhost:5173", "localhost"},
+	}
+	for _, c := range good {
+		origin, rpID, err := loadPublicURL(env(c.in))
+		if err != nil || origin != c.origin || rpID != c.rpID {
+			t.Errorf("%s = %q %q (err %v), want %q %q", c.in, origin, rpID, err, c.origin, c.rpID)
+		}
+	}
+	bad := []string{
+		"http://taplist.example.org",
+		"https://192.168.1.10",
+		"https://[fd00::1]",
+		"https://taplist.example.org/menu",
+		"https://taplist.example.org/?a=b",
+		"https://taplist.example.org/?",
+		"https://taplist.example.org/#top",
+		"https://user@taplist.example.org",
+		"https://",
+		"taplist.example.org",
+		"ftp://taplist.example.org",
+		"https://taplist.example.org:bad",
+		"%zz://taplist",
+	}
+	for _, v := range bad {
+		origin, rpID, err := loadPublicURL(env(v))
+		if err == nil || origin != "" || rpID != "" {
+			t.Errorf("%q = %q %q (err %v), want a startup error", v, origin, rpID, err)
+			continue
+		}
+		if !strings.Contains(err.Error(), "BEER_MENU_PUBLIC_URL") {
+			t.Errorf("%q: error %q does not name the variable", v, err)
+		}
+		// "https://" alone is also in the message's own example.
+		if (v != "https://" && strings.Contains(err.Error(), v)) || strings.Contains(err.Error(), "taplist") {
+			t.Errorf("%q: error %q contains the value", v, err)
+		}
+	}
+}

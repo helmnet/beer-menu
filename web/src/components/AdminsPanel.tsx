@@ -7,6 +7,9 @@ import Modal from "./Modal";
 /**
  * AdminsPanel is the Admin Users page: the "Admin Users" heading with "Add admin", then a card
  * listing admins (GET /api/admins), each removable after confirmation (DELETE /api/admins/{id}).
+ * Admins with two-factor sign-in show a "2FA" badge, and every other admin with it gets "Clear
+ * 2FA", which asks first, then removes their factors and recovery codes and ends their sessions
+ * (DELETE /api/admins/{id}/2fa) and reloads the list.
  * "Add admin" opens the "Add admin" dialog with a username and initial password; Save sends POST
  * /api/admins, then closes it, clears the fields and reloads the list, while a server error, such
  * as a taken username, keeps it open with the message. Removing the last admin shows the server's
@@ -82,6 +85,14 @@ export default function AdminsPanel({
     });
   }
 
+  function clearTwoFactor(a: Admin) {
+    if (!window.confirm(`Clear two-factor sign-in for "${a.username}"? They will be signed out everywhere.`)) return;
+    run(async () => {
+      await apiFetch("DELETE", `/api/admins/${a.id}/2fa`);
+      await load();
+    });
+  }
+
   const addAdmin = (
     <button type="button" className="btn btn-primary page-action" onClick={() => setAdding(true)}>
       <Plus aria-hidden="true" />
@@ -100,7 +111,13 @@ export default function AdminsPanel({
         <ul className="plain-list">
           {admins.map((a) => (
             <li key={a.id}>
-              <span>{a.username}</span> (added {new Date(a.created_at).toLocaleString()}){" "}
+              <span>{a.username}</span> (added {new Date(a.created_at).toLocaleString()})
+              {a.two_factor && <span className="badge">2FA</span>}{" "}
+              {a.two_factor && a.id !== me.id && (
+                <button type="button" className="btn" onClick={() => clearTwoFactor(a)}>
+                  Clear 2FA
+                </button>
+              )}
               <button type="button" className="btn" onClick={() => remove(a)}>
                 Remove
               </button>

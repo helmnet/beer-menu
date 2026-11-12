@@ -4,10 +4,12 @@ import (
 	"crypto/rand"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/helmnet/beer-menu/api/internal/auth"
 	"github.com/helmnet/beer-menu/api/internal/importer"
 	"github.com/helmnet/beer-menu/api/internal/kegs"
 )
@@ -228,5 +230,59 @@ func TestReadsAnyCredential(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// concretePath fills every {param} of a route pattern with 1. The guard runs before the
+// handler, so the walks below never need a real row.
+func concretePath(pattern string) string {
+	return regexp.MustCompile(`\{[^}]+\}`).ReplaceAllString(pattern, "1")
+}
+
+// TestEnrollRoutesRefuseTokens walks every AccessEnroll route: no credential is 401, a revoked
+// token 401, a read or write token 403, and a cross-site write 403 (constitution V).
+func TestEnrollRoutesRefuseTokens(t *testing.T) {
+	deps, _ := newTestDeps(t)
+	mux := NewMux(deps)
+	c := newCreds(t, deps)
+	n := 0
+	for _, r := range Routes {
+		if r.Access != AccessEnroll {
+			continue
+		}
+		n++
+		path := concretePath(r.Path)
+		wantError(t, do(mux, r.Method, path, "{}"), 401, "unauthenticated")
+		wantError(t, do(mux, r.Method, path, "{}", c.revoked...), 401, "unauthenticated")
+		wantError(t, do(mux, r.Method, path, "{}", c.read...), 403, "forbidden")
+		wantError(t, do(mux, r.Method, path, "{}", c.write...), 403, "forbidden")
+		if r.Method != http.MethodGet {
+			wantError(t, do(mux, r.Method, path, "{}", c.crossSite...), 403, "forbidden")
+		}
+	}
+	if n == 0 {
+		t.Fatal("no AccessEnroll route")
+	}
+}
+
+// TestEnrollPendingOnlyOnEnrollRoutes walks every route that needs a credential: an enroll
+// pending alone is 401 on all but AccessEnroll routes (FR-034, constitution V).
+func TestEnrollPendingOnlyOnEnrollRoutes(t *testing.T) {
+	deps, _ := newTestDeps(t)
+	mux := NewMux(deps)
+	uid := insertUser(t, deps.DB, "owner")
+	id, err := auth.CreateChallenge(deps.DB, uid, auth.KindEnroll, deps.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	enroll := []string{"Cookie", pendingCookieName + "=" + id}
+	for _, r := range Routes {
+		if r.Access == AccessPublic || r.Access == AccessEnroll {
+			continue
+		}
+		wantError(t, do(mux, r.Method, concretePath(r.Path), "{}", enroll...), 401, "unauthenticated")
+	}
+	if rec := do(mux, http.MethodGet, "/api/2fa", "", enroll...); rec.Code != 200 {
+		t.Fatalf("GET /api/2fa with an enroll pending = %d %s", rec.Code, rec.Body)
 	}
 }

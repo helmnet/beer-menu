@@ -28,8 +28,9 @@ func (c *testClock) Now() time.Time          { return c.t }
 func (c *testClock) Advance(d time.Duration) { c.t = c.t.Add(d) }
 
 // newTestDeps returns Deps on a migrated database in a temporary folder, with a movable
-// clock, a limiter on that clock, CookieSecure true as in production, and an import service
-// with a fresh random encryption key and a fake provider on that clock. Tests that program the
+// clock, a limiter on that clock, CookieSecure true as in production, a fresh random
+// encryption key in Box, and an import service with that key and a fake provider on that
+// clock. WebAuthn is nil (passkeys off). Tests that program the
 // provider set deps.Importer.Factory to their own importertest.Fake. Cleanup waits for
 // background syncs.
 func newTestDeps(t *testing.T) (Deps, *testClock) {
@@ -56,7 +57,7 @@ func newTestDeps(t *testing.T) (Deps, *testClock) {
 	imp := importer.New(db, box, importertest.New().Factory(), clock.Now)
 	// Background syncs end before the database closes (cleanups run last-in, first-out).
 	t.Cleanup(imp.Wait)
-	return Deps{DB: db, Version: "test", CookieSecure: true, Now: clock.Now, Limiter: auth.NewLimiter(clock.Now), Importer: imp}, clock
+	return Deps{DB: db, Version: "test", CookieSecure: true, Now: clock.Now, Limiter: auth.NewLimiter(clock.Now), Importer: imp, Box: box}, clock
 }
 
 // testPassword returns a random password so no fixed password is in the repo.

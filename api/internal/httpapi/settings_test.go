@@ -157,8 +157,9 @@ func TestTVSettingsOnVersion5Data(t *testing.T) {
 		('display.page_seconds', '20', 1)`); err != nil {
 		t.Fatal(err)
 	}
-	if v, err := store.Version(deps.DB); err != nil || v != 5 {
-		t.Fatalf("version = %d (err %v), want 5", v, err)
+	// Feature 10 added no migration; later features may, so only a lower version is wrong.
+	if v, err := store.Version(deps.DB); err != nil || v < 5 {
+		t.Fatalf("version = %d (err %v), want at least 5", v, err)
 	}
 	want := `{"title":"Helm","theme":"light","units":"metric","page_seconds":20,` + defaultTV
 	if rec := do(mux, http.MethodGet, "/api/settings", "", c.read...); rec.Code != 200 || rec.Body.String() != want {

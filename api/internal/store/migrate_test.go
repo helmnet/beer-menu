@@ -478,3 +478,110 @@ func TestMigration0005FromVersion4(t *testing.T) {
 		t.Fatalf("index beers_source_ref: %v", err)
 	}
 }
+
+// TestMigration0006FromVersion5 applies 0006_two_factor to a version 5 database holding an
+// admin, a session, a token and settings rows, checks they survive with no confirm stamp, and
+// that the four 2FA tables exist with their checks, uniqueness and cascades from users.
+func TestMigration0006FromVersion5(t *testing.T) {
+	ms, err := LoadMigrations(Migrations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ms) < 6 {
+		t.Fatal("migration 0006 missing")
+	}
+	db := openTemp(t)
+	if err := Apply(db, ms[:5]); err != nil {
+		t.Fatal(err)
+	}
+	mustExec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := db.Exec(q, args...); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	mustFail := func(q string, args ...any) {
+		t.Helper()
+		if _, err := db.Exec(q, args...); err == nil {
+			t.Fatalf("%s: want constraint error", q)
+		}
+	}
+	mustExec("INSERT INTO users (id, username, password_hash, created_at) VALUES (1, 'owner', 'h', 1)")
+	mustExec("INSERT INTO sessions (id_hash, user_id, created_at, last_seen_at, expires_at) VALUES (x'01', 1, 2, 3, 4)")
+	mustExec("INSERT INTO api_tokens (id, name, token_hash, scope, created_at) VALUES (1, 'ha', x'02', 'read', 5)")
+	mustExec("INSERT INTO settings (key, value, updated_at) VALUES ('title', 'kept', 6)")
+	if err := Apply(db, ms[5:6]); err != nil {
+		t.Fatal(err)
+	}
+	if v := mustVersion(t, db); v != 6 {
+		t.Fatalf("version = %d, want 6", v)
+	}
+
+	var n int
+	var confirmed sql.NullInt64
+	if err := db.QueryRow("SELECT user_id, confirmed_at FROM sessions WHERE id_hash = x'01' AND created_at = 2 AND last_seen_at = 3 AND expires_at = 4").
+		Scan(&n, &confirmed); err != nil || n != 1 || confirmed.Valid {
+		t.Fatalf("old session = user %d confirmed %v (err %v), want user 1, NULL", n, confirmed, err)
+	}
+	if err := db.QueryRow("SELECT count(*) FROM users WHERE id = 1 AND username = 'owner' AND password_hash = 'h'").Scan(&n); err != nil || n != 1 {
+		t.Fatalf("admin kept = %d (err %v)", n, err)
+	}
+	if err := db.QueryRow("SELECT count(*) FROM api_tokens WHERE id = 1 AND name = 'ha' AND scope = 'read'").Scan(&n); err != nil || n != 1 {
+		t.Fatalf("token kept = %d (err %v)", n, err)
+	}
+	var title string
+	if err := db.QueryRow("SELECT value FROM settings WHERE key = 'title'").Scan(&title); err != nil || title != "kept" {
+		t.Fatalf("settings row = %q (err %v), want kept", title, err)
+	}
+
+	wantColumns := map[string]string{
+		"sessions":        "id_hash,user_id,created_at,last_seen_at,expires_at,confirmed_at",
+		"totp_factors":    "user_id,secret_sealed,last_step,created_at,last_used_at",
+		"passkeys":        "id,user_id,name,credential_id,public_key,sign_count,transports,backup_eligible,created_at,last_used_at",
+		"recovery_codes":  "user_id,code_hash,used_at",
+		"auth_challenges": "id_hash,user_id,kind,webauthn,totp_pending_sealed,created_at,expires_at",
+	}
+	for table, want := range wantColumns {
+		rows, err := db.Query("SELECT name FROM pragma_table_info(?) ORDER BY cid", table)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cols []string
+		for rows.Next() {
+			var c string
+			if err := rows.Scan(&c); err != nil {
+				t.Fatal(err)
+			}
+			cols = append(cols, c)
+		}
+		rows.Close()
+		if got := strings.Join(cols, ","); got != want {
+			t.Errorf("%s columns = %q, want %q", table, got, want)
+		}
+	}
+	var idx string
+	if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'passkeys_user_id'").Scan(&idx); err != nil {
+		t.Fatalf("index passkeys_user_id: %v", err)
+	}
+
+	mustExec("INSERT INTO totp_factors (user_id, secret_sealed, last_step, created_at) VALUES (1, 'v1:x', 0, 1)")
+	mustFail("INSERT INTO totp_factors (user_id, secret_sealed, last_step, created_at) VALUES (1, 'v1:y', 0, 1)")
+	mustExec(`INSERT INTO passkeys (user_id, name, credential_id, public_key, sign_count, transports, backup_eligible, created_at)
+		VALUES (1, 'Phone', x'aa', x'bb', 0, '[]', 1, 1)`)
+	mustFail(`INSERT INTO passkeys (user_id, name, credential_id, public_key, sign_count, transports, backup_eligible, created_at)
+		VALUES (1, 'Laptop', x'aa', x'cc', 0, '[]', 0, 1)`)
+	mustExec("INSERT INTO recovery_codes (user_id, code_hash) VALUES (1, x'10')")
+	mustFail("INSERT INTO recovery_codes (user_id, code_hash) VALUES (1, x'10')")
+	mustFail("INSERT INTO recovery_codes (user_id, code_hash) VALUES (99, x'11')")
+	for _, kind := range []string{"second_factor", "enroll", "setup"} {
+		mustExec("INSERT INTO auth_challenges (id_hash, user_id, kind, created_at, expires_at) VALUES (?, 1, ?, 1, 301)", []byte(kind), kind)
+	}
+	mustFail("INSERT INTO auth_challenges (id_hash, user_id, kind, created_at, expires_at) VALUES (x'20', 1, 'other', 1, 301)")
+
+	mustExec("DELETE FROM users WHERE id = 1")
+	for _, table := range []string{"totp_factors", "passkeys", "recovery_codes", "auth_challenges", "sessions"} {
+		if err := db.QueryRow("SELECT count(*) FROM " + table).Scan(&n); err != nil || n != 0 {
+			t.Errorf("%s rows after deleting the admin = %d (err %v), want 0", table, n, err)
+		}
+	}
+}

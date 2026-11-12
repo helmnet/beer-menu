@@ -107,3 +107,59 @@ func TestAdminRoutesRefuseTokens(t *testing.T) {
 		t.Fatalf("AdminCount = %d", n)
 	}
 }
+
+func TestClearAdminTwoFactor(t *testing.T) {
+	logs := captureLog(t)
+	deps, _ := newTestDeps(t)
+	ownerPW := createAdmin(t, deps)
+	mux := NewMux(deps)
+	owner := signInAs(t, mux, "owner", ownerPW)
+	pw := testPassword()
+	if rec := do(mux, http.MethodPost, "/api/admins", credentials("second", pw), owner...); rec.Code != 201 {
+		t.Fatalf("add = %d", rec.Code)
+	}
+	second := adminID(t, deps, "second")
+	secondSession := signInAs(t, mux, "second", pw)
+	addTotp(t, deps, second)
+	addPasskey(t, deps, second)
+	if _, err := auth.NewRecoveryCodes(deps.DB, second); err != nil {
+		t.Fatal(err)
+	}
+	pending := passwordStep(t, mux, "second", pw)
+	if err := auth.SetRequireTwoFactor(deps.DB, true, t0); err != nil {
+		t.Fatal(err)
+	}
+
+	list := do(mux, http.MethodGet, "/api/admins", "", owner...).Body.String()
+	if !strings.Contains(list, `"username":"owner","created_at":"2026-11-08T12:00:00Z","two_factor":false`) || !strings.Contains(list, `"username":"second"`) || !strings.Contains(list, `"two_factor":true`) {
+		t.Fatalf("GET /api/admins = %s", list)
+	}
+
+	path := "/api/admins/" + strconv.FormatInt(second, 10) + "/2fa"
+	if rec := do(mux, http.MethodDelete, path, "", owner...); rec.Code != 204 {
+		t.Fatalf("DELETE %s = %d %s", path, rec.Code, rec.Body)
+	}
+	if has, _ := auth.HasTwoFactor(deps.DB, second); has {
+		t.Fatal("factors left")
+	}
+	if n, _ := auth.RecoveryCodesLeft(deps.DB, second); n != 0 {
+		t.Fatalf("%d recovery codes left", n)
+	}
+	wantError(t, do(mux, http.MethodGet, "/api/session", "", secondSession...), 401, "unauthenticated")
+	wantError(t, do(mux, http.MethodPost, "/api/session/totp", `{"code":"123456"}`, pending...), 401, "unauthenticated")
+	if got := do(mux, http.MethodGet, "/api/session", "", owner...); got.Code != 200 {
+		t.Fatalf("caller's session = %d", got.Code)
+	}
+
+	wantError(t, do(mux, http.MethodDelete, "/api/admins/1/2fa", "", owner...), 409, "cannot_clear_self")
+	wantError(t, do(mux, http.MethodDelete, "/api/admins/999/2fa", "", owner...), 404, "not_found")
+	wantError(t, do(mux, http.MethodDelete, "/api/admins/0/2fa", "", owner...), 404, "not_found")
+	wantError(t, do(mux, http.MethodDelete, path, "", append(owner, "Sec-Fetch-Site", "cross-site")...), 403, "forbidden")
+	for _, scope := range []auth.Scope{auth.ScopeRead, auth.ScopeWrite} {
+		secret, _ := insertToken(t, deps.DB, scope, false)
+		wantError(t, do(mux, http.MethodDelete, path, "", "Authorization", "Bearer "+secret), 403, "forbidden")
+	}
+	if !strings.Contains(logs.String(), "admin 2fa cleared") || !strings.Contains(logs.String(), "username=second") || !strings.Contains(logs.String(), "by=owner") {
+		t.Errorf("log lacks the clear: %s", logs)
+	}
+}

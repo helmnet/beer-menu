@@ -219,3 +219,85 @@ func TestSweepExpired(t *testing.T) {
 		t.Fatal("live session swept")
 	}
 }
+
+func TestSessionConfirm(t *testing.T) {
+	db := openDB(t)
+	uid := insertUser(t, db, "owner")
+	id := mustCreateSession(t, db, uid, t0)
+	confirmed := func(now time.Time) bool {
+		t.Helper()
+		ok, err := SessionConfirmed(db, id, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	var at int64
+	if err := db.QueryRow("SELECT confirmed_at FROM sessions").Scan(&at); err != nil || at != t0.Unix() {
+		t.Fatalf("confirmed_at after sign-in = %d (err %v), want now", at, err)
+	}
+	if !confirmed(t0.Add(300*time.Second)) || confirmed(t0.Add(301*time.Second)) {
+		t.Fatal("sign-in confirm not good for exactly 300 s")
+	}
+	if err := ConfirmSession(db, id, t0.Add(20*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if !confirmed(t0.Add(24*time.Minute)) || confirmed(t0.Add(26*time.Minute)) {
+		t.Fatal("ConfirmSession not good for 300 s")
+	}
+	if confirmed(t0.Add(19 * time.Minute)) {
+		t.Fatal("confirm counted before it happened")
+	}
+	if ok, err := SessionConfirmed(db, "not-a-session", t0); ok || err != nil {
+		t.Fatalf("malformed session confirmed = %v %v", ok, err)
+	}
+	db.Exec("UPDATE sessions SET confirmed_at = NULL")
+	if confirmed(t0) {
+		t.Fatal("NULL confirmed_at counts as confirmed")
+	}
+}
+
+func TestSessionEndDeletesSetupChallenge(t *testing.T) {
+	db := openDB(t)
+	uid := insertUser(t, db, "owner")
+	setup := func(now time.Time) string {
+		t.Helper()
+		sid := mustCreateSession(t, db, uid, now)
+		if err := SetupChallenge(db, sid, uid, now); err != nil {
+			t.Fatal(err)
+		}
+		return sid
+	}
+	keep := setup(t0)
+	setup(t0)
+	if err := DeleteOtherSessions(db, uid, keep); err != nil {
+		t.Fatal(err)
+	}
+	if n := countRows(t, db, "SELECT count(*) FROM auth_challenges"); n != 1 {
+		t.Fatalf("setup rows after DeleteOtherSessions = %d, want 1", n)
+	}
+	if _, ok := peek(t, db, keep, KindSetup, t0); !ok {
+		t.Fatal("kept session lost its setup")
+	}
+	if err := DeleteUserSessions(db, uid); err != nil {
+		t.Fatal(err)
+	}
+	if n := countRows(t, db, "SELECT count(*) FROM auth_challenges"); n != 0 {
+		t.Fatalf("setup rows after DeleteUserSessions = %d, want 0", n)
+	}
+	idle := setup(t0)
+	if _, ok := lookup(t, db, idle, t0.Add(time.Hour)); ok {
+		t.Fatal("idle session valid")
+	}
+	if n := countRows(t, db, "SELECT count(*) FROM auth_challenges"); n != 0 {
+		t.Fatalf("setup rows after an idle session ended = %d, want 0", n)
+	}
+	setup(t0.Add(-time.Hour))
+	mustChallenge(t, db, uid, KindSecondFactor, t0.Add(-time.Hour))
+	if err := SweepExpired(db, t0); err != nil {
+		t.Fatal(err)
+	}
+	if n := countRows(t, db, "SELECT count(*) FROM auth_challenges"); n != 0 {
+		t.Fatalf("challenges after sweep = %d, want 0", n)
+	}
+}

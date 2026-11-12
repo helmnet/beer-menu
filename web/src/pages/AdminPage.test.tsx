@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { brewfatherStatus, keg, kegTypes, owner, Reply, settings, stubApi, tap, testPassword } from "../testApi";
+import { brewfatherStatus, keg, kegTypes, owner, Reply, settings, stubApi, tap, testPassword, twoFactorState } from "../testApi";
 import AdminPage from "./AdminPage";
 
 afterEach(() => {
@@ -32,6 +32,7 @@ const panels: Record<string, Reply> = {
   "GET /api/admins": { status: 200, body: [] },
   "GET /api/tokens": { status: 200, body: [] },
   "GET /api/brewfather": { status: 200, body: brewfatherStatus() },
+  "GET /api/2fa": { status: 200, body: twoFactorState() },
 };
 
 // Nav group, page label and the page's h2, for every page.
@@ -44,6 +45,7 @@ const pages: [string, string, string][] = [
   ["Administration", "Admin Users", "Admin Users"],
   ["Administration", "API Tokens", "API Tokens"],
   ["Administration", "Change Password", "Change Password"],
+  ["Administration", "Two-Factor Sign-In", "Two-Factor Sign-In"],
   ["Integrations", "Brewfather", "Brewfather"],
 ];
 

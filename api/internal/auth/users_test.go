@@ -283,3 +283,57 @@ func TestResetPassword(t *testing.T) {
 		t.Fatalf("short password: %v, want ValidationError", err)
 	}
 }
+
+func TestAdminTwoFactorFlag(t *testing.T) {
+	db := openDB(t)
+	plain := insertUser(t, db, "plain")
+	withTotp := insertUser(t, db, "totp")
+	withKey := insertUser(t, db, "key")
+	codesOnly := insertUser(t, db, "codes")
+	if _, err := db.Exec("INSERT INTO totp_factors (user_id, secret_sealed, last_step, created_at) VALUES (?, 'v1:x', 0, 1)", withTotp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO passkeys (user_id, name, credential_id, public_key, sign_count, transports, backup_eligible, created_at)
+		VALUES (?, 'Phone', x'aa', x'bb', 0, '[]', 0, 1)`, withKey); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewRecoveryCodes(db, codesOnly); err != nil {
+		t.Fatal(err)
+	}
+	want := map[int64]bool{plain: false, withTotp: true, withKey: true, codesOnly: false}
+	list, err := ListAdmins(db)
+	if err != nil || len(list) != 4 {
+		t.Fatalf("ListAdmins = %+v, %v", list, err)
+	}
+	for _, a := range list {
+		if a.TwoFactor != want[a.ID] {
+			t.Errorf("ListAdmins %s two_factor = %v, want %v", a.Username, a.TwoFactor, want[a.ID])
+		}
+		got, err := GetAdmin(db, a.ID)
+		if err != nil || got.TwoFactor != want[a.ID] {
+			t.Errorf("GetAdmin %s two_factor = %v (err %v), want %v", a.Username, got.TwoFactor, err, want[a.ID])
+		}
+	}
+	body, _ := json.Marshal(list[1])
+	if !strings.Contains(string(body), `"two_factor":true`) {
+		t.Fatalf("Admin JSON = %s, want two_factor", body)
+	}
+}
+
+func TestCheckPassword(t *testing.T) {
+	db := openDB(t)
+	pw := testPassword(t)
+	a, err := CreateFirstAdmin(db, "owner", pw, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckPassword(db, a.ID, pw); err != nil {
+		t.Fatalf("right password: %v", err)
+	}
+	if err := CheckPassword(db, a.ID, pw+"x"); !errors.Is(err, ErrWrongPassword) {
+		t.Fatalf("wrong password: %v, want ErrWrongPassword", err)
+	}
+	if err := CheckPassword(db, a.ID+1, pw); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown admin: %v, want ErrNotFound", err)
+	}
+}

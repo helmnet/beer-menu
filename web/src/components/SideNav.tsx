@@ -12,6 +12,7 @@ import {
   Menu,
   Plug,
   Shield,
+  ShieldCheck,
   Tv,
   Users,
   X,
@@ -32,6 +33,7 @@ export type PageKey =
   | "admins"
   | "tokens"
   | "password"
+  | "two-factor"
   | "brewfather";
 
 /** groups is the side panel tree (data-model.md "Page tree"), in display order. */
@@ -56,6 +58,7 @@ const groups: { key: GroupKey; label: string; icon: LucideIcon; pages: { key: Pa
       { key: "admins", label: "Admin Users", icon: Users },
       { key: "tokens", label: "API Tokens", icon: KeyRound },
       { key: "password", label: "Change Password", icon: Lock },
+      { key: "two-factor", label: "Two-Factor Sign-In", icon: ShieldCheck },
     ],
   },
   {

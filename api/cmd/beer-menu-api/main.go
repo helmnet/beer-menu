@@ -5,11 +5,17 @@
 // create the first admin when none exists and are ignored otherwise), and
 // BEER_MENU_SECRET_KEY_FILE or BEER_MENU_SECRET_KEY (the file wins; standard base64 of 32
 // bytes, from openssl rand -base64 32) for the key that encrypts the Brewfather API key; with
-// neither, Brewfather import is not configured, and an invalid one stops startup. It prepares and
+// neither, Brewfather import and authenticator apps are not configured, and an invalid one stops
+// startup), and BEER_MENU_PUBLIC_URL (the address admins open the app at, such as
+// https://taplist.example.org; it fixes the passkey origin and RP ID, passkeys are off when it
+// is unset, and an invalid one stops startup). It prepares and
 // migrates the database, then serves HTTP until SIGTERM or SIGINT. "beer-menu-api
 // healthcheck" probes the running API's health endpoint and exits 0 when it returns 200,
 // else 1. "beer-menu-api reset-password <username>" prompts on the terminal for a new
 // password for that admin and ends their sessions; it exits 0 on success, else 1.
+// "beer-menu-api reset-2fa <username>" clears that admin's second factors, recovery codes,
+// pending sign-ins and sessions, leaving the require-2FA setting alone; it exits 0 on success,
+// else 1.
 package main
 
 import (
@@ -23,6 +29,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/helmnet/beer-menu/api/internal/auth"
 	"github.com/helmnet/beer-menu/api/internal/brewfather"
 	"github.com/helmnet/beer-menu/api/internal/httpapi"
@@ -61,7 +68,14 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "reset-password" {
 		os.Exit(resetPassword(cfg.DataDir, os.Args[2:], int(os.Stdin.Fd()), os.Stdout, term.IsTerminal, term.ReadPassword))
 	}
+	if len(os.Args) > 1 && os.Args[1] == "reset-2fa" {
+		os.Exit(resetTwoFactor(cfg.DataDir, os.Args[2:], os.Stdout))
+	}
 	if cfg.SecretKey, err = loadSecretKey(os.Getenv, os.ReadFile); err != nil {
+		slog.Error("startup refused", "err", err)
+		os.Exit(1)
+	}
+	if cfg.PublicOrigin, cfg.RPID, err = loadPublicURL(os.Getenv); err != nil {
 		slog.Error("startup refused", "err", err)
 		os.Exit(1)
 	}
@@ -98,6 +112,15 @@ func run(cfg config) error {
 		slog.Info("brewfather import not configured, no encryption key set")
 	}
 
+	var wa *webauthn.WebAuthn
+	if cfg.PublicOrigin != "" {
+		if wa, err = webauthn.New(&webauthn.Config{RPDisplayName: "Beer Menu", RPID: cfg.RPID, RPOrigins: []string{cfg.PublicOrigin}}); err != nil {
+			return err
+		}
+	} else {
+		slog.Info("passkeys not configured, no public URL set")
+	}
+
 	imp := importer.New(db, box, brewfather.New, time.Now)
 	// Scheduled and "Sync now" syncs run on ctx, so a signal stops them; both are waited for
 	// below, before the deferred db.Close.
@@ -117,7 +140,7 @@ func run(cfg config) error {
 		Handler: httpapi.NewMux(httpapi.Deps{
 			DB: db, Version: version, CookieSecure: cfg.CookieSecure,
 			Now: time.Now, Limiter: auth.NewLimiter(time.Now),
-			Importer: imp, Background: ctx,
+			Importer: imp, Background: ctx, Box: box, WebAuthn: wa,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 		// Without these an idle keep-alive or a slow request body holds a connection forever.

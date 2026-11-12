@@ -1,0 +1,237 @@
+import { FormEvent, useState } from "react";
+import { ApiError, apiFetch, errorMessage, FactorAdded, isUnauthenticated, TotpSetup, TwoFactorState } from "../api";
+import { createPasskey, passkeysSupported } from "../webauthn";
+import ConfirmIdentity from "./ConfirmIdentity";
+import Modal from "./Modal";
+import QrCode from "./QrCode";
+import RecoveryCodes from "./RecoveryCodes";
+
+/** MAX_PASSKEYS is the API's limit of passkeys per admin. */
+const MAX_PASSKEYS = 10;
+
+/** TOO_MANY is the message at MAX_PASSKEYS, for the 409 and the disabled button alike. */
+const TOO_MANY = "You have 10 passkeys. Remove one before adding another.";
+
+/**
+ * TwoFactorSetup adds a second factor for the signed-in admin whose GET /api/2fa `state` it is
+ * given. "Add authenticator app" starts POST /api/2fa/totp/setup and opens a dialog with the QR
+ * code and the key in groups of 4; a code from the app is sent to POST /api/2fa/totp. A wrong
+ * code shows the error and keeps the dialog open. When the API returns recovery codes (the first
+ * factor) they are shown with `RecoveryCodes` before `onDone`; otherwise `onDone` is called at
+ * once. A 403 confirm_required opens `ConfirmIdentity` and starts again once confirmed. Without
+ * an encryption key on the server it says authenticator apps are not available, and once an
+ * authenticator exists it offers no second one.
+ *
+ * "Add passkey" opens a dialog asking for the passkey's name; Add fetches
+ * POST /api/2fa/passkeys/options, runs the device prompt and sends the name and credential to
+ * POST /api/2fa/passkeys, with the same recovery-code, confirm and error handling. A cancelled
+ * prompt keeps the dialog open. At 10 passkeys the button is disabled with a hint (FR-013).
+ * Passkeys are offered only when the server has them, this page is at `passkeys_origin` (else
+ * the note names the address to use, FR-016) and the browser supports them. A 401 calls
+ * `onSignedOut`.
+ */
+export default function TwoFactorSetup({
+  state,
+  onDone,
+  onSignedOut,
+}: {
+  state: TwoFactorState;
+  onDone: () => void;
+  onSignedOut: () => void;
+}) {
+  const [setup, setSetup] = useState<TotpSetup | null>(null);
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState("");
+  const [confirming, setConfirming] = useState<"totp" | "passkey" | null>(null);
+  const [code, setCode] = useState("");
+  const [codes, setCodes] = useState<string[] | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  // fail handles an API error of flow: 401 signs out, confirm_required asks to confirm, else shows it.
+  function fail(err: unknown, flow: "totp" | "passkey" = "totp") {
+    if (isUnauthenticated(err)) onSignedOut();
+    else if (err instanceof ApiError && err.code === "confirm_required") {
+      setSetup(null);
+      setNaming(false);
+      setConfirming(flow);
+    } else if (err instanceof ApiError && err.code === "too_many_passkeys") setError(TOO_MANY);
+    else setError(errorMessage(err));
+  }
+
+  async function start() {
+    setError("");
+    setBusy(true);
+    try {
+      setCode("");
+      setSetup(await apiFetch<TotpSetup>("POST", "/api/2fa/totp/setup"));
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verify(e: FormEvent) {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    try {
+      const added = await apiFetch<FactorAdded>("POST", "/api/2fa/totp", { code });
+      if (added.recovery_codes) setCodes(added.recovery_codes);
+      else finish();
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addPasskey(e: FormEvent) {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    try {
+      const credential = await createPasskey(await apiFetch("POST", "/api/2fa/passkeys/options"));
+      if (credential === "cancelled") {
+        setError("Passkey setup was cancelled.");
+        return;
+      }
+      const added = await apiFetch<FactorAdded>("POST", "/api/2fa/passkeys", { name, credential });
+      if (added.recovery_codes) setCodes(added.recovery_codes);
+      else finish();
+    } catch (err) {
+      fail(err, "passkey");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function finish() {
+    setSetup(null);
+    setNaming(false);
+    setName("");
+    setCodes(null);
+    onDone();
+  }
+
+  function cancel() {
+    setSetup(null);
+    setNaming(false);
+    setError("");
+  }
+
+  const passkeyNote = !state.passkeys_available
+    ? "Passkeys are not available: this server has no public URL."
+    : state.passkeys_origin !== location.origin
+      ? `Passkeys are not available here. Open ${state.passkeys_origin} to use them.`
+      : !passkeysSupported(state.passkeys_origin)
+        ? "Passkeys are not available in this browser."
+        : null;
+  const full = state.passkeys.length >= MAX_PASSKEYS;
+  return (
+    <>
+      {!state.totp &&
+        (state.totp_available ? (
+          <button type="button" className="btn" onClick={start} disabled={busy}>
+            Add authenticator app
+          </button>
+        ) : (
+          <p>Authenticator apps are not available: this server has no encryption key.</p>
+        ))}
+      {passkeyNote ? (
+        <p>{passkeyNote}</p>
+      ) : (
+        <button
+          type="button"
+          className="btn"
+          onClick={() => {
+            setError("");
+            setNaming(true);
+          }}
+          disabled={busy || full}
+        >
+          Add passkey
+        </button>
+      )}
+      {!passkeyNote && full && <p>{TOO_MANY}</p>}
+      {!setup && !naming && error && <p role="alert">{error}</p>}
+      {confirming && (
+        <ConfirmIdentity
+          hasFactor={state.enabled}
+          hasTotp={!!state.totp}
+          passkeyOrigin={state.passkeys.length > 0 && state.passkeys_available ? state.passkeys_origin : null}
+          onConfirmed={() => {
+            const flow = confirming;
+            setConfirming(null);
+            if (flow === "totp") start();
+            else setNaming(true);
+          }}
+          onCancel={() => setConfirming(null)}
+          onSignedOut={onSignedOut}
+        />
+      )}
+      {naming && (
+        // While the codes show, only their Done closes the dialog, so they are not lost by accident.
+        <Modal title="Add passkey" onClose={codes ? () => {} : cancel}>
+          {codes ? (
+            <RecoveryCodes codes={codes} onDone={finish} />
+          ) : (
+            <form className="stack-form" onSubmit={addPasskey}>
+              <p>Name this passkey so you can tell it apart later, then approve the prompt on your device.</p>
+              <label>
+                Passkey name
+                <input value={name} onChange={(e) => setName(e.target.value)} maxLength={64} required />
+              </label>
+              {error && <p role="alert">{error}</p>}
+              <div className="btn-row">
+                <button type="submit" className="btn btn-primary" disabled={busy}>
+                  Add
+                </button>
+                <button type="button" className="btn" onClick={cancel}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
+        </Modal>
+      )}
+      {setup && (
+        // While the codes show, only their Done closes the dialog, so they are not lost by accident.
+        <Modal title="Add authenticator app" onClose={codes ? () => {} : cancel}>
+          {codes ? (
+            <RecoveryCodes codes={codes} onDone={finish} />
+          ) : (
+            <form className="stack-form" onSubmit={verify}>
+              <p>Scan this QR code with your authenticator app, or type the key into it.</p>
+              <QrCode value={setup.uri} label="QR code for your authenticator app" />
+              <p>
+                Key: <code>{setup.secret.match(/.{1,4}/g)?.join(" ")}</code>
+              </p>
+              <label>
+                Authenticator code
+                <input
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  autoComplete="one-time-code"
+                  inputMode="numeric"
+                  maxLength={32}
+                  required
+                />
+              </label>
+              {error && <p role="alert">{error}</p>}
+              <div className="btn-row">
+                <button type="submit" className="btn btn-primary" disabled={busy}>
+                  Verify
+                </button>
+                <button type="button" className="btn" onClick={cancel}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
+        </Modal>
+      )}
+    </>
+  );
+}

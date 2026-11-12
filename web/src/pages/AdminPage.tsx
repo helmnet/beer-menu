@@ -14,6 +14,7 @@ import SideNav, { GroupKey, groupOf, isPageKey, PageKey } from "../components/Si
 import TapsPanel from "../components/TapsPanel";
 import ThemeControl from "../components/ThemeControl";
 import TokensPanel from "../components/TokensPanel";
+import TwoFactorPanel from "../components/TwoFactorPanel";
 import { loadTheme, saveTheme, Theme } from "../prefs";
 import "./AdminPage.css";
 
@@ -201,6 +202,8 @@ function pageView(
       return <TokensPanel actionSlot={actionSlot} onSignedOut={toLogin} />;
     case "password":
       return <PasswordForm onSignedOut={toLogin} />;
+    case "two-factor":
+      return <TwoFactorPanel onSignedOut={toLogin} />;
     case "brewfather":
       return <BrewfatherPanel onSignedOut={toLogin} />;
   }
