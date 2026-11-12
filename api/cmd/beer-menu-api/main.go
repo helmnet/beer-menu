@@ -97,6 +97,9 @@ func run(cfg config) error {
 	if err := prepareAuth(ctx, db, cfg, time.Now); err != nil {
 		return err
 	}
+	if err := warnNoTwoFactorMethod(ctx, db, cfg); err != nil {
+		return err
+	}
 	// Makes the dummy hash now, so the first unknown-username sign-in costs no more than a
 	// wrong password (research R3).
 	if err := auth.DummyVerify(""); err != nil {

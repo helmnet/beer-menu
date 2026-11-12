@@ -431,3 +431,49 @@ func TestLoadPublicURL(t *testing.T) {
 		}
 	}
 }
+
+func TestWarnNoTwoFactorMethod(t *testing.T) {
+	const warning = "2FA is required but no method can be enrolled"
+	for _, tc := range []struct {
+		name string
+		on   bool
+		cfg  config
+		want bool
+	}{
+		{"required, no method", true, config{}, true},
+		{"not required, no method", false, config{}, false},
+		{"required, encryption key", true, config{SecretKey: make([]byte, 32)}, false},
+		{"required, public URL", true, config{PublicOrigin: "https://menu.example"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logs := captureLog(t)
+			db, err := startAuth(t, config{DataDir: t.TempDir()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := auth.SetRequireTwoFactor(db, tc.on, fixedNow()); err != nil {
+				t.Fatal(err)
+			}
+			if err := warnNoTwoFactorMethod(context.Background(), db, tc.cfg); err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Contains(logs.String(), warning); got != tc.want {
+				t.Fatalf("warned = %v, want %v: %s", got, tc.want, logs)
+			}
+			if tc.want && (!strings.Contains(logs.String(), "BEER_MENU_SECRET_KEY") || !strings.Contains(logs.String(), "BEER_MENU_PUBLIC_URL")) {
+				t.Errorf("warning does not name both settings: %s", logs)
+			}
+		})
+	}
+}
+
+func TestWarnNoTwoFactorMethodReadError(t *testing.T) {
+	db, err := startAuth(t, config{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	if err := warnNoTwoFactorMethod(context.Background(), db, config{}); err == nil {
+		t.Fatal("want error when the setting cannot be read")
+	}
+}

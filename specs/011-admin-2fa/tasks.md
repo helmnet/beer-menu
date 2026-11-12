@@ -251,6 +251,7 @@ factor while the setting is on (quickstart 6).
 - [X] T064 [US5] Implement `PUT /api/2fa/required` and the `two_factor_required` checks in `api/internal/httpapi/twofactor.go` and `api/internal/auth/twofactor.go`; implement the enroll principal in the setup handlers (treated as confirmed; on the first factor `TakeChallenge`, `startSession`, clear `bm_pending`, include `admin` in the reply); register the route and add `/api/2fa/required` to `api/openapi.yaml`
 - [X] T065 [US5] Implement the enroll view in `web/src/pages/AdminPage.tsx` (driven by `LoginForm`'s 202 `enroll`) and the require switch in `web/src/components/TwoFactorPanel.tsx` per T063
 - [X] T065a [US5] Owner decision 2026-11-12: `PUT /api/2fa/required` refuses to turn the setting ON when the server has no encryption key AND no `BEER_MENU_PUBLIC_URL` (no factor could be enrolled; turning OFF is unaffected and still needs the admin's own factor); add the error to `api/openapi.yaml` and `contracts/two-factor.openapi.yaml`, show it in `web/src/components/TwoFactorPanel.tsx`, with Go and web tests
+- [X] T065b [US5] Owner decision 2026-11-12: at startup, `api/cmd/beer-menu-api` logs a warning when `require_2fa` is on and the server has neither an encryption key nor `BEER_MENU_PUBLIC_URL` (admins without a factor cannot finish signing in), with a Go test
 
 **Checkpoint**: quickstart 6.
 

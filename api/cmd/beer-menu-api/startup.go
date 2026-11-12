@@ -174,3 +174,20 @@ func prepareAuth(ctx context.Context, db *sql.DB, cfg config, now func() time.Ti
 	slog.InfoContext(ctx, "first admin created", "username", admin.Username)
 	return nil
 }
+
+// warnNoTwoFactorMethod logs a warning when 2FA is required but the server offers no way to
+// enroll a factor: no encryption key (authenticator apps) and no public URL (passkeys). Admins
+// without a factor then cannot finish signing in.
+func warnNoTwoFactorMethod(ctx context.Context, db *sql.DB, cfg config) error {
+	if cfg.SecretKey != nil || cfg.PublicOrigin != "" {
+		return nil
+	}
+	on, err := auth.RequireTwoFactor(db)
+	if err != nil {
+		return fmt.Errorf("read require 2FA setting: %w", err)
+	}
+	if on {
+		slog.WarnContext(ctx, "2FA is required but no method can be enrolled; admins without a factor cannot sign in. Set BEER_MENU_SECRET_KEY (or BEER_MENU_SECRET_KEY_FILE) or BEER_MENU_PUBLIC_URL")
+	}
+	return nil
+}
