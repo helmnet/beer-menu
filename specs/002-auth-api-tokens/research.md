@@ -37,7 +37,7 @@ rejected. Requirement IDs refer to [spec.md](./spec.md).
   `bm_session`. The database stores only the SHA-256 of the ID. Cookie attributes: `HttpOnly`,
   `SameSite=Strict`, `Path=/`, no `Max-Age` beyond the absolute expiry, and `Secure` unless
   `BEER_MENU_COOKIE_SECURE=false`. Each request looks the session up by hash; it is valid when
-  `now < expires_at` (30 days from sign-in) and `now < last_seen_at + 7 days`. `last_seen_at`
+  `now < expires_at` (30 days from sign-in) and `now < last_seen_at + 1 hour`. `last_seen_at`
   is written at most once a minute. A new ID is minted at every sign-in (FR-017); sign-out,
   password change, reset and admin removal delete rows (FR-011, FR-012, FR-015).
 - **Rationale**: server-side rows make sign-out real and let removal end sessions at once.

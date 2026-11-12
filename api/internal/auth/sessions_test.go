@@ -101,7 +101,7 @@ func TestLookupSessionExpiry(t *testing.T) {
 	uid := insertUser(t, db, "owner")
 	id := mustCreateSession(t, db, uid, t0)
 
-	if got, ok := lookup(t, db, id, t0.Add(time.Hour)); !ok || got != uid {
+	if got, ok := lookup(t, db, id, t0.Add(59*time.Minute)); !ok || got != uid {
 		t.Fatalf("lookup before expiry = %d, %v", got, ok)
 	}
 	if _, ok := lookup(t, db, "not-a-session", t0); ok {
@@ -109,20 +109,33 @@ func TestLookupSessionExpiry(t *testing.T) {
 	}
 
 	idle := mustCreateSession(t, db, uid, t0)
-	if _, ok := lookup(t, db, idle, t0.Add(7*24*time.Hour-time.Second)); !ok {
-		t.Fatal("session invalid just before 7 days idle")
+	if _, ok := lookup(t, db, idle, t0.Add(time.Hour-time.Second)); !ok {
+		t.Fatal("session invalid just before 1 hour idle")
 	}
-	if _, ok := lookup(t, db, idle, t0.Add(14*24*time.Hour-time.Second)); ok {
-		t.Fatal("session valid at 7 days idle")
+	// that use moved last_seen_at, so the session now lasts until 1 hour after it
+	if _, ok := lookup(t, db, idle, t0.Add(2*time.Hour-2*time.Second)); !ok {
+		t.Fatal("session invalid just before 1 hour after its last use")
+	}
+	if _, ok := lookup(t, db, idle, t0.Add(3*time.Hour-2*time.Second)); ok {
+		t.Fatal("session valid at 1 hour idle")
 	}
 
-	daily := mustCreateSession(t, db, uid, t0)
-	for d := 1; d < 30; d++ {
-		if _, ok := lookup(t, db, daily, t0.Add(time.Duration(d)*24*time.Hour)); !ok {
-			t.Fatalf("daily session invalid on day %d", d)
+	unused := mustCreateSession(t, db, uid, t0)
+	if _, ok := lookup(t, db, unused, t0.Add(time.Hour)); ok {
+		t.Fatal("unused session valid at 1 hour")
+	}
+	// the failed lookup deleted it, so an earlier clock cannot revive it
+	if _, ok := lookup(t, db, unused, t0.Add(time.Minute)); ok {
+		t.Fatal("idle-expired session revived")
+	}
+
+	busy := mustCreateSession(t, db, uid, t0)
+	for d := 30 * time.Minute; d < 30*24*time.Hour; d += 30 * time.Minute {
+		if _, ok := lookup(t, db, busy, t0.Add(d)); !ok {
+			t.Fatalf("session used every 30 minutes invalid at %v", d)
 		}
 	}
-	if _, ok := lookup(t, db, daily, t0.Add(30*24*time.Hour)); ok {
+	if _, ok := lookup(t, db, busy, t0.Add(30*24*time.Hour)); ok {
 		t.Fatal("session valid at 30 days")
 	}
 
@@ -193,9 +206,9 @@ func TestSweepExpired(t *testing.T) {
 	db := openDB(t)
 	uid := insertUser(t, db, "owner")
 	mustCreateSession(t, db, uid, t0.Add(-31*24*time.Hour)) // past absolute expiry
-	mustCreateSession(t, db, uid, t0.Add(-8*24*time.Hour))  // idle more than 7 days
+	mustCreateSession(t, db, uid, t0.Add(-time.Hour))       // idle 1 hour
 	mustCreateSession(t, db, uid, t0.Add(time.Hour))        // created in the future
-	live := mustCreateSession(t, db, uid, t0.Add(-time.Hour))
+	live := mustCreateSession(t, db, uid, t0.Add(-59*time.Minute))
 	if err := SweepExpired(db, t0); err != nil {
 		t.Fatal(err)
 	}

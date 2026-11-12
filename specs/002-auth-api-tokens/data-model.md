@@ -36,7 +36,7 @@ A signed-in browser.
 
 Index: `sessions(user_id)` for "end all sessions of this admin".
 
-**Valid** when `created_at <= now`, `now < expires_at` and `now < last_seen_at + 7 days`
+**Valid** when `created_at <= now`, `now < expires_at` and `now < last_seen_at + 1 hour`
 (FR-016; the first check stops a backwards clock jump from extending a session). Expired rows are
 deleted when met and by a sweep at startup.
 
@@ -49,7 +49,7 @@ sign-in ──> active ──(any request, ≥1 min since last write)──> act
               ├── password change ..................... other rows of that admin deleted
               ├── reset-password ...................... all rows of that admin deleted
               ├── admin removed ....................... all rows deleted (cascade)
-              └── idle 7 days or 30 days old .......... invalid, deleted when met
+              └── idle 1 hour or 30 days old ........... invalid, deleted when met
 ```
 
 ## api_tokens

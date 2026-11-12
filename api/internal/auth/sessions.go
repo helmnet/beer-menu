@@ -13,8 +13,8 @@ import (
 const SessionMaxAge = 30 * 24 * time.Hour
 
 const (
-	sessionIdleSecs = 7 * 24 * 60 * 60 // a session unused this long is invalid (FR-016)
-	touchSecs       = 60               // bounds last_seen_at writes to one a minute per session
+	sessionIdleSecs = 60 * 60 // a session unused this long is invalid (FR-016)
+	touchSecs       = 60      // bounds last_seen_at writes to one a minute per session
 )
 
 // CreateSession starts a session for userID at now and returns its ID: 32 random bytes,
@@ -44,7 +44,7 @@ func sessionHash(id string) ([]byte, bool) {
 }
 
 // LookupSession returns the user of session id when it is valid at now: created_at <= now,
-// now < expires_at and now < last_seen_at + 7 days. A valid session's last_seen_at is moved to
+// now < expires_at and now < last_seen_at + 1 hour. A valid session's last_seen_at is moved to
 // now when it is at least a minute old; an invalid one is deleted. ok is false for unknown,
 // malformed or invalid IDs; err is set only for database failures.
 func LookupSession(db *sql.DB, id string, now time.Time) (userID int64, ok bool, err error) {

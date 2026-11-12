@@ -312,7 +312,7 @@ each response carries the required headers.
   password, and take about the same time.
 - **FR-015**: Sessions MUST be stored on the server so they can be ended there. Sign-out MUST end
   the session on the server, not only clear the cookie.
-- **FR-016**: Sessions MUST expire after 7 days without use and 30 days after sign-in, whichever
+- **FR-016**: Sessions MUST expire after 1 hour without use and 30 days after sign-in, whichever
   comes first.
 - **FR-017**: A new session identifier MUST be issued at every sign-in; an identifier set before
   sign-in MUST NOT be reused.
@@ -420,7 +420,7 @@ each response carries the required headers.
   way to end them. Expiring tokens can be added later without breaking clients.
 - Write tokens can call every data endpoint but not admin, token or password management (FR-033).
   This keeps a leaked Home Assistant token from creating new credentials.
-- The idle and absolute session limits (7 and 30 days) suit a home admin used from a few devices.
+- The idle and absolute session limits (1 hour and 30 days) suit a home admin used from a few devices.
 - The per-username limit lets an attacker make a real admin wait out the 15-minute window. The
   owner accepted this trade-off: it never locks an account permanently and needs no proxy
   configuration.
