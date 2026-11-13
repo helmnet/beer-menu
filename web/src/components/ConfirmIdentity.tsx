@@ -1,6 +1,6 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { apiFetch, errorMessage, isUnauthenticated, TwoFactorState } from "../api";
-import { getPasskey, passkeysSupported } from "../webauthn";
+import { getPasskey, passkeysSupported, usePromptAbort } from "../webauthn";
 import Modal from "./Modal";
 
 /** Proof is the second factor a confirm sends. */
@@ -41,6 +41,15 @@ export default function ConfirmIdentity({
   const [proof, setProof] = useState<Proof>(offered[0]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // Closing the dialog does not stop a sent confirm, and the prompt may answer before its abort, so a reply after Cancel must not confirm.
+  const mounted = useRef(true);
+  const promptAbort = usePromptAbort();
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -49,7 +58,9 @@ export default function ConfirmIdentity({
     try {
       let sent: object = {};
       if (hasFactor && proof === "passkey") {
-        const passkey = await getPasskey(await apiFetch("POST", "/api/2fa/confirm/options"));
+        const signal = promptAbort.signal(); // before the options fetch, so a close during it aborts too
+        const passkey = await getPasskey(await apiFetch("POST", "/api/2fa/confirm/options"), signal);
+        if (!mounted.current) return;
         if (passkey === "cancelled") {
           setBusy(false);
           setError("Passkey check was cancelled.");
@@ -64,7 +75,7 @@ export default function ConfirmIdentity({
       else setError(errorMessage(err));
       return;
     }
-    onConfirmed();
+    if (mounted.current) onConfirmed();
   }
 
   function switchTo(p: Proof) {

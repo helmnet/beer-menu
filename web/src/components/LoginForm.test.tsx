@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { owner, stubApi, stubPasskeys, testPassword, webAuthnOptions } from "../testApi";
+import { nextTask, owner, stubApi, stubPasskeys, testPassword, webAuthnOptions } from "../testApi";
 import LoginForm from "./LoginForm";
 
 afterEach(() => {
@@ -254,7 +254,7 @@ describe("LoginForm passkey step", () => {
     const button = screen.getByRole("button", { name: "Use a passkey" }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     usePasskey();
-    await new Promise((r) => setTimeout(r, 0));
+    await nextTask();
     expect(prompt).toHaveBeenCalledTimes(1);
     expect(calls.filter((c) => c.key === "POST /api/session/passkey/options")).toHaveLength(1);
   });

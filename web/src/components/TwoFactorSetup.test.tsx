@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { passkey, stubApi, stubPasskeys, testPassword, twoFactorState, webAuthnOptions } from "../testApi";
+import { nextTask, passkey, stubApi, stubPasskeys, stubPendingPasskey, testPassword, twoFactorState, webAuthnOptions } from "../testApi";
 import TwoFactorSetup from "./TwoFactorSetup";
 
 afterEach(() => {
@@ -184,6 +184,28 @@ describe("TwoFactorSetup passkey", () => {
     expect((await screen.findByRole("alert")).textContent).toBe("Passkey setup was cancelled.");
     expect(screen.getByLabelText("Passkey name")).toBeTruthy();
     expect(calls.map((c) => c.key)).toEqual(["POST /api/2fa/passkeys/options"]);
+    expect(props.onDone).not.toHaveBeenCalled();
+  });
+
+  it("cancels the open prompt on Cancel and adds nothing, even if the prompt then succeeds", async () => {
+    const prompt = stubPendingPasskey();
+    const calls = stubApi({
+      "POST /api/2fa/passkeys/options": webAuthnOptions,
+      "POST /api/2fa/passkeys": { status: 201, body: { passkey: passkey() } },
+    });
+    const props = renderSetup();
+    openAdd();
+    await screen.findByRole("dialog");
+    nameAndAdd("Phone");
+    await waitFor(() => expect(navigator.credentials.create).toHaveBeenCalled());
+    expect(prompt.signal()?.aborted).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(prompt.signal()?.aborted).toBe(true);
+    prompt.approve({ id: "late" });
+    await nextTask();
+    expect(calls.map((c) => c.key)).toEqual(["POST /api/2fa/passkeys/options"]);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
     expect(props.onDone).not.toHaveBeenCalled();
   });
 

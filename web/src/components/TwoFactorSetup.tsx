@@ -1,7 +1,7 @@
 import { Plus } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { Admin, ApiError, apiFetch, errorMessage, FactorAdded, isConfirmRequired, isUnauthenticated, TotpSetup, TwoFactorState } from "../api";
-import { createPasskey, passkeysSupported } from "../webauthn";
+import { createPasskey, passkeysSupported, usePromptAbort } from "../webauthn";
 import { useConfirm } from "./ConfirmIdentity";
 import Modal from "./Modal";
 import QrCode from "./QrCode";
@@ -50,6 +50,7 @@ export default function TwoFactorSetup({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const identity = useConfirm(onSignedOut, setError, state);
+  const promptAbort = usePromptAbort();
 
   // fail handles an API error of flow: 401 signs out, confirm_required asks to confirm, else shows it.
   function fail(err: unknown, flow: "totp" | "passkey" = "totp") {
@@ -94,7 +95,10 @@ export default function TwoFactorSetup({
     setError("");
     setBusy(true);
     try {
-      const credential = await createPasskey(await apiFetch("POST", "/api/2fa/passkeys/options"));
+      const signal = promptAbort.signal();
+      const credential = await createPasskey(await apiFetch("POST", "/api/2fa/passkeys/options"), signal);
+      // Cancel closed the dialog: add nothing and show nothing, even if the prompt answered first.
+      if (signal.aborted) return;
       if (credential === "cancelled") {
         setError("Passkey setup was cancelled.");
         return;
@@ -123,6 +127,7 @@ export default function TwoFactorSetup({
   }
 
   function cancel() {
+    promptAbort.abort();
     setSetup(null);
     setNaming(false);
     setError("");

@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { lowerModals } from "./components/Modal";
 import { createPasskey, getPasskey, passkeysSupported } from "./webauthn";
+
+// Returns a no-op restore by default, so tests outside the lowering block run as before.
+vi.mock("./components/Modal", () => ({ lowerModals: vi.fn(() => () => {}) }));
 
 const creation = {
   publicKey: {
@@ -77,6 +81,18 @@ describe("createPasskey and getPasskey", () => {
     expect(await getPasskey(request)).toBe("cancelled");
   });
 
+  it("pass the signal on and map an aborted prompt (AbortError) to cancelled", async () => {
+    const abort = vi.fn(async () => {
+      throw new DOMException("The operation was aborted.", "AbortError");
+    });
+    stubCredentials(abort, abort);
+    const signal = new AbortController().signal;
+    expect(await createPasskey(creation, signal)).toBe("cancelled");
+    expect(abort).toHaveBeenLastCalledWith({ publicKey: { parsed: "create", ...creation.publicKey }, signal });
+    expect(await getPasskey(request, signal)).toBe("cancelled");
+    expect(abort).toHaveBeenLastCalledWith({ publicKey: { parsed: "get", ...request.publicKey }, signal });
+  });
+
   it("say when the device already has a passkey here", async () => {
     stubCredentials(
       vi.fn(async () => {
@@ -91,5 +107,90 @@ describe("createPasskey and getPasskey", () => {
     const boom = new DOMException("Security problem", "SecurityError");
     stubCredentials(vi.fn(), vi.fn(async () => Promise.reject(boom)));
     await expect(getPasskey(request)).rejects.toBe(boom);
+  });
+});
+
+describe("lowered dialogs during the prompt", () => {
+  const restore = vi.fn();
+  // seen records, from inside the credential call, whether dialogs were lowered and not yet restored.
+  let seen: { lowered: boolean; restored: boolean } | undefined;
+  // during returns a credential call that records seen, then settles with outcome.
+  function during(outcome: () => Promise<unknown>) {
+    return vi.fn(() => {
+      seen = { lowered: vi.mocked(lowerModals).mock.calls.length === 1, restored: restore.mock.calls.length > 0 };
+      return outcome();
+    });
+  }
+
+  beforeEach(() => {
+    vi.mocked(lowerModals).mockClear().mockReturnValue(restore);
+    restore.mockClear();
+    seen = undefined;
+  });
+
+  // expectWrapped checks the call lowered the dialogs before the prompt and restored them once after.
+  function expectWrapped() {
+    expect(seen).toEqual({ lowered: true, restored: false });
+    expect(restore).toHaveBeenCalledTimes(1);
+  }
+
+  it("getPasskey lowers and restores around a credential result", async () => {
+    stubCredentials(vi.fn(), during(async () => ({ toJSON: () => ({ id: "used" }) })));
+    expect(await getPasskey(request)).toEqual({ id: "used" });
+    expectWrapped();
+  });
+
+  it("getPasskey lowers and restores around a cancelled prompt", async () => {
+    stubCredentials(vi.fn(), during(async () => Promise.reject(new DOMException("x", "NotAllowedError"))));
+    expect(await getPasskey(request)).toBe("cancelled");
+    expectWrapped();
+  });
+
+  it("getPasskey lowers and restores around any other error", async () => {
+    const boom = new DOMException("Security problem", "SecurityError");
+    stubCredentials(vi.fn(), during(async () => Promise.reject(boom)));
+    await expect(getPasskey(request)).rejects.toBe(boom);
+    expectWrapped();
+  });
+
+  it("createPasskey lowers and restores, also when the device already has a passkey", async () => {
+    stubCredentials(during(async () => ({ toJSON: () => ({ id: "made" }) })), vi.fn());
+    expect(await createPasskey(creation)).toEqual({ id: "made" });
+    expectWrapped();
+
+    vi.mocked(lowerModals).mockClear();
+    restore.mockClear();
+    stubCredentials(during(async () => Promise.reject(new DOMException("x", "InvalidStateError"))), vi.fn());
+    await expect(createPasskey(creation)).rejects.toThrow("This device already has a passkey for this account.");
+    expectWrapped();
+  });
+
+  it("stop waiting and restore when the signal aborts a prompt that never settles", async () => {
+    const never = vi.fn(() => new Promise<never>(() => {}));
+    stubCredentials(never, never);
+    for (const call of [
+      (signal: AbortSignal) => getPasskey(request, signal),
+      (signal: AbortSignal) => createPasskey(creation, signal),
+    ]) {
+      restore.mockClear();
+      const controller = new AbortController();
+      const reply = call(controller.signal);
+      expect(restore).not.toHaveBeenCalled();
+      controller.abort();
+      expect(await reply).toBe("cancelled");
+      expect(restore).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("return cancelled for an already aborted signal without lowering or prompting", async () => {
+    const get = vi.fn();
+    const create = vi.fn();
+    stubCredentials(create, get);
+    const signal = AbortSignal.abort();
+    expect(await getPasskey(request, signal)).toBe("cancelled");
+    expect(await createPasskey(creation, signal)).toBe("cancelled");
+    expect(lowerModals).not.toHaveBeenCalled();
+    expect(get).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
   });
 });

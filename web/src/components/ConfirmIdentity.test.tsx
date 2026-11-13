@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { stubApi, stubPasskeys, testPassword, webAuthnOptions } from "../testApi";
+import { nextTask, stubApi, stubPasskeys, stubPendingPasskey, testPassword, webAuthnOptions } from "../testApi";
 import ConfirmIdentity from "./ConfirmIdentity";
 
 afterEach(() => {
@@ -8,10 +8,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function setup(hasFactor: boolean) {
+function setup(hasFactor: boolean, more: { hasTotp?: boolean; passkeyOrigin?: string | null } = {}) {
   const props = { onConfirmed: vi.fn(), onCancel: vi.fn(), onSignedOut: vi.fn() };
-  render(<ConfirmIdentity hasFactor={hasFactor} {...props} />);
-  return props;
+  const { unmount } = render(<ConfirmIdentity hasFactor={hasFactor} {...more} {...props} />);
+  return { ...props, unmount };
 }
 
 const type = (label: string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
@@ -84,14 +84,22 @@ describe("ConfirmIdentity", () => {
     confirm();
     await waitFor(() => expect(props.onSignedOut).toHaveBeenCalled());
   });
+
+  it("does not confirm when closed while the confirm is in flight", async () => {
+    const calls = stubApi({ "POST /api/2fa/confirm": { status: 204 } });
+    const props = setup(false);
+    type("Password", testPassword());
+    confirm();
+    props.unmount();
+    await waitFor(() => expect(calls).toHaveLength(1));
+    await nextTask();
+    expect(props.onConfirmed).not.toHaveBeenCalled();
+  });
 });
 
 describe("ConfirmIdentity with a passkey", () => {
-  function setupPasskey(hasTotp: boolean, origin: string | null = location.origin) {
-    const props = { onConfirmed: vi.fn(), onCancel: vi.fn(), onSignedOut: vi.fn() };
-    render(<ConfirmIdentity hasFactor hasTotp={hasTotp} passkeyOrigin={origin} {...props} />);
-    return props;
-  }
+  const setupPasskey = (hasTotp: boolean, passkeyOrigin: string | null = location.origin) =>
+    setup(true, { hasTotp, passkeyOrigin });
 
   it("confirms with the password and a passkey", async () => {
     stubPasskeys({ id: "assertion" });
@@ -129,6 +137,45 @@ describe("ConfirmIdentity with a passkey", () => {
     confirm();
     expect((await screen.findByRole("alert")).textContent).toBe("Passkey check was cancelled.");
     expect(calls.map((c) => c.key)).toEqual(["POST /api/2fa/confirm/options"]);
+    expect(props.onConfirmed).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when closed while the prompt is open, even if the prompt then succeeds", async () => {
+    const prompt = stubPendingPasskey();
+    const calls = stubApi({ "POST /api/2fa/confirm/options": webAuthnOptions, "POST /api/2fa/confirm": { status: 204 } });
+    const props = setupPasskey(false);
+    type("Password", testPassword());
+    confirm();
+    await waitFor(() => expect(navigator.credentials.get).toHaveBeenCalled());
+    props.unmount();
+    prompt.approve({ id: "assertion" });
+    await nextTask();
+    expect(calls.map((c) => c.key)).toEqual(["POST /api/2fa/confirm/options"]);
+    expect(props.onConfirmed).not.toHaveBeenCalled();
+  });
+
+  it("cancels the open prompt when closed", async () => {
+    const prompt = stubPendingPasskey();
+    stubApi({ "POST /api/2fa/confirm/options": webAuthnOptions });
+    const props = setupPasskey(false);
+    type("Password", testPassword());
+    confirm();
+    await waitFor(() => expect(navigator.credentials.get).toHaveBeenCalled());
+    expect(prompt.signal()?.aborted).toBe(false);
+    props.unmount();
+    expect(prompt.signal()?.aborted).toBe(true);
+  });
+
+  it("cancels the prompt when closed while its options load", async () => {
+    stubPasskeys();
+    const calls = stubApi({ "POST /api/2fa/confirm/options": webAuthnOptions });
+    const props = setupPasskey(false);
+    type("Password", testPassword());
+    confirm();
+    props.unmount();
+    await waitFor(() => expect(calls).toHaveLength(1));
+    await nextTask(); // let getPasskey see the aborted signal
+    expect(navigator.credentials.get).not.toHaveBeenCalled();
     expect(props.onConfirmed).not.toHaveBeenCalled();
   });
 
