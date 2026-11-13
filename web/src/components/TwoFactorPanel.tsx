@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useId, useState } from "react";
 import { ApiError, apiFetch, errorMessage, isConfirmRequired, isUnauthenticated, Passkey, RecoveryCodesReply, TwoFactorState } from "../api";
 import { useConfirm } from "./ConfirmIdentity";
 import Modal from "./Modal";
@@ -15,15 +15,15 @@ function when(created: string, lastUsed: string | null): string {
 }
 
 /**
- * TwoFactorPanel is the Two-Factor Sign-In page: the heading above one card showing the
- * signed-in admin's state from GET /api/2fa: whether two-factor sign-in is on, a switch for
- * whether it is required for every admin (PUT /api/2fa/required; disabled with a hint until the
- * admin has a factor of their own, or, to turn it on, while the server can set up neither
- * method), and, when on, how many recovery codes are left (with a warning at 2 or fewer) and a
- * list of the second factors, each with its type, name, added and last-used time, never a
- * secret. A passkey can be renamed inline (PATCH /api/2fa/passkeys/{id}). Each
- * factor can be removed (DELETE /api/2fa/totp or /api/2fa/passkeys/{id}) and 2FA turned off
- * (DELETE /api/2fa), each after the browser asks to be sure. "New recovery codes"
+ * TwoFactorPanel is the Two-Factor Sign-In page: the heading above cards (Status, Second factors,
+ * Recovery codes) showing the signed-in admin's state from GET /api/2fa: whether two-factor
+ * sign-in is on, a switch for whether it is required for every admin (PUT /api/2fa/required;
+ * disabled with a hint until the admin has a factor of their own, or, to turn it on, while the
+ * server can set up neither method), and, when on, a list of the second factors, each with its
+ * type, name, added and last-used time, never a secret, and how many recovery codes are left
+ * (with a warning at 2 or fewer). A passkey can be renamed inline (PATCH
+ * /api/2fa/passkeys/{id}). Each factor can be removed (DELETE /api/2fa/totp or
+ * /api/2fa/passkeys/{id}) and 2FA turned off (DELETE /api/2fa), each after the browser asks to be sure. "New recovery codes"
  * (POST /api/2fa/recovery-codes) shows the new set once with `RecoveryCodes`. A removal refused
  * with 409 two_factor_required says the require setting is on, naming it. A 403
  * confirm_required on any of these opens `ConfirmIdentity` and runs the action again once
@@ -39,6 +39,7 @@ export default function TwoFactorPanel({ onSignedOut }: { onSignedOut: () => voi
   const [renaming, setRenaming] = useState<Passkey | null>(null);
   const [name, setName] = useState("");
   const [renameError, setRenameError] = useState("");
+  const id = useId();
 
   useEffect(() => {
     let cancelled = false;
@@ -126,9 +127,10 @@ export default function TwoFactorPanel({ onSignedOut }: { onSignedOut: () => voi
   return (
     <section className="page">
       <h2 className="page-title">Two-Factor Sign-In</h2>
-      <div className="card">
-        {state && (
-          <>
+      {state && (
+        <>
+          <section className="card" aria-labelledby={`${id}-status`}>
+            <h3 id={`${id}-status`}>Status</h3>
             <p>Two-factor sign-in is {state.enabled ? "on" : "off"}.</p>
             <label>
               <input
@@ -139,103 +141,113 @@ export default function TwoFactorPanel({ onSignedOut }: { onSignedOut: () => voi
               />
               {REQUIRE_LABEL}
             </label>
-            {!state.enabled && <p>Add a second factor for yourself before requiring one for every admin.</p>}
+            {!state.enabled && <p className="muted">Add a second factor for yourself before requiring one for every admin.</p>}
             {state.enabled && !state.required && noMethod && (
-              <p>
+              <p className="muted">
                 The server has no encryption key and no public URL, so no admin could set up a second factor. Ask the
                 server's operator to set one before requiring it.
               </p>
             )}
             {state.enabled && (
-              <>
-                <p>Recovery codes left: {state.recovery_codes_left} of 10.</p>
-                {state.recovery_codes_left <= 2 && (
-                  <p>
-                    <strong>
-                      {state.recovery_codes_left === 0
-                        ? "No recovery codes left."
-                        : `Only ${state.recovery_codes_left} recovery code${state.recovery_codes_left === 1 ? "" : "s"} left.`}{" "}
-                      Make new recovery codes soon.
-                    </strong>
-                  </p>
+              <div className="btn-row">
+                <button type="button" className="btn" onClick={turnOff}>
+                  Turn off 2FA
+                </button>
+              </div>
+            )}
+          </section>
+          <section className="card" aria-labelledby={`${id}-factors`}>
+            <h3 id={`${id}-factors`}>Second factors</h3>
+            {state.enabled && (
+              <ul className="plain-list" aria-label="Second factors">
+                {state.totp && (
+                  <li>
+                    <span>Authenticator app: {when(state.totp.created_at, state.totp.last_used_at)}</span>
+                    <button type="button" className="btn" onClick={() => remove("the authenticator app", "/api/2fa/totp")}>
+                      Remove
+                    </button>
+                  </li>
                 )}
-                <ul className="plain-list" aria-label="Second factors">
-                  {state.totp && (
-                    <li>
-                      <span>Authenticator app: {when(state.totp.created_at, state.totp.last_used_at)}</span>
-                      <button type="button" className="btn" onClick={() => remove("the authenticator app", "/api/2fa/totp")}>
-                        Remove
-                      </button>
+                {state.passkeys.map((p) =>
+                  renaming?.id === p.id ? (
+                    <li key={p.id}>
+                      <form className="inline-form" onSubmit={rename}>
+                        <label>
+                          Passkey name
+                          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={64} required />
+                        </label>
+                        {renameError && <p role="alert">{renameError}</p>}
+                        <div className="btn-row">
+                          <button type="submit" className="btn btn-primary">
+                            Save
+                          </button>
+                          <button type="button" className="btn" onClick={() => setRenaming(null)}>
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
                     </li>
-                  )}
-                  {state.passkeys.map((p) =>
-                    renaming?.id === p.id ? (
-                      <li key={p.id}>
-                        <form className="inline-form" onSubmit={rename}>
-                          <label>
-                            Passkey name
-                            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={64} required />
-                          </label>
-                          {renameError && <p role="alert">{renameError}</p>}
-                          <div className="btn-row">
-                            <button type="submit" className="btn btn-primary">
-                              Save
-                            </button>
-                            <button type="button" className="btn" onClick={() => setRenaming(null)}>
-                              Cancel
-                            </button>
-                          </div>
-                        </form>
-                      </li>
-                    ) : (
-                      <li key={p.id}>
-                        <span>
-                          Passkey "{p.name}": {when(p.created_at, p.last_used_at)}
-                        </span>
-                        <span className="btn-row">
-                          <button type="button" className="btn" onClick={() => startRename(p)}>
-                            Rename
-                          </button>
-                          <button
-                            type="button"
-                            className="btn"
-                            onClick={() => remove(`the passkey "${p.name}"`, `/api/2fa/passkeys/${p.id}`)}
-                          >
-                            Remove
-                          </button>
-                        </span>
-                      </li>
-                    ),
-                  )}
-                </ul>
-                <div className="btn-row">
-                  <button type="button" className="btn" onClick={newCodes}>
-                    New recovery codes
-                  </button>
-                  <button type="button" className="btn" onClick={turnOff}>
-                    Turn off 2FA
-                  </button>
-                </div>
-              </>
+                  ) : (
+                    <li key={p.id}>
+                      <span>
+                        Passkey "{p.name}": {when(p.created_at, p.last_used_at)}
+                      </span>
+                      <span className="btn-row">
+                        <button type="button" className="btn" onClick={() => startRename(p)}>
+                          Rename
+                        </button>
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={() => remove(`the passkey "${p.name}"`, `/api/2fa/passkeys/${p.id}`)}
+                        >
+                          Remove
+                        </button>
+                      </span>
+                    </li>
+                  ),
+                )}
+              </ul>
             )}
             <TwoFactorSetup state={state} onDone={reload} onSignedOut={onSignedOut} />
-            {identity.dialog}
-            {codes && (
-              // Only Done closes the dialog, so the codes are not lost by accident.
-              <Modal title="New recovery codes" onClose={() => {}}>
-                <RecoveryCodes
-                  codes={codes}
-                  onDone={() => {
-                    setCodes(null);
-                    reload();
-                  }}
-                />
-              </Modal>
-            )}
-          </>
-        )}
-        {error && <p role="alert">{error}</p>}
-      </div>
+          </section>
+          {state.enabled && (
+            <section className="card" aria-labelledby={`${id}-codes`}>
+              <h3 id={`${id}-codes`}>Recovery codes</h3>
+              <p>Recovery codes left: {state.recovery_codes_left} of 10.</p>
+              {state.recovery_codes_left <= 2 && (
+                <p>
+                  <strong>
+                    {state.recovery_codes_left === 0
+                      ? "No recovery codes left."
+                      : `Only ${state.recovery_codes_left} recovery code${state.recovery_codes_left === 1 ? "" : "s"} left.`}{" "}
+                    Make new recovery codes soon.
+                  </strong>
+                </p>
+              )}
+              <div className="btn-row">
+                <button type="button" className="btn" onClick={newCodes}>
+                  New recovery codes
+                </button>
+              </div>
+            </section>
+          )}
+          {identity.dialog}
+          {codes && (
+            // Only Done closes the dialog, so the codes are not lost by accident.
+            <Modal title="New recovery codes" onClose={() => {}}>
+              <RecoveryCodes
+                codes={codes}
+                onDone={() => {
+                  setCodes(null);
+                  reload();
+                }}
+              />
+            </Modal>
+          )}
+        </>
+      )}
+      {error && <p role="alert">{error}</p>}
     </section>
   );
 }

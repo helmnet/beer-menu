@@ -36,7 +36,7 @@ export default function RecoveryCodes({ codes, onDone }: { codes: string[]; onDo
         Save these recovery codes somewhere safe. They are shown only once. Each one signs you in once if you
         lose your authenticator or passkeys.
       </p>
-      <ul aria-label="Recovery codes">
+      <ul className="code-list" aria-label="Recovery codes">
         {codes.map((c) => (
           <li key={c}>
             <code>{c}</code>
@@ -55,9 +55,11 @@ export default function RecoveryCodes({ codes, onDone }: { codes: string[]; onDo
       <label>
         <input type="checkbox" checked={saved} onChange={(e) => setSaved(e.target.checked)} />I saved these codes
       </label>
-      <button type="button" className="btn btn-primary" disabled={!saved} onClick={onDone}>
-        Done
-      </button>
+      <div className="btn-row">
+        <button type="button" className="btn btn-primary" disabled={!saved} onClick={onDone}>
+          Done
+        </button>
+      </div>
     </div>
   );
 }
