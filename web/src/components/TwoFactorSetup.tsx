@@ -1,3 +1,4 @@
+import { Plus } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { Admin, ApiError, apiFetch, errorMessage, FactorAdded, isConfirmRequired, isUnauthenticated, TotpSetup, TwoFactorState } from "../api";
 import { createPasskey, passkeysSupported } from "../webauthn";
@@ -135,32 +136,38 @@ export default function TwoFactorSetup({
         ? "Passkeys are not available in this browser."
         : null;
   const full = state.passkeys.length >= MAX_PASSKEYS;
+  const addTotp = !state.totp && state.totp_available;
   return (
     <>
-      {!state.totp &&
-        (state.totp_available ? (
-          <button type="button" className="btn" onClick={start} disabled={busy}>
-            Add authenticator app
-          </button>
-        ) : (
-          <p>Authenticator apps are not available: this server has no encryption key.</p>
-        ))}
-      {passkeyNote ? (
-        <p>{passkeyNote}</p>
-      ) : (
-        <button
-          type="button"
-          className="btn"
-          onClick={() => {
-            setError("");
-            setNaming(true);
-          }}
-          disabled={busy || full}
-        >
-          Add passkey
-        </button>
+      {!state.totp && !state.totp_available && (
+        <p className="muted">Authenticator apps are not available: this server has no encryption key.</p>
       )}
-      {!passkeyNote && full && <p>{TOO_MANY}</p>}
+      {passkeyNote && <p className="muted">{passkeyNote}</p>}
+      {!passkeyNote && full && <p className="muted">{TOO_MANY}</p>}
+      {(addTotp || !passkeyNote) && (
+        <div className="btn-row">
+          {addTotp && (
+            <button type="button" className="btn btn-primary" onClick={start} disabled={busy}>
+              <Plus aria-hidden="true" />
+              Add authenticator app
+            </button>
+          )}
+          {!passkeyNote && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => {
+                setError("");
+                setNaming(true);
+              }}
+              disabled={busy || full}
+            >
+              <Plus aria-hidden="true" />
+              Add passkey
+            </button>
+          )}
+        </div>
+      )}
       {!setup && !naming && error && <p role="alert">{error}</p>}
       {identity.dialog}
       {naming && (

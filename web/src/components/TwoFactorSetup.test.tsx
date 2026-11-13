@@ -116,6 +116,8 @@ describe("TwoFactorSetup authenticator", () => {
     stubApi({});
     renderSetup(twoFactorState({ enabled: true, totp: { created_at: "2026-11-10T12:00:00Z", last_used_at: null } }));
     expect(screen.queryByRole("button", { name: "Add authenticator app" })).toBeNull();
+    // No passkeys in this browser either, so no empty button row (it would add a gap).
+    expect(document.querySelector(".btn-row")).toBeNull();
   });
 
   it("shows other errors and reports a 401 as signed out", async () => {
