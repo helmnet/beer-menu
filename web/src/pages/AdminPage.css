@@ -611,6 +611,14 @@ body:has(> #root > .admin) {
   margin-bottom: 16px;
 }
 
+/* Secondary links sit left of the page action, centered on its row. */
+.admin .page-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
 /* An in-card header's h3 is shorter than its button, so center them. */
 .admin .card > .page-header {
   align-items: center;
@@ -1073,7 +1081,7 @@ body:has(> #root > .admin) {
   }
 
   /* With its h2 and action both hidden, a plain page header is empty: drop its gap like a page-title's. */
-  .admin .page-header:has(> h2) {
+  .admin .page-header:has(> h2):not(:has(a)) {
     margin-bottom: 0;
   }
 

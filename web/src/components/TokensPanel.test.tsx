@@ -46,7 +46,7 @@ describe("TokensPanel", () => {
     stubApi({ "GET /api/tokens": { status: 200, body: [unused] } });
     render(<TokensPanel onSignedOut={vi.fn()} />);
     await screen.findByText("script");
-    const link = screen.getByRole("link", { name: "API docs" });
+    const link = screen.getByRole("link", { name: "See the API docs" });
     expect(link.getAttribute("href")).toBe("/api/docs");
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")?.split(" ")).toEqual(expect.arrayContaining(["noopener", "noreferrer"]));
