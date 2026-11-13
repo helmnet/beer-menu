@@ -141,8 +141,9 @@ compromised.
 - Each feature MUST end in something testable, as stated in its "done when" criteria.
 - A roadmap phase starts only when the phase before it runs on TrueNAS.
 - Each feature is developed on its own branch and merged to `main` by pull request.
-- CI MUST build both images and run all tests on every pull request. A failing check blocks the
-  merge.
+- CI MUST run every check that a pull request's changed files can affect, and every check when
+  the CI definition, its helper scripts, or files shared by both images (the compose file) change.
+  A failing check blocks the merge.
 - Every plan MUST include a Constitution Check against these principles. Any deviation MUST be
   recorded in the plan's Complexity Tracking table with the reason and the simpler option that
   was rejected.
@@ -161,4 +162,4 @@ compromised.
 - Every pull request review MUST check compliance with these principles, including the
   NON-NEGOTIABLE ones (IV and V). `docs/project-brief.md` is the guidance file for product scope.
 
-**Version**: 1.4.0 | **Ratified**: 2026-11-08 | **Last Amended**: 2026-11-12
+**Version**: 1.5.0 | **Ratified**: 2026-11-08 | **Last Amended**: 2026-11-13
