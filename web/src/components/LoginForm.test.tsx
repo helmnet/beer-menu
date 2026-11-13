@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { owner, stubApi, stubPasskeys, testPassword, webAuthnOptions } from "../testApi";
@@ -206,10 +207,16 @@ describe("LoginForm passkey step", () => {
     body: { next: "second_factor", methods, passkeys_origin: origin },
   });
 
-  async function toSecondStep(methods: string[], routes: Parameters<typeof stubApi>[0], origin?: string) {
+  async function toSecondStep(
+    methods: string[],
+    routes: Parameters<typeof stubApi>[0],
+    origin?: string,
+    strict = false,
+  ) {
     const calls = stubApi({ "POST /api/session": pendingWith(methods, origin), ...routes });
     const onSignedIn = vi.fn();
-    render(<LoginForm onSignedIn={onSignedIn} onEnroll={vi.fn()} />);
+    const form = <LoginForm onSignedIn={onSignedIn} onEnroll={vi.fn()} />;
+    render(strict ? <StrictMode>{form}</StrictMode> : form);
     submit("owner", testPassword());
     await waitFor(() => expect(screen.queryByLabelText("Password")).toBeNull());
     return { calls, onSignedIn };
@@ -217,26 +224,72 @@ describe("LoginForm passkey step", () => {
 
   const usePasskey = () => fireEvent.click(screen.getByRole("button", { name: "Use a passkey" }));
 
-  it("offers a choice when more than one method is usable", async () => {
-    stubPasskeys();
-    await toSecondStep(["totp", "passkey"], {});
+  it("offers a choice and starts no prompt when more than one method is usable", async () => {
+    const prompt = stubPasskeys();
+    const { calls } = await toSecondStep(["totp", "passkey", "recovery"], {});
     expect(screen.getByRole("button", { name: "Use a passkey" })).toBeTruthy();
     expect(screen.getByLabelText("Authenticator code")).toBeTruthy();
+    expect(prompt).not.toHaveBeenCalled();
+    expect(calls.map((c) => c.key)).toEqual(["POST /api/session"]);
   });
 
-  it("signs in with a passkey", async () => {
+  it("signs in with a passkey at once when it is the only method", async () => {
     stubPasskeys({ id: "assertion" });
-    const { calls, onSignedIn } = await toSecondStep(["passkey"], {
+    const { calls, onSignedIn } = await toSecondStep(["passkey", "recovery"], {
       "POST /api/session/passkey/options": webAuthnOptions,
       "POST /api/session/passkey": { status: 200, body: twoFactorOwner },
     });
-    expect(screen.queryByLabelText("Authenticator code")).toBeNull();
-    usePasskey();
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith(twoFactorOwner));
     expect(calls.slice(1)).toEqual([
       { key: "POST /api/session/passkey/options", body: undefined },
       { key: "POST /api/session/passkey", body: { id: "assertion" } },
     ]);
+  });
+
+  it("shows the step busy while the automatic prompt is open, and starts it once", async () => {
+    const prompt = stubPasskeys();
+    prompt.mockReturnValue(new Promise(() => {}));
+    const { calls } = await toSecondStep(["passkey"], { "POST /api/session/passkey/options": webAuthnOptions }, undefined, true);
+    await waitFor(() => expect(prompt).toHaveBeenCalled());
+    const button = screen.getByRole("button", { name: "Use a passkey" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    usePasskey();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(prompt).toHaveBeenCalledTimes(1);
+    expect(calls.filter((c) => c.key === "POST /api/session/passkey/options")).toHaveLength(1);
+  });
+
+  it("starts no prompt when this browser cannot use passkeys", async () => {
+    const { calls } = await toSecondStep(["passkey"], {});
+    expect(screen.getByText("Passkeys are not available in this browser.")).toBeTruthy();
+    expect(calls.map((c) => c.key)).toEqual(["POST /api/session"]);
+  });
+
+  it("leaves the step without an error when the automatic prompt is refused, and the button retries", async () => {
+    const prompt = stubPasskeys({ id: "assertion" });
+    let refuse = () => {};
+    // The refusal waits until the step has rendered with its button disabled, as a real prompt does.
+    prompt.mockImplementationOnce(
+      () => new Promise((_, reject) => (refuse = () => reject(new DOMException("No user gesture.", "NotAllowedError")))),
+    );
+    const { calls, onSignedIn } = await toSecondStep(["passkey", "recovery"], {
+      "POST /api/session/passkey/options": webAuthnOptions,
+      "POST /api/session/passkey": { status: 200, body: twoFactorOwner },
+    });
+    const button = screen.getByRole("button", { name: "Use a passkey" }) as HTMLButtonElement;
+    await waitFor(() => expect(prompt).toHaveBeenCalled());
+    expect(button.disabled).toBe(true);
+    refuse();
+    await waitFor(() => expect(button.disabled).toBe(false));
+    // autoFocus missed the button while it was disabled, so focus must be moved to it.
+    expect(document.activeElement).toBe(button);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("button", { name: "Use a recovery code" })).toBeTruthy();
+    expect(onSignedIn).not.toHaveBeenCalled();
+    usePasskey();
+    await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith(twoFactorOwner));
+    expect(prompt).toHaveBeenCalledTimes(2);
+    expect(calls.map((c) => c.key).filter((k) => k === "POST /api/session/passkey")).toHaveLength(1);
   });
 
   it("keeps the step open and offers the code when the prompt is cancelled", async () => {
@@ -250,23 +303,25 @@ describe("LoginForm passkey step", () => {
     expect(onSignedIn).not.toHaveBeenCalled();
   });
 
-  it("says when the passkey was not accepted", async () => {
+  it("says when the automatic passkey was not accepted", async () => {
     stubPasskeys();
     await toSecondStep(["passkey"], {
       "POST /api/session/passkey/options": webAuthnOptions,
       "POST /api/session/passkey": { status: 401, body: { error: "passkey_failed", message: "x" } },
     });
-    usePasskey();
     expect((await screen.findByRole("alert")).textContent).toBe("The passkey was not accepted.");
     expect(screen.getByRole("button", { name: "Use a passkey" })).toBeTruthy();
   });
 
   it("returns to the password step when the pending sign-in ended", async () => {
     stubPasskeys();
-    await toSecondStep(["passkey"], {
+    // The automatic prompt ends the step at once, so this does not wait for it like toSecondStep.
+    stubApi({
+      "POST /api/session": pendingWith(["passkey"]),
       "POST /api/session/passkey/options": { status: 401, body: { error: "unauthenticated", message: "x" } },
     });
-    usePasskey();
+    render(<LoginForm onSignedIn={vi.fn()} onEnroll={vi.fn()} />);
+    submit("owner", testPassword());
     expect((await screen.findByRole("alert")).textContent).toBe("Sign-in timed out, start again.");
     expect(screen.getByLabelText("Password")).toBeTruthy();
   });

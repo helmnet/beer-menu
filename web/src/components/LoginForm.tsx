@@ -1,4 +1,5 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { Admin, ApiError, apiFetch, errorMessage, isUnauthenticated, SignInPending } from "../api";
 import { getPasskey, passkeysSupported } from "../webauthn";
 
@@ -10,11 +11,13 @@ import { getPasskey, passkeysSupported } from "../webauthn";
  * several: an authenticator code sent to POST /api/session/totp, and "Use a passkey", which runs
  * the device prompt for POST /api/session/passkey/options and sends the result to
  * POST /api/session/passkey. Passkeys are offered only at `passkeys_origin` in a capable browser;
- * elsewhere a hint names the address to use. While recovery codes remain, "Use a recovery code"
- * switches to a recovery code sent to POST /api/session/recovery ("Use another method" switches
- * back), and the recovery code is asked for at once when no other method is usable. A wrong
- * code, a refused passkey or a cancelled prompt keeps the step, and an ended pending sign-in
- * (401 `unauthenticated`) returns to the password step. Cancel deletes the pending sign-in with
+ * elsewhere a hint names the address to use. When a usable passkey is the only method besides
+ * recovery codes, the prompt opens at once; if the browser refuses it or the admin closes it, the
+ * step stays without an error so "Use a passkey" can try again. While recovery codes remain,
+ * "Use a recovery code" switches to a recovery code sent to POST /api/session/recovery ("Use
+ * another method" switches back), and the recovery code is asked for at once when no other
+ * method is usable. A wrong code, a refused passkey or a cancelled prompt keeps the step, and an
+ * ended pending sign-in (401 `unauthenticated`) returns to the password step. Cancel deletes the pending sign-in with
  * DELETE /api/session/pending. When 2FA is required and the admin has no factor (202 `enroll`)
  * it calls `onEnroll`. `notice` is a message shown when the form first appears.
  */
@@ -34,10 +37,9 @@ export default function LoginForm({
   const [recovery, setRecovery] = useState(false);
   const [error, setError] = useState(notice);
   const [busy, setBusy] = useState(false);
+  const passkeyButton = useRef<HTMLButtonElement>(null);
 
-  const totp = !!second?.methods?.includes("totp");
-  const passkeyListed = !!second?.methods?.includes("passkey");
-  const passkey = passkeyListed && passkeysSupported(second?.passkeys_origin);
+  const { totp, passkeyListed, passkey } = usableMethods(second);
   const otherMethod = totp || passkey;
   const recoveryStep = !!second?.methods?.includes("recovery") && (recovery || !otherMethod);
 
@@ -53,6 +55,14 @@ export default function LoginForm({
         setCode("");
         setRecovery(false);
         setSecond(reply);
+        // A passkey-only admin gets the prompt at once, still close to the Sign in click's gesture.
+        const methods = usableMethods(reply);
+        if (methods.passkey && !methods.totp) {
+          await signInWithPasskey(true);
+          // autoFocus missed the button while the prompt kept it disabled, so focus it once enabled.
+          flushSync(() => setBusy(false));
+          passkeyButton.current?.focus();
+        }
       } else onEnroll();
     } catch (err) {
       setError(loginError(err));
@@ -74,13 +84,16 @@ export default function LoginForm({
     }
   }
 
-  async function signInWithPasskey() {
+  // signInWithPasskey runs the passkey prompt; an `auto` start that is refused or closed
+  // (NotAllowedError) just leaves the step and its button, with no error.
+  async function signInWithPasskey(auto = false) {
     setError("");
     setBusy(true);
     try {
       const assertion = await getPasskey(await apiFetch("POST", "/api/session/passkey/options"));
-      if (assertion === "cancelled") setError("Passkey sign-in was cancelled.");
-      else onSignedIn(await apiFetch<Admin>("POST", "/api/session/passkey", assertion));
+      if (assertion === "cancelled") {
+        if (!auto) setError("Passkey sign-in was cancelled.");
+      } else onSignedIn(await apiFetch<Admin>("POST", "/api/session/passkey", assertion));
     } catch (err) {
       stepFailed(err);
     } finally {
@@ -152,7 +165,14 @@ export default function LoginForm({
       <form key="second" className="stack-form" onSubmit={submitCode}>
         <h2>Sign in</h2>
         {passkey && (
-          <button type="button" className="btn" onClick={signInWithPasskey} disabled={busy} autoFocus={!totp}>
+          <button
+            ref={passkeyButton}
+            type="button"
+            className="btn"
+            onClick={() => signInWithPasskey()}
+            disabled={busy}
+            autoFocus={!totp}
+          >
             Use a passkey
           </button>
         )}
@@ -223,6 +243,13 @@ export default function LoginForm({
       </button>
     </form>
   );
+}
+
+// usableMethods says which second-factor methods this page can offer for a pending sign-in.
+function usableMethods(pending: SignInPending | null) {
+  const totp = !!pending?.methods?.includes("totp");
+  const passkeyListed = !!pending?.methods?.includes("passkey");
+  return { totp, passkeyListed, passkey: passkeyListed && passkeysSupported(pending?.passkeys_origin) };
 }
 
 function loginError(err: unknown): string {
