@@ -652,6 +652,20 @@ body:has(> #root > .admin) {
   background: var(--scrim, rgba(11, 12, 15, 0.55));
 }
 
+/*
+ * Passkey-prompt state (lowerModals): ::backdrop exists only for modal dialogs, so the top
+ * dialog paints the scrim itself, and its class keeps it above the other lowered dialogs.
+ */
+.admin dialog.modal.modal-lowered {
+  inset: 0;
+  z-index: 1000;
+}
+
+.admin dialog.modal.modal-lowered-top {
+  z-index: 1001;
+  box-shadow: 0 0 0 100vmax var(--scrim);
+}
+
 .admin dialog.modal > h2 {
   margin: 0 52px 16px 0;
 }

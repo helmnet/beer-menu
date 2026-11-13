@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { lowerModals } from "./components/Modal";
 import { createPasskey, getPasskey, passkeysSupported } from "./webauthn";
+
+// Returns a no-op restore by default, so tests outside the lowering block run as before.
+vi.mock("./components/Modal", () => ({ lowerModals: vi.fn(() => () => {}) }));
 
 const creation = {
   publicKey: {
@@ -91,5 +95,61 @@ describe("createPasskey and getPasskey", () => {
     const boom = new DOMException("Security problem", "SecurityError");
     stubCredentials(vi.fn(), vi.fn(async () => Promise.reject(boom)));
     await expect(getPasskey(request)).rejects.toBe(boom);
+  });
+});
+
+describe("lowered dialogs during the prompt", () => {
+  const restore = vi.fn();
+  // seen records, from inside the credential call, whether dialogs were lowered and not yet restored.
+  let seen: { lowered: boolean; restored: boolean } | undefined;
+  // during returns a credential call that records seen, then settles with outcome.
+  function during(outcome: () => Promise<unknown>) {
+    return vi.fn(() => {
+      seen = { lowered: vi.mocked(lowerModals).mock.calls.length === 1, restored: restore.mock.calls.length > 0 };
+      return outcome();
+    });
+  }
+
+  beforeEach(() => {
+    vi.mocked(lowerModals).mockClear().mockReturnValue(restore);
+    restore.mockClear();
+    seen = undefined;
+  });
+
+  // expectWrapped checks the call lowered the dialogs before the prompt and restored them once after.
+  function expectWrapped() {
+    expect(seen).toEqual({ lowered: true, restored: false });
+    expect(restore).toHaveBeenCalledTimes(1);
+  }
+
+  it("getPasskey lowers and restores around a credential result", async () => {
+    stubCredentials(vi.fn(), during(async () => ({ toJSON: () => ({ id: "used" }) })));
+    expect(await getPasskey(request)).toEqual({ id: "used" });
+    expectWrapped();
+  });
+
+  it("getPasskey lowers and restores around a cancelled prompt", async () => {
+    stubCredentials(vi.fn(), during(async () => Promise.reject(new DOMException("x", "NotAllowedError"))));
+    expect(await getPasskey(request)).toBe("cancelled");
+    expectWrapped();
+  });
+
+  it("getPasskey lowers and restores around any other error", async () => {
+    const boom = new DOMException("Security problem", "SecurityError");
+    stubCredentials(vi.fn(), during(async () => Promise.reject(boom)));
+    await expect(getPasskey(request)).rejects.toBe(boom);
+    expectWrapped();
+  });
+
+  it("createPasskey lowers and restores, also when the device already has a passkey", async () => {
+    stubCredentials(during(async () => ({ toJSON: () => ({ id: "made" }) })), vi.fn());
+    expect(await createPasskey(creation)).toEqual({ id: "made" });
+    expectWrapped();
+
+    vi.mocked(lowerModals).mockClear();
+    restore.mockClear();
+    stubCredentials(during(async () => Promise.reject(new DOMException("x", "InvalidStateError"))), vi.fn());
+    await expect(createPasskey(creation)).rejects.toThrow("This device already has a passkey for this account.");
+    expectWrapped();
   });
 });

@@ -1,3 +1,5 @@
+import { lowerModals } from "./components/Modal";
+
 /**
  * WebAuthnOptions is the API's `{ publicKey }` options for a passkey prompt, in the WebAuthn
  * Level 3 JSON form the browser's parse helpers take.
@@ -49,7 +51,10 @@ export function getPasskey(options: WebAuthnOptions<PublicKeyCredentialRequestOp
   );
 }
 
+// prompt lowers open dialogs while the device prompt runs, so password-manager prompts drawn in
+// the page can be used, and restores them however the prompt ends.
 async function prompt(run: () => Promise<Credential | null>): Promise<PasskeyReply> {
+  const restore = lowerModals();
   try {
     const cred = (await run()) as PublicKeyCredential | null;
     return cred ? cred.toJSON() : "cancelled";
@@ -59,5 +64,7 @@ async function prompt(run: () => Promise<Credential | null>): Promise<PasskeyRep
       throw new Error("This device already has a passkey for this account.");
     }
     throw err;
+  } finally {
+    restore();
   }
 }
