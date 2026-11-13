@@ -225,3 +225,19 @@ then enrolls at next sign-in if it is on.
 and assertion responses for Go handler tests, including bad origin, bad RP ID, missing UV flag,
 wrong user, replayed challenge and unknown credential. Web tests stub `navigator.credentials`.
 A real device run is a manual quickstart step (scenario 4).
+
+## R14. Real-device quickstart (T070), 2026-11-13
+
+The owner ran the quickstart on real devices against production (`v0.10.x` plus PR #38).
+
+- **Authenticator app (TOTP):** worked first time.
+- **Passkeys (1Password):** the first two attempts to add one failed with "Error validating the
+  authenticator response". In go-webauthn v0.18.2 that message comes only from the RP ID hash,
+  user presence and user verification checks. The third attempt worked, and the cause is not
+  known. 1Password asked for a fingerprint even with the vault unlocked, so a missing
+  user-verification flag is unlikely. PR #39 now logs the library's detail line for these
+  checks; if it happens again, read the log before changing the user-verification setting.
+- **Passkey sign-in:** works on the laptop, and on the phone in the installed app and in a
+  browser tab.
+- **Change after testing:** when passkeys are the only second factor, the sign-in step now
+  opens the passkey prompt by itself (PR #40). The owner checked it works.
