@@ -1,19 +1,49 @@
-# Pull request and main-branch checks, skipped when only Markdown files change. Never merge while
-# any job below (api, web, openapi, images) or secrets.yml fails; see "Required checks" in docs/development.md.
+# Pull request and main-branch checks; runs on every pull request and push to main. The changes job
+# decides which checks run (rules in .github/ci/changed-sides.sh); skipped checks report Skipped.
+# Never merge while any of changes, api, web, openapi, images or secrets (the check from secrets.yml)
+# fails or is pending; see "Required checks" in docs/development.md.
 name: ci
 
 on:
   pull_request:
-    paths-ignore: ['**/*.md']
   push:
     branches: [main]
-    paths-ignore: ['**/*.md']
 
 permissions:
   contents: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.sides.outputs.api }}
+      web: ${{ steps.sides.outputs.web }}
+      services: ${{ steps.sides.outputs.services }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: sh .github/ci/changed-sides.test.sh
+      - id: sides
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          # On a pull request HEAD is the merge commit into the base tip, so the two-dot diff is
+          # exactly the pull request's changes. --no-renames lists a moved file under its old path too.
+          # When the diff cannot be trusted (first push, base gone after a force push), run every check.
+          # -z stops git quoting names ("api/caf\303\251.go" matches no rule); a newline in a name only
+          # splits it, and the first part keeps its real directory. pipefail: a failed diff runs all.
+          set -o pipefail
+          if [[ -z "$BASE" || "$BASE" =~ ^0+$ ]] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null \
+            || ! changed=$(git diff --no-renames --name-only -z "$BASE" HEAD | tr '\0' '\n'); then
+            changed=ALL
+          fi
+          printf '%s\n' "$changed" | sh .github/ci/changed-sides.sh | tee -a "$GITHUB_OUTPUT"
+
   api:
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -30,6 +60,8 @@ jobs:
       - run: go test ./...
 
   web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -49,6 +81,8 @@ jobs:
       - run: npm run build
 
   openapi:
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -60,17 +94,29 @@ jobs:
       - run: npx --yes @redocly/cli@2.71.0 lint api/openapi.yaml
 
   images:
+    needs: changes
+    if: needs.changes.outputs.api == 'true' || needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
+    env:
+      SERVICES: ${{ needs.changes.outputs.services }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Builds both images even on a one-sided change, because the smoke test starts the whole stack.
       # Tags both images with the compose file's names, so the smoke test never pulls from GHCR.
       - run: docker compose build
-      # A scratch image with no group part runs as GID 0, so both parts must be set and non-root.
-      - name: Check the images' default user is non-root
+      - name: List the changed images
         run: |
-          for img in $(docker compose config --images); do
+          # shellcheck disable=SC2086 # SERVICES may hold two service names
+          images=$(docker compose config --images $SERVICES)
+          # An empty list would let the three checks below pass without checking anything.
+          if [[ -z "${images//[[:space:]]/}" ]]; then echo "::error::no images for '$SERVICES'"; exit 1; fi
+          echo "IMAGES=$(tr '\n' ' ' <<<"$images")" | tee -a "$GITHUB_ENV"
+      # A scratch image with no group part runs as GID 0, so both parts must be set and non-root.
+      - name: Check the changed images' default user is non-root
+        run: |
+          for img in $IMAGES; do
             u=$(docker image inspect -f '{{.Config.User}}' "$img")
             user=${u%%:*} group=${u#*:}
             if [[ "$u" != *:* || -z "$user" || -z "$group" ]]; then
@@ -83,9 +129,9 @@ jobs:
             done
             echo "$img runs as $u"
           done
-      - name: Check both images refuse to run as root
+      - name: Check the changed images refuse to run as root
         run: |
-          for img in $(docker compose config --images); do
+          for img in $IMAGES; do
             for opts in "--user 0:0" "--user 12345:0" "--user 12345:12345 --group-add 0"; do
               # shellcheck disable=SC2086 # opts holds several flags
               out=$(timeout 30 docker run --rm $opts "$img" 2>&1) || true
@@ -97,9 +143,9 @@ jobs:
           done
       # Fails only on HIGH or CRITICAL findings that have a fixed version available.
       # Scans a saved tarball so the third-party scanner never gets the Docker socket (root on the runner).
-      - name: Scan both images for vulnerabilities
+      - name: Scan the changed images for vulnerabilities
         run: |
-          for img in $(docker compose config --images); do
+          for img in $IMAGES; do
             docker save -o "$RUNNER_TEMP/image.tar" "$img"
             docker run --rm -v "$RUNNER_TEMP/image.tar:/image.tar:ro" \
               aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c \

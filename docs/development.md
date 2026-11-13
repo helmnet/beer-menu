@@ -65,28 +65,45 @@ Production pins an exact `X.Y.Z` in the `truenas_apps` repo and never uses `late
 
 ## Required checks
 
-The `ci` workflow runs on every pull request and every push to `main`, except changes that touch
-only Markdown files:
+The `ci` workflow runs on every pull request and every push to `main`. Its first job, `changes`,
+lists the changed files with `git diff --no-renames --name-only -z` against the base commit and sets
+which checks run. The rules live in `.github/ci/changed-sides.sh`, one `case` where the first match
+wins:
 
-- `api`: `go vet` and `go test` in `api/`.
-- `web`: `npm ci`, lint, tests and build in `web/`.
-- `openapi`: Redocly lint of `api/openapi.yaml`.
-- `images`: builds both images, checks their default user is non-root and that both refuse to
-  run as root, scans both with Trivy for HIGH or CRITICAL vulnerabilities that have a fix, and
-  runs a smoke test of the stack as UID/GID `12345:12345`.
+| Changed path | Side |
+|--------------|------|
+| `*.md` | neither (Markdown never adds checks) |
+| `api/*` | api |
+| `web/*`, `.tool-versions` | web |
+| `.github/workflows/ci.yml`, `.github/ci/*`, `docker-compose.yaml` | both |
+| anything else (`specs/`, other workflows, dependabot config) | neither |
 
-The `secrets` workflow runs on its own on every pull request and every push to `main`, Markdown-only
-changes included:
+A pull request runs the checks for every side its files touch:
+
+| Check | What it does | Runs when |
+|-------|--------------|-----------|
+| `changes` | runs the classifier self-check, then sets the sides | always |
+| `api` | `go vet` and `go test` in `api/` | api side changed |
+| `openapi` | Redocly lint of `api/openapi.yaml` | api side changed |
+| `web` | `npm ci`, lint, tests and build in `web/` | web side changed |
+| `images` | builds both images; checks the changed sides' images run as a non-root user and refuse to run as root, and scans them with Trivy for HIGH or CRITICAL vulnerabilities that have a fix; runs a smoke test of the stack as UID/GID `12345:12345` | either side changed |
+
+`images` always builds both images, because the smoke test starts the whole stack, but checks and
+scans only the changed sides' images. If the diff cannot be trusted (no base commit, for example
+on the first push or after a force push, or `git diff` fails), every check runs.
+
+The `secrets` workflow runs on its own on every pull request and every push to `main`:
 
 - `secrets`: gitleaks scan of the full git history.
 
-Never merge a pull request while any of the five checks (`api`, `web`, `openapi`, `images`,
-`secrets`) is failing or pending; on a Markdown-only pull request only `secrets` runs, so it is
-the only check to wait for. If `ci` did not run, confirm that the pull request really changes only
-Markdown before merging: `git diff --no-renames --name-only origin/main...<branch> | grep -v '\.md$'`
-must print nothing. GitHub's path filter reads only the first 300 changed files, so it is not proof
-on its own. The repo is private on a free GitHub org plan, which has no
-branch protection, so this rule is followed by hand. When the repo goes public, turn on branch
-protection for `main` requiring all five checks and up-to-date branches. A skipped workflow leaves
-its required checks pending, so Markdown-only pull requests would then block unless that is handled
-at that time (for example, require only `secrets`, or add a no-op job).
+A check skipped by `changes` reports Skipped and counts as passing. Never merge a pull request while
+any of the six checks (`changes`, `api`, `web`, `openapi`, `images`, `secrets`) is failing or
+pending. `changes` must be one of them: if it fails, every check that depends on it is skipped and
+would look green. A pull request that changes `.github/workflows/ci.yml` or `.github/ci/` must
+show `api`, `web`, `openapi` and `images` as run, not Skipped: it runs its own copy of the rules,
+so Skipped there means the rules were changed to skip checks. A change that adds a file the builds
+depend on outside `api/` and `web/` must add it to `.github/ci/changed-sides.sh` in the same change.
+
+The repo is private on a free GitHub org plan, which has no branch protection, so this rule is
+followed by hand. When the repo goes public, turn on branch protection for `main` requiring all six
+checks and up-to-date branches.
