@@ -46,24 +46,17 @@ type confirmBody struct {
 // when the caller has a second factor, exactly one proof (code, recovery_code, which is spent,
 // or passkey, an assertion for the options of POST /api/2fa/confirm/options), then stamps the
 // session as confirmed for auth.ConfirmWindow and answers 204 (research R9). A missing, extra
-// or unexpected proof is 400. The rate limit for the username is checked first (429); a wrong
-// password is 403 wrong_password, a wrong code 403 invalid_code and a refused passkey 403
-// passkey_failed, and each counts as a sign-in failure.
+// or unexpected proof is 400. Then checkConfirmPassword runs (429, 403 wrong_password); a wrong
+// code is 403 invalid_code and a refused passkey 403 passkey_failed, and each counts as a
+// sign-in failure.
 func confirmIdentity(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body confirmBody
 		if !decodeJSON(w, r, &body, maxWebAuthnBody) {
 			return
 		}
-		p, _ := principalFrom(r.Context())
-		admin, err := auth.GetAdmin(deps.DB, p.AdminID)
-		if errors.Is(err, auth.ErrNotFound) {
-			// Removed between the session lookup and now.
-			writeError(w, http.StatusUnauthorized, "unauthenticated", "Sign in or send a valid API token.")
-			return
-		}
-		if err != nil {
-			writeInternal(w, r, err)
+		p, admin, ok := callerAdmin(w, r, deps)
+		if !ok {
 			return
 		}
 		proofs := 0
@@ -76,24 +69,12 @@ func confirmIdentity(deps Deps) http.Handler {
 			writeError(w, http.StatusBadRequest, "invalid_request", "Send the password, plus one code when two-factor sign-in is on.")
 			return
 		}
-		if retry, ok := deps.Limiter.Check(admin.Username); !ok {
-			slog.WarnContext(r.Context(), "sign-in rate limited", "username", admin.Username)
-			writeRateLimited(w, retry)
+		if !checkConfirmPassword(w, r, deps, admin, body.Password) {
 			return
 		}
 		failed := false
 		defer func() { deps.Limiter.Done(admin.Username, failed) }()
-		err = auth.CheckPassword(deps.DB, admin.ID, body.Password)
-		if errors.Is(err, auth.ErrWrongPassword) {
-			failed = true
-			slog.WarnContext(r.Context(), "confirm failed, wrong password", "username", admin.Username)
-			writeError(w, http.StatusForbidden, "wrong_password", "The current password is wrong.")
-			return
-		}
-		if err != nil {
-			writeAuthError(w, r, err)
-			return
-		}
+		var err error
 		ok, failCode, failMsg := true, "invalid_code", "That code did not work."
 		switch {
 		case body.Code != nil:
@@ -161,12 +142,10 @@ func decodeCode(w http.ResponseWriter, r *http.Request) (string, bool) {
 	return body.Code, true
 }
 
-// setupCaller returns the principal (a session, or on AccessEnroll routes an enroll pending)
-// and admin of a factor setup or removal route once the caller may make the change: an admin
-// removed since the credential lookup is 401, and a session without a recent confirm is 403
-// confirm_required; an enroll pending counts as confirmed. Otherwise it answers and returns
+// callerAdmin returns the principal and its admin (with an enroll pending, the admin signing
+// in). An admin removed since the credential lookup is 401, another error 500; then it returns
 // false.
-func setupCaller(w http.ResponseWriter, r *http.Request, deps Deps) (principal, auth.Admin, bool) {
+func callerAdmin(w http.ResponseWriter, r *http.Request, deps Deps) (principal, auth.Admin, bool) {
 	p, _ := principalFrom(r.Context())
 	admin, err := auth.GetAdmin(deps.DB, p.userID())
 	if errors.Is(err, auth.ErrNotFound) {
@@ -175,6 +154,41 @@ func setupCaller(w http.ResponseWriter, r *http.Request, deps Deps) (principal, 
 	}
 	if err != nil {
 		writeInternal(w, r, err)
+		return p, admin, false
+	}
+	return p, admin, true
+}
+
+// checkConfirmPassword checks password, the current password of admin, under the sign-in rate
+// limit for its username: 429 too_many_attempts when limited, 403 wrong_password (counted as a
+// sign-in failure) when wrong, 503 busy or 500 on error; then it returns false. When it returns
+// true the attempt is still open: the caller must end it with deps.Limiter.Done.
+func checkConfirmPassword(w http.ResponseWriter, r *http.Request, deps Deps, admin auth.Admin, password string) bool {
+	if !startAttempt(w, r, deps, admin.Username) {
+		return false
+	}
+	err := auth.CheckPassword(deps.DB, admin.ID, password)
+	if err == nil {
+		return true
+	}
+	wrong := errors.Is(err, auth.ErrWrongPassword)
+	deps.Limiter.Done(admin.Username, wrong)
+	if wrong {
+		slog.WarnContext(r.Context(), "confirm failed, wrong password", "username", admin.Username)
+		writeError(w, http.StatusForbidden, "wrong_password", "The current password is wrong.")
+		return false
+	}
+	writeAuthError(w, r, err)
+	return false
+}
+
+// setupCaller returns the principal (a session, or on AccessEnroll routes an enroll pending)
+// and admin of a factor setup or removal route once the caller may make the change: callerAdmin
+// must pass, and a session without a recent confirm is 403 confirm_required; an enroll pending
+// counts as confirmed. Otherwise it answers and returns false.
+func setupCaller(w http.ResponseWriter, r *http.Request, deps Deps) (principal, auth.Admin, bool) {
+	p, admin, ok := callerAdmin(w, r, deps)
+	if !ok {
 		return p, admin, false
 	}
 	return p, admin, requireConfirmed(w, r, deps, p)
@@ -386,14 +400,33 @@ func finishPasskeySetup(deps Deps) http.Handler {
 	})
 }
 
-// confirmPasskeyOptions handles POST /api/2fa/confirm/options (admin): 200 with WebAuthn request
-// options for a passkey proof in POST /api/2fa/confirm, allowing only the caller's passkeys with
-// user verification required, held on the session for 5 minutes. 409 passkeys_unavailable
-// without BEER_MENU_PUBLIC_URL, 409 no_factor when the caller has no passkey.
+// passwordBody is the body of POST /api/2fa/confirm/options.
+type passwordBody struct {
+	Password string `json:"password"`
+}
+
+// confirmPasskeyOptions handles POST /api/2fa/confirm/options (admin): after callerAdmin and
+// checkConfirmPassword (429, 403 wrong_password) pass for the password in the body, it answers
+// 200 with WebAuthn request options for a passkey proof in POST /api/2fa/confirm, allowing only
+// the caller's passkeys with user verification required, held on the session for 5 minutes.
+// Checking the password here means a wrong one is reported before any passkey prompt. 409
+// passkeys_unavailable without BEER_MENU_PUBLIC_URL, 409 no_factor when the caller has no passkey.
 func confirmPasskeyOptions(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p, _ := principalFrom(r.Context())
-		opts, err := auth.BeginPasskeyLogin(deps.DB, deps.WebAuthn, p.SessionID, auth.KindSetup, p.AdminID, deps.Now())
+		var body passwordBody
+		if !decodeJSON(w, r, &body, maxBody) {
+			return
+		}
+		p, admin, ok := callerAdmin(w, r, deps)
+		if !ok {
+			return
+		}
+		if !checkConfirmPassword(w, r, deps, admin, body.Password) {
+			return
+		}
+		// A right password is no failure; the confirm that follows checks it again.
+		deps.Limiter.Done(admin.Username, false)
+		opts, err := auth.BeginPasskeyLogin(deps.DB, deps.WebAuthn, p.SessionID, auth.KindSetup, admin.ID, deps.Now())
 		if err != nil {
 			writePasskeyError(w, r, err)
 			return

@@ -70,9 +70,7 @@ func signIn(deps Deps) http.Handler {
 			writeAuthError(w, r, err)
 			return
 		}
-		if retry, ok := deps.Limiter.Check(username); !ok {
-			slog.WarnContext(r.Context(), "sign-in rate limited", "username", username)
-			writeRateLimited(w, retry)
+		if !startAttempt(w, r, deps, username) {
 			return
 		}
 		failed := false
@@ -241,9 +239,7 @@ func finishSecondStep(w http.ResponseWriter, r *http.Request, deps Deps, method 
 		writeInternal(w, r, err)
 		return
 	}
-	if retry, ok := deps.Limiter.Check(admin.Username); !ok {
-		slog.WarnContext(r.Context(), "sign-in rate limited", "username", admin.Username)
-		writeRateLimited(w, retry)
+	if !startAttempt(w, r, deps, admin.Username) {
 		return
 	}
 	failed := false
@@ -298,6 +294,18 @@ func cancelSignIn(deps Deps) http.Handler {
 		clearPendingCookie(w, deps)
 		w.WriteHeader(http.StatusNoContent)
 	})
+}
+
+// startAttempt starts a sign-in attempt for username under deps.Limiter. When the limit is
+// reached it logs, answers 429 too_many_attempts and returns false; otherwise the caller must
+// end the attempt with deps.Limiter.Done.
+func startAttempt(w http.ResponseWriter, r *http.Request, deps Deps, username string) bool {
+	retry, ok := deps.Limiter.Check(username)
+	if !ok {
+		slog.WarnContext(r.Context(), "sign-in rate limited", "username", username)
+		writeRateLimited(w, retry)
+	}
+	return ok
 }
 
 // writeRateLimited answers 429 too_many_attempts with Retry-After, retry rounded up to whole
@@ -368,10 +376,7 @@ func changePassword(deps Deps) http.Handler {
 		if !decodeJSON(w, r, &body, maxBody) {
 			return
 		}
-		retry, ok := deps.Limiter.Check(admin.Username)
-		if !ok {
-			slog.WarnContext(r.Context(), "sign-in rate limited", "username", admin.Username)
-			writeRateLimited(w, retry)
+		if !startAttempt(w, r, deps, admin.Username) {
 			return
 		}
 		var err error

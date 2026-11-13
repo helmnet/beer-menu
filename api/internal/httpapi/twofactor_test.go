@@ -382,7 +382,13 @@ func passkeyBody(t *testing.T, name string, credential []byte) string {
 // passkeyOptions posts to path with headers and returns the 200 options body.
 func passkeyOptions(t *testing.T, mux http.Handler, path string, headers ...string) []byte {
 	t.Helper()
-	rec := do(mux, http.MethodPost, path, "", headers...)
+	return postOptions(t, mux, path, "", headers...)
+}
+
+// postOptions is passkeyOptions with a request body.
+func postOptions(t *testing.T, mux http.Handler, path, body string, headers ...string) []byte {
+	t.Helper()
+	rec := do(mux, http.MethodPost, path, body, headers...)
 	if rec.Code != 200 {
 		t.Fatalf("%s = %d %s", path, rec.Code, rec.Body)
 	}
@@ -579,7 +585,7 @@ func TestConfirmWithPasskey(t *testing.T) {
 	clock.Advance(10 * time.Minute)
 	assertion := func(who *authtest.Authenticator) []byte {
 		t.Helper()
-		body := passkeyOptions(t, mux, "/api/2fa/confirm/options", session...)
+		body := postOptions(t, mux, "/api/2fa/confirm/options", confirmJSON(map[string]string{"password": pw}), session...)
 		opts := optionsOf(t, body)
 		if allow, _ := opts["allowCredentials"].([]any); len(allow) != 1 || opts["userVerification"] != "required" {
 			t.Fatalf("request options = %v", opts)
@@ -616,7 +622,49 @@ func TestConfirmWithPasskey(t *testing.T) {
 	wantError(t, do(mux, http.MethodPost, "/api/2fa/confirm/options", "", append(session, "Sec-Fetch-Site", "cross-site")...), 403, "forbidden")
 	noWA := deps
 	noWA.WebAuthn = nil
-	wantError(t, do(NewMux(noWA), http.MethodPost, "/api/2fa/confirm/options", "", session...), 409, "passkeys_unavailable")
+	wantError(t, do(NewMux(noWA), http.MethodPost, "/api/2fa/confirm/options", confirmJSON(map[string]string{"password": pw}), session...), 409, "passkeys_unavailable")
+}
+
+func TestConfirmOptionsChecksPassword(t *testing.T) {
+	deps, clock := newTestDeps(t)
+	deps.WebAuthn = testWebAuthn(t)
+	pw := createAdmin(t, deps)
+	mux := NewMux(deps)
+	session := signInAs(t, mux, "owner", pw)
+	sid := strings.TrimPrefix(session[1], sessionCookieName+"=")
+	if rec := registerPasskeyHTTP(t, mux, newAuthenticator(t), "Phone", session...); rec.Code != 201 {
+		t.Fatalf("register = %d %s", rec.Code, rec.Body)
+	}
+	options := func(body string) *httptest.ResponseRecorder {
+		return do(mux, http.MethodPost, "/api/2fa/confirm/options", body, session...)
+	}
+	right := confirmJSON(map[string]string{"password": pw})
+	wrong := confirmJSON(map[string]string{"password": testPassword()})
+
+	wantError(t, options(""), 400, "invalid_request")
+	wantError(t, options(`{"password":"x","other":1}`), 400, "invalid_request")
+	rec := options(wrong)
+	wantError(t, rec, 403, "wrong_password")
+	wantFixedMessage(t, rec, "The current password is wrong.")
+	if _, ok, err := auth.TakeChallenge(deps.DB, sid, auth.KindSetup, clock.Now()); err != nil || ok {
+		t.Fatalf("wrong password left a passkey challenge (ok %v, err %v)", ok, err)
+	}
+	// A right password is no failure: these do not use up the limit.
+	for range 6 {
+		if rec := options(right); rec.Code != 200 {
+			t.Fatalf("options = %d %s", rec.Code, rec.Body)
+		}
+	}
+	for range 4 {
+		wantError(t, options(wrong), 403, "wrong_password")
+	}
+	// Five wrong passwords reach the limit; the next is refused even if right.
+	rec = options(right)
+	wantError(t, rec, 429, "too_many_attempts")
+	if _, err := strconv.Atoi(rec.Header().Get("Retry-After")); err != nil {
+		t.Fatalf("Retry-After = %q", rec.Header().Get("Retry-After"))
+	}
+	wantError(t, postSession(mux, "owner", pw), 429, "too_many_attempts")
 }
 
 func TestConfirmOptionsWithoutPasskey(t *testing.T) {
@@ -625,7 +673,7 @@ func TestConfirmOptionsWithoutPasskey(t *testing.T) {
 	pw := createAdmin(t, deps)
 	mux := NewMux(deps)
 	session := signInAs(t, mux, "owner", pw)
-	wantError(t, do(mux, http.MethodPost, "/api/2fa/confirm/options", "", session...), 409, "no_factor")
+	wantError(t, do(mux, http.MethodPost, "/api/2fa/confirm/options", confirmJSON(map[string]string{"password": pw}), session...), 409, "no_factor")
 }
 
 func TestNewRecoveryCodes(t *testing.T) {

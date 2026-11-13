@@ -112,7 +112,7 @@ describe("ConfirmIdentity with a passkey", () => {
     confirm();
     await waitFor(() => expect(props.onConfirmed).toHaveBeenCalled());
     expect(calls).toEqual([
-      { key: "POST /api/2fa/confirm/options", body: undefined },
+      { key: "POST /api/2fa/confirm/options", body: { password: pw } },
       { key: "POST /api/2fa/confirm", body: { password: pw, passkey: { id: "assertion" } } },
     ]);
   });
@@ -127,6 +127,21 @@ describe("ConfirmIdentity with a passkey", () => {
     type("Password", testPassword());
     confirm();
     await waitFor(() => expect(props.onConfirmed).toHaveBeenCalled());
+  });
+
+  it.each([
+    [403, "wrong_password", "The current password is wrong.", {}, "The current password is wrong."],
+    [429, "too_many_attempts", "x", { "Retry-After": "120" }, "Too many failed attempts. Try again in 2 minutes."],
+  ])("shows a %i %s from the options without a passkey prompt", async (status, error, message, headers, shown) => {
+    stubPasskeys();
+    const calls = stubApi({ "POST /api/2fa/confirm/options": { status, body: { error, message }, headers } });
+    const props = setupPasskey(false);
+    type("Password", testPassword());
+    confirm();
+    expect((await screen.findByRole("alert")).textContent).toBe(shown);
+    expect(navigator.credentials.get).not.toHaveBeenCalled();
+    expect(calls.map((c) => c.key)).toEqual(["POST /api/2fa/confirm/options"]);
+    expect(props.onConfirmed).not.toHaveBeenCalled();
   });
 
   it("stays open when the prompt is cancelled", async () => {

@@ -484,11 +484,20 @@ paths:
       operationId: confirmPasskeyOptions
       summary: WebAuthn request options for a passkey confirm
       description: >
+        Checks the current password first, so a wrong one is reported before any passkey prompt.
+        Rate limited with sign-in: a wrong password counts toward the 5 failures per username per
+        15 minutes; a right one does not. POST /api/2fa/confirm checks the password again.
         allowCredentials lists only the caller's passkeys; userVerification is required. Held on
         the session for 5 minutes; a new call replaces it. 409 passkeys_unavailable without
         BEER_MENU_PUBLIC_URL, no_factor when the caller has no passkey.
       tags: [two-factor]
       x-access: admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordBody"
       responses:
         "200":
           description: Options for PublicKeyCredential.parseRequestOptionsFromJSON
@@ -496,12 +505,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WebAuthnOptions"
+        "400":
+          $ref: "#/components/responses/Invalid"
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
-          $ref: "#/components/responses/Forbidden"
+          description: wrong_password, or a token was used
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: wrong_password
+                message: The current password is wrong.
         "409":
           $ref: "#/components/responses/TwoFactorConflict"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Busy"
 
   /api/2fa/totp/setup:
     post:
@@ -2244,6 +2266,14 @@ components:
           maxLength: 32
         passkey:
           $ref: "#/components/schemas/WebAuthnResponse"
+    PasswordBody:
+      type: object
+      additionalProperties: false
+      required: [password]
+      properties:
+        password:
+          type: string
+          format: password
     TwoFactorState:
       type: object
       additionalProperties: false
