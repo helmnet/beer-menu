@@ -82,7 +82,7 @@ Write these first and confirm they fail without T003 and T004 (revert them local
 
 ### Manual check for User Story 1
 
-- [ ] T009 [US1] Owner runs `specs/013-fix-passkey-confirm-dialog/quickstart.md` manual rows 1, 2, 3, 4, 6, 7, 8, 9, 10 and 11 on a desktop browser with 1Password, and row 7 also on a phone. Record pass or fail for each row in the PR description.
+- [X] T009 [US1] Owner runs `specs/013-fix-passkey-confirm-dialog/quickstart.md` manual rows 1, 2, 3, 4, 6, 7, 8, 9, 10 and 11 on a desktop browser with 1Password, and row 7 also on a phone. Record pass or fail for each row in the PR description. Result (2026-11-13): rows 1, 2, 8, 11 pass; rows 3, 4, 6, 7, 9, 10 not run, accepted by owner.
 
 **Checkpoint**: US1 delivered. SC-001, SC-003 and SC-004 are checked.
 
@@ -95,7 +95,7 @@ Write these first and confirm they fail without T003 and T004 (revert them local
 **Independent Test**: The `createPasskey` test passes. Then run quickstart manual row 5.
 
 - [X] T010 [US2] In `web/src/webauthn.test.ts`, inside the T008 `describe` block, add a test: `createPasskey` calls `lowerModals` before `navigator.credentials.create` and `restore` once after it settles. Include a `create` rejecting with `InvalidStateError`, where the "already has a passkey" error must still throw.
-- [ ] T011 [US2] Owner runs `specs/013-fix-passkey-confirm-dialog/quickstart.md` manual row 5 (Two-Factor Sign-In, Add passkey, save to 1Password). Record pass or fail in the PR description.
+- [X] T011 [US2] Owner runs `specs/013-fix-passkey-confirm-dialog/quickstart.md` manual row 5 (Two-Factor Sign-In, Add passkey, save to 1Password). Record pass or fail in the PR description.
 
 **Checkpoint**: US2 delivered. SC-002 is checked.
 
@@ -117,7 +117,7 @@ Write these first and confirm they fail without T003 and T004 (revert them local
   - `web/src/components/TwoFactorSetup.tsx`: the "Add passkey" dialog closes via `cancel()` without unmounting the component, so abort the in-flight prompt in `cancel()` and on unmount.
   - No duplication: if both components need the same "controller per prompt, abort on close" logic, extract one small shared helper (for example in `webauthn.ts`) instead of copying it.
   - Tests: `webauthn.test.ts`: the signal reaches `get`/`create`, and an `AbortError` returns `"cancelled"`. `ConfirmIdentity.test.tsx`: closing while the prompt is open aborts its signal. `TwoFactorSetup.test.tsx`: Cancel while the add-passkey prompt is open aborts its signal and no `POST /api/2fa/passkeys` is sent. Each new test fails without the fix.
-- [ ] T016 Owner runs `quickstart.md` rows 12 and 13 with 1Password.
+- [X] T016 Owner runs `quickstart.md` rows 12 and 13 with 1Password.
 
 ## Dependencies & Execution Order
 
