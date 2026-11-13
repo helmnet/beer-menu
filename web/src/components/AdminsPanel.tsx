@@ -129,7 +129,7 @@ export default function AdminsPanel({
                   Clear 2FA
                 </button>
               )}
-              <button type="button" className="btn" onClick={() => remove(a)}>
+              <button type="button" className="btn btn-danger" onClick={() => remove(a)}>
                 Remove
               </button>
             </li>

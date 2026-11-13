@@ -133,6 +133,13 @@ describe("BrewfatherPanel connection", () => {
     expect(screen.getByLabelText("API key")).toBeTruthy();
   });
 
+  it("marks Disconnect as a danger button", async () => {
+    stubApi({ "GET /api/brewfather": { status: 200, body: connected }, "GET /api/brewfather/batches": noBatches });
+    renderPanel();
+    const disconnect = await screen.findByRole("button", { name: "Disconnect" });
+    expect(disconnect.classList.contains("btn-danger")).toBe(true);
+  });
+
   it("asks to reconnect with the form when the stored key no longer decrypts", async () => {
     const calls = stubApi({
       "GET /api/brewfather": { status: 200, body: brewfatherStatus({ connected: true, reconnect_needed: true }) },

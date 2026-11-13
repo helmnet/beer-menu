@@ -150,7 +150,7 @@ export default function TwoFactorPanel({ onSignedOut }: { onSignedOut: () => voi
             )}
             {state.enabled && (
               <div className="btn-row">
-                <button type="button" className="btn" onClick={turnOff}>
+                <button type="button" className="btn btn-danger" onClick={turnOff}>
                   Turn off 2FA
                 </button>
               </div>
@@ -163,7 +163,7 @@ export default function TwoFactorPanel({ onSignedOut }: { onSignedOut: () => voi
                 {state.totp && (
                   <li>
                     <span>Authenticator app: {when(state.totp.created_at, state.totp.last_used_at)}</span>
-                    <button type="button" className="btn" onClick={() => remove("the authenticator app", "/api/2fa/totp")}>
+                    <button type="button" className="btn btn-danger" onClick={() => remove("the authenticator app", "/api/2fa/totp")}>
                       Remove
                     </button>
                   </li>
@@ -198,7 +198,7 @@ export default function TwoFactorPanel({ onSignedOut }: { onSignedOut: () => voi
                         </button>
                         <button
                           type="button"
-                          className="btn"
+                          className="btn btn-danger"
                           onClick={() => remove(`the passkey "${p.name}"`, `/api/2fa/passkeys/${p.id}`)}
                         >
                           Remove
@@ -226,7 +226,7 @@ export default function TwoFactorPanel({ onSignedOut }: { onSignedOut: () => voi
                 </p>
               )}
               <div className="btn-row">
-                <button type="button" className="btn" onClick={newCodes}>
+                <button type="button" className="btn btn-danger" onClick={newCodes}>
                   New recovery codes
                 </button>
               </div>

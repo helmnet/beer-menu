@@ -166,7 +166,7 @@ export default function BeersPanel({ onSignedOut, actionSlot }: { onSignedOut: (
                         Archive
                       </button>
                     )}
-                    <button type="button" className="btn" onClick={() => remove(b)}>
+                    <button type="button" className="btn btn-danger" onClick={() => remove(b)}>
                       Delete
                     </button>
                   </td>

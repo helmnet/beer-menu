@@ -222,7 +222,7 @@ export default function BrewfatherPanel({ onSignedOut }: { onSignedOut: () => vo
         <p>{listable ? "Connected" : status.reconnect_needed ? "Reconnect needed" : "Not connected"}</p>
         {listable ? (
           <div className="btn-row">
-            <button type="button" className="btn" onClick={disconnect}>
+            <button type="button" className="btn btn-danger" onClick={disconnect}>
               Disconnect
             </button>
           </div>

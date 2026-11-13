@@ -87,6 +87,15 @@ describe("KegHistory", () => {
     expect(calls.map((c) => c.key)).toContain("DELETE /api/kegs/4");
   });
 
+  it("marks each Delete as a danger button", async () => {
+    stubApi(routes());
+    render(<KegHistory onSignedOut={vi.fn()} />);
+    await screen.findByText("Stout");
+    const deletes = screen.getAllByRole("button", { name: "Delete" });
+    expect(deletes).toHaveLength(2);
+    for (const button of deletes) expect(button.classList.contains("btn-danger")).toBe(true);
+  });
+
   it("reports a 401 as signed out", async () => {
     stubApi(routes({ "GET /api/kegs?state=kicked": { status: 401, body: { error: "unauthenticated", message: "x" } } }));
     const onSignedOut = vi.fn();

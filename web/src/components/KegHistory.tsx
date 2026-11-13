@@ -70,7 +70,7 @@ export default function KegHistory({ onSignedOut, units = "us" }: { onSignedOut:
                   <td>{day(k.tapped_at)}</td>
                   <td>{day(k.kicked_at)}</td>
                   <td>
-                    <button type="button" className="btn" onClick={() => remove(k)}>
+                    <button type="button" className="btn btn-danger" onClick={() => remove(k)}>
                       Delete
                     </button>
                   </td>
