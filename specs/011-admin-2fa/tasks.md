@@ -266,8 +266,8 @@ factor while the setting is on (quickstart 6).
 - [X] T067 [P] Document `BEER_MENU_PUBLIC_URL` (API container only; scheme + host [+ port], exactly the browser's address; passkeys off when unset) and `reset-2fa <username>` in `README.md`, and add a commented-out `BEER_MENU_PUBLIC_URL: https://taplist.example.org` to the api service in `docker-compose.yaml` (no real host name, constitution V)
 - [X] T068 [P] Update the user and API docs in `docs/` for two-factor sign-in, recovery and the require setting
 - [X] T069 Run `govulncheck ./...` in `api/` and record the result, including the new indirect modules, in `specs/011-admin-2fa/research.md` R1
-- [ ] T070 Run quickstart scenarios 2–7 from `specs/011-admin-2fa/quickstart.md`, including scenario 4 on a real phone (installed PWA and browser tab) and laptop; record any deviation in `specs/011-admin-2fa/research.md`
-- [ ] T071 Full gate: `go test -race ./...` in `api/`; `npx vitest run --maxWorkers=2`, `npm run lint`, `npm run build` in `web/`; `docker compose build`. The PR description states the constitution principle V amendment (1.3.0 to 1.4.0) and its reason, as the constitution's Governance section requires
+- [X] T070 Run quickstart scenarios 2–7 from `specs/011-admin-2fa/quickstart.md`, including scenario 4 on a real phone (installed PWA and browser tab) and laptop; record any deviation in `specs/011-admin-2fa/research.md`
+- [X] T071 Full gate: `go test -race ./...` in `api/`; `npx vitest run --maxWorkers=2`, `npm run lint`, `npm run build` in `web/`; `docker compose build`. The PR description states the constitution principle V amendment (1.3.0 to 1.4.0) and its reason, as the constitution's Governance section requires
 
 ---
 
