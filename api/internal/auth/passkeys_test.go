@@ -4,10 +4,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/helmnet/beer-menu/api/internal/auth/authtest"
 )
@@ -264,6 +266,28 @@ func passkeyLogin(t *testing.T, db *sql.DB, wa *webauthn.WebAuthn, id string, ki
 		t.Fatal(err)
 	}
 	return a.Assert(t, mustJSON(t, opts))
+}
+
+func TestRefusedReason(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"DevInfo added", fmt.Errorf("wrapped: %w", protocol.ErrVerification.WithInfo("User verification required but flag not set by authenticator")),
+			"passkey refused: Error validating the authenticator response: User verification required but flag not set by authenticator"},
+		{"challenge left out", protocol.ErrVerification.WithDetails("Error validating challenge").WithInfo("Expected b Value: \"abc\"\nReceived b: \"xyz\"\n"),
+			"passkey refused: Error validating challenge"},
+		{"origin left out", protocol.ErrVerification.WithDetails("Error validating origin").WithInfo("Expected Values: [https://a], Received: https://evil"),
+			"passkey refused: Error validating origin"},
+		{"no DevInfo", protocol.ErrBadRequest.WithDetails("No response given"), "passkey refused: No response given"},
+		{"not a protocol error", errors.New(`invalid character 'x' in "secret"`), "passkey refused"},
+	} {
+		err := refused(c.err)
+		if !errors.Is(err, ErrPasskeyFailed) || err.Error() != c.want {
+			t.Errorf("%s: refused = %q, want %q", c.name, err, c.want)
+		}
+	}
 }
 
 func TestPasskeyLogin(t *testing.T) {

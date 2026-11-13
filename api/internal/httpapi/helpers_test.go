@@ -128,3 +128,12 @@ func wantError(t *testing.T, rec *httptest.ResponseRecorder, code int, errCode s
 		t.Fatalf("body = %s, want error %q", rec.Body, errCode)
 	}
 }
+
+// wantFixedMessage fails unless rec's body has message and none of the library's reason,
+// which for a wrong origin quotes the origin.
+func wantFixedMessage(t *testing.T, rec *httptest.ResponseRecorder, message string) {
+	t.Helper()
+	if body := rec.Body.String(); !strings.Contains(body, `"message":"`+message+`"`) || strings.Contains(body, "192.168.1.10") || strings.Contains(body, "Error validating") {
+		t.Fatalf("body = %s, want only the message %q", body, message)
+	}
+}

@@ -455,7 +455,9 @@ func TestPasskeySetup(t *testing.T) {
 	}
 	wrong := newAuthenticator(t)
 	wrong.Origin = "https://192.168.1.10"
-	wantError(t, registerPasskeyHTTP(t, mux, wrong, "Wrong", session...), 400, "passkey_failed")
+	rec = registerPasskeyHTTP(t, mux, wrong, "Wrong", session...)
+	wantError(t, rec, 400, "passkey_failed")
+	wantFixedMessage(t, rec, "The passkey could not be added. Try again.")
 	passkeyOptions(t, mux, "/api/2fa/passkeys/options", session...)
 	big := passkeyBody(t, "Big", []byte(`{"id":"`+strings.Repeat("a", 16<<10)+`"}`))
 	wantError(t, do(mux, http.MethodPost, "/api/2fa/passkeys", big, session...), 400, "invalid_request")
@@ -598,7 +600,9 @@ func TestConfirmWithPasskey(t *testing.T) {
 	wantError(t, confirm(confirmPasskeyBody(t, pw, resp, nil)), 403, "passkey_failed")
 	wrong := *a
 	wrong.Origin = "https://192.168.1.10"
-	wantError(t, confirm(confirmPasskeyBody(t, pw, assertion(&wrong), nil)), 403, "passkey_failed")
+	rec := confirm(confirmPasskeyBody(t, pw, assertion(&wrong), nil))
+	wantError(t, rec, 403, "passkey_failed")
+	wantFixedMessage(t, rec, "The passkey was not accepted.")
 	wantError(t, confirm(confirmPasskeyBody(t, pw, assertion(a), map[string]any{"code": "123456"})), 400, "invalid_request")
 	wantError(t, confirm(confirmPasskeyBody(t, testPassword(), assertion(a), nil)), 403, "wrong_password")
 	big := confirmPasskeyBody(t, pw, []byte(`{"id":"`+strings.Repeat("a", 16<<10)+`"}`), nil)

@@ -825,7 +825,9 @@ func TestSignInPasskeyLimits(t *testing.T) {
 	wrong := *a
 	wrong.Origin = "https://192.168.1.10"
 	for range 5 {
-		wantError(t, do(mux, http.MethodPost, "/api/session/passkey", string(passkeyAssertion(t, mux, &wrong, pending)), pending...), 401, "passkey_failed")
+		rec := do(mux, http.MethodPost, "/api/session/passkey", string(passkeyAssertion(t, mux, &wrong, pending)), pending...)
+		wantError(t, rec, 401, "passkey_failed")
+		wantFixedMessage(t, rec, "The passkey was not accepted.")
 	}
 	rec := do(mux, http.MethodPost, "/api/session/passkey", string(passkeyAssertion(t, mux, a, pending)), pending...)
 	wantError(t, rec, 429, "too_many_attempts")
