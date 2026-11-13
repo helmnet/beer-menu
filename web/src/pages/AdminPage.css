@@ -6,7 +6,7 @@
  *
  * Royal blue (--accent) marks things, never words: fills, bars, rings, strokes. Text always
  * uses --text or --muted (research R7). Light contrast, text on card: --text 16.9:1,
- * --muted 6.3:1 on --bg; white on --accent 4.85:1.
+ * --muted 6.3:1 on --bg; white on --accent 4.85:1; white on --danger-fill 5.55:1.
  */
 .admin {
   --bg: #f4f6fb;
@@ -20,6 +20,7 @@
   --track: #e3e7f0;
   --scrim: rgba(11, 12, 15, 0.55);
   --danger: #c0352b;
+  --danger-fill: #c0352b;
   --nav-width: 256px;
   --radius: 12px;
 
@@ -175,13 +176,25 @@ body:has(> #root > .admin) {
 }
 
 .admin .btn-primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  --btn-fill: var(--accent);
+}
+
+/* Danger: one red in both themes; white on #c0352b is 5.55:1. Dark --danger (#e5534b) is for red text and gives white only 3.70:1. */
+.admin .btn-danger {
+  --btn-fill: var(--danger-fill);
+}
+
+.admin .btn-primary,
+.admin .btn-danger {
+  background: var(--btn-fill);
+  border-color: var(--btn-fill);
   color: #ffffff;
 }
 
-.admin .btn-primary:hover {
-  border-color: var(--accent);
+/* Restates border-color so .admin .btn:hover (--muted) does not win. */
+.admin .btn-primary:hover,
+.admin .btn-danger:hover {
+  border-color: var(--btn-fill);
   filter: brightness(1.08);
 }
 

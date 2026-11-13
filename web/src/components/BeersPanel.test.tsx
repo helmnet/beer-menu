@@ -230,6 +230,17 @@ describe("BeersPanel", () => {
     const sync = { synced_at: "2026-11-09T12:00:00Z", not_found: false, archive_pending: false };
     const imported = beer({ id: 3, name: "Imported", source: "brewfather", source_ref: "b3", sync });
 
+    it("marks only Delete as a danger button", async () => {
+      stubApi({ "GET /api/beers": { status: 200, body: [pale, imported] } });
+      render(<BeersPanel onSignedOut={vi.fn()} />);
+      await screen.findByText("Imported");
+      const danger = (name: string) => screen.getAllByRole("button", { name }).map((b) => b.classList.contains("btn-danger"));
+      expect(danger("Delete")).toEqual([true, true]);
+      expect(danger("Edit")).toEqual([false, false]);
+      expect(danger("Archive")).toEqual([false, false]);
+      expect(danger("Re-sync")).toEqual([false]);
+    });
+
     it("labels Brewfather beers and not manual ones", async () => {
       stubApi({ "GET /api/beers": { status: 200, body: [pale, imported] } });
       render(<BeersPanel onSignedOut={vi.fn()} />);

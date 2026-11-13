@@ -134,7 +134,7 @@ export default function TokensPanel({ onSignedOut, actionSlot }: { onSignedOut: 
                     {t.revoked_at ? (
                       "Revoked"
                     ) : (
-                      <button type="button" className="btn" onClick={() => revoke(t)}>
+                      <button type="button" className="btn btn-danger" onClick={() => revoke(t)}>
                         Revoke
                       </button>
                     )}

@@ -111,6 +111,15 @@ describe("AdminsPanel", () => {
     expect(onSignedOut).not.toHaveBeenCalled();
   });
 
+  it("marks each Remove as a danger button", async () => {
+    stubApi({ "GET /api/admins": { status: 200, body: [owner, second] } });
+    render(<AdminsPanel me={owner} onSignedOut={vi.fn()} />);
+    await screen.findByText("second");
+    for (const username of [owner.username, "second"]) {
+      expect(removeButton(username).classList.contains("btn-danger")).toBe(true);
+    }
+  });
+
   it("shows the last-admin message", async () => {
     stubApi({
       "GET /api/admins": { status: 200, body: [owner] },

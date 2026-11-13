@@ -241,6 +241,33 @@ describe("TwoFactorPanel", () => {
     expect(screen.queryByRole("list", { name: "Second factors" })).toBeNull();
   });
 
+  it("marks the destructive actions as danger buttons, not Rename", async () => {
+    stubApi({
+      "GET /api/2fa": {
+        status: 200,
+        body: twoFactorState({
+          enabled: true,
+          totp: totpOn,
+          passkeys: [passkey(), passkey({ id: 2, name: "Laptop" })],
+          recovery_codes_left: 10,
+        }),
+      },
+    });
+    render(<TwoFactorPanel onSignedOut={vi.fn()} />);
+    const removes = await screen.findAllByRole("button", { name: "Remove" });
+    expect(removes).toHaveLength(3);
+    for (const button of [
+      ...removes,
+      screen.getByRole("button", { name: "Turn off 2FA" }),
+      screen.getByRole("button", { name: "New recovery codes" }),
+    ]) {
+      expect(button.classList.contains("btn-danger")).toBe(true);
+    }
+    for (const button of screen.getAllByRole("button", { name: "Rename" })) {
+      expect(button.classList.contains("btn-danger")).toBe(false);
+    }
+  });
+
   it("reports a 401 from a factor action as signed out", async () => {
     stubApi({
       "GET /api/2fa": { status: 200, body: twoFactorState({ enabled: true, totp: totpOn, recovery_codes_left: 10 }) },

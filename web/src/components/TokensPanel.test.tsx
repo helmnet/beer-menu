@@ -178,6 +178,15 @@ describe("TokensPanel", () => {
     expect(calls.map((c) => c.key)).toContain("DELETE /api/tokens/2");
   });
 
+  it("marks Revoke as a danger button", async () => {
+    stubApi({ "GET /api/tokens": { status: 200, body: [unused, { ...unused, id: 3, name: "other" }] } });
+    render(<TokensPanel onSignedOut={vi.fn()} />);
+    await screen.findByText("script");
+    const revokes = screen.getAllByRole("button", { name: "Revoke" });
+    expect(revokes).toHaveLength(2);
+    for (const button of revokes) expect(button.classList.contains("btn-danger")).toBe(true);
+  });
+
   it("reports a 401 as signed out", async () => {
     stubApi({ "GET /api/tokens": { status: 401, body: { error: "unauthenticated", message: "x" } } });
     const onSignedOut = vi.fn();
