@@ -14,8 +14,8 @@ import Modal from "./Modal";
  * and Close, and the list reloads. A 403 confirm_required on create loads the caller's factors
  * (GET /api/2fa), opens `ConfirmIdentity` over the dialog and creates again once confirmed. Closing the dialog, by Close or Escape, drops the secret from
  * state, so it cannot be shown again. Any 401 calls `onSignedOut`. Given `actionSlot` (the phone
- * top bar's slot), a second New token is portaled there; CSS shows one of the two. Under the
- * list, an "API docs" link opens the read-only API docs (/api/docs) in a new tab.
+ * top bar's slot), a second New token is portaled there; CSS shows one of the two. Left of
+ * New token, a "See the API docs" link opens the read-only API docs (/api/docs) in a new tab.
  */
 export default function TokensPanel({ onSignedOut, actionSlot }: { onSignedOut: () => void; actionSlot?: HTMLElement | null }) {
   const [tokens, setTokens] = useState<Token[]>([]);
@@ -113,7 +113,12 @@ export default function TokensPanel({ onSignedOut, actionSlot }: { onSignedOut: 
     <section className="page">
       <div className="page-header">
         <h2>API Tokens</h2>
-        {newToken}
+        <div className="page-header-actions">
+          <a href="/api/docs" target="_blank" rel="noopener noreferrer">
+            See the API docs
+          </a>
+          {newToken}
+        </div>
       </div>
       {actionSlot && createPortal(newToken, actionSlot)}
       <div className="card">
@@ -149,13 +154,6 @@ export default function TokensPanel({ onSignedOut, actionSlot }: { onSignedOut: 
             </tbody>
           </table>
         </div>
-        <p className="muted">
-          Calling the API? See the{" "}
-          <a href="/api/docs" target="_blank" rel="noopener noreferrer">
-            API docs
-          </a>
-          .
-        </p>
         {error && <p role="alert">{error}</p>}
       </div>
       {identity.dialog}
