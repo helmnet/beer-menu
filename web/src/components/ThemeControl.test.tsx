@@ -12,6 +12,19 @@ describe("ThemeControl", () => {
     for (const name of ["Light", "Dark", "System"]) expect(within(group).getByRole("radio", { name })).toBeTruthy();
   });
 
+  // The CSS container query hides the words through this class, so each word must sit in it.
+  it("wraps each word in a theme-label span", () => {
+    const { container } = render(<ThemeControl theme="system" onChange={vi.fn()} />);
+    const words = [...container.querySelectorAll("label.theme-option > span.theme-label")].map((s) => s.textContent);
+    expect(words).toEqual(["Light", "Dark", "System"]);
+  });
+
+  it("gives each option a tooltip with its name", () => {
+    const { container } = render(<ThemeControl theme="system" onChange={vi.fn()} />);
+    const titles = [...container.querySelectorAll("label.theme-option")].map((l) => l.getAttribute("title"));
+    expect(titles).toEqual(["Light", "Dark", "System"]);
+  });
+
   it.each([
     ["light", "Light"],
     ["dark", "Dark"],
