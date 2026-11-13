@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useId, useState } from "react";
 import { ApiError, apiFetch, errorMessage, isConfirmRequired, isUnauthenticated, Passkey, RecoveryCodesReply, TwoFactorState } from "../api";
+import { useConfirmAction } from "./ConfirmDialog";
 import { useConfirm } from "./ConfirmIdentity";
 import Modal from "./Modal";
 import RecoveryCodes from "./RecoveryCodes";
@@ -23,7 +24,7 @@ function when(created: string, lastUsed: string | null): string {
  * type, name, added and last-used time, never a secret, and how many recovery codes are left
  * (with a warning at 2 or fewer). A passkey can be renamed inline (PATCH
  * /api/2fa/passkeys/{id}). Each factor can be removed (DELETE /api/2fa/totp or
- * /api/2fa/passkeys/{id}) and 2FA turned off (DELETE /api/2fa), each after the browser asks to be sure. "New recovery codes"
+ * /api/2fa/passkeys/{id}) and 2FA turned off (DELETE /api/2fa), each after a confirmation dialog asks to be sure. "New recovery codes"
  * (POST /api/2fa/recovery-codes) shows the new set once with `RecoveryCodes`. A removal refused
  * with 409 two_factor_required says the require setting is on, naming it. A 403
  * confirm_required on any of these opens `ConfirmIdentity` and runs the action again once
@@ -35,6 +36,7 @@ export default function TwoFactorPanel({ onSignedOut }: { onSignedOut: () => voi
   const [error, setError] = useState("");
   const [loads, setLoads] = useState(0);
   const identity = useConfirm(onSignedOut, setError, state);
+  const confirm = useConfirmAction();
   const [codes, setCodes] = useState<string[] | null>(null);
   const [renaming, setRenaming] = useState<Passkey | null>(null);
   const [name, setName] = useState("");
@@ -74,19 +76,29 @@ export default function TwoFactorPanel({ onSignedOut }: { onSignedOut: () => voi
   }
 
   function remove(label: string, path: string) {
-    if (!window.confirm(`Remove ${label}? Your other sessions will be signed out.`)) return;
-    run(async () => {
-      await apiFetch("DELETE", path);
-      reload();
-    });
+    confirm.ask(
+      { title: "Remove second factor", message: `Remove ${label}? Your other sessions will be signed out.`, confirmLabel: "Remove" },
+      () =>
+        run(async () => {
+          await apiFetch("DELETE", path);
+          reload();
+        }),
+    );
   }
 
   function turnOff() {
-    if (!window.confirm("Turn off two-factor sign-in? This removes every factor and recovery code.")) return;
-    run(async () => {
-      await apiFetch("DELETE", "/api/2fa");
-      reload();
-    });
+    confirm.ask(
+      {
+        title: "Turn off 2FA",
+        message: "Turn off two-factor sign-in? This removes every factor and recovery code.",
+        confirmLabel: "Turn off",
+      },
+      () =>
+        run(async () => {
+          await apiFetch("DELETE", "/api/2fa");
+          reload();
+        }),
+    );
   }
 
   function setRequired(required: boolean) {
@@ -232,6 +244,7 @@ export default function TwoFactorPanel({ onSignedOut }: { onSignedOut: () => voi
               </div>
             </section>
           )}
+          {confirm.dialog}
           {identity.dialog}
           {codes && (
             // Only Done closes the dialog, so the codes are not lost by accident.

@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { apiFetch, Beer, errorMessage, isUnauthenticated } from "../api";
 import BeerArt from "./BeerArt";
 import BeerForm from "./BeerForm";
+import { useConfirmAction } from "./ConfirmDialog";
 import Modal from "./Modal";
 
 /** Editing is which dialog is open: none, Add beer, or Edit for one beer. */
@@ -16,7 +17,7 @@ type Editing = { kind: "none" } | { kind: "add" } | { kind: "edit"; beer: Beer }
  * and each beer's "Edit" open BeerForm in a dialog titled "Add beer" or "Edit <name>"; a server
  * error keeps it open with the field messages, and a save closes it and reloads the list. "Show archived" switches to the archived beers (GET
  * /api/beers?archived=true); current beers can be archived and archived ones restored (PATCH
- * {"archived": ...}), and any beer deleted after a confirm prompt (DELETE /api/beers/{id}). Beers
+ * {"archived": ...}), and any beer deleted after a confirmation dialog (DELETE /api/beers/{id}). Beers
  * imported from Brewfather are labelled "Brewfather", with a note when Brewfather no longer has
  * their batch or archived it while a keg is current, and have a Re-sync button (POST
  * /api/beers/{id}/sync). The list sits in a sideways-scrolling wrapper and reloads after every
@@ -29,6 +30,7 @@ export default function BeersPanel({ onSignedOut, actionSlot }: { onSignedOut: (
   const [editing, setEditing] = useState<Editing>({ kind: "none" });
   const [error, setError] = useState("");
   const [archived, setArchived] = useState(false);
+  const confirm = useConfirmAction();
 
   async function run(action: () => Promise<void>) {
     setError("");
@@ -76,11 +78,12 @@ export default function BeersPanel({ onSignedOut, actionSlot }: { onSignedOut: (
   }
 
   function remove(b: Beer) {
-    if (!window.confirm(`Delete ${b.name} permanently?`)) return;
-    run(async () => {
-      await apiFetch("DELETE", `/api/beers/${b.id}`);
-      await load();
-    });
+    confirm.ask({ title: "Delete beer", message: `Delete ${b.name} permanently?`, confirmLabel: "Delete" }, () =>
+      run(async () => {
+        await apiFetch("DELETE", `/api/beers/${b.id}`);
+        await load();
+      }),
+    );
   }
 
   const addBeer = (
@@ -188,6 +191,7 @@ export default function BeersPanel({ onSignedOut, actionSlot }: { onSignedOut: (
             />
           </Modal>
         )}
+        {confirm.dialog}
         {error && <p role="alert">{error}</p>}
       </div>
     </section>

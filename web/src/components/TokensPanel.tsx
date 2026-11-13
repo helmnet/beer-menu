@@ -2,6 +2,7 @@ import { Plus } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { apiFetch, errorMessage, isConfirmRequired, isUnauthenticated, Token } from "../api";
+import { useConfirmAction } from "./ConfirmDialog";
 import { useConfirm } from "./ConfirmIdentity";
 import Modal from "./Modal";
 
@@ -26,6 +27,7 @@ export default function TokensPanel({ onSignedOut, actionSlot }: { onSignedOut: 
   const [formError, setFormError] = useState("");
   const [error, setError] = useState("");
   const identity = useConfirm(onSignedOut, setError);
+  const confirm = useConfirmAction();
 
   async function run(action: () => Promise<void>) {
     setError("");
@@ -80,11 +82,14 @@ export default function TokensPanel({ onSignedOut, actionSlot }: { onSignedOut: 
   }
 
   function revoke(t: Token) {
-    if (!window.confirm(`Revoke token "${t.name}"? Clients using it stop working at once.`)) return;
-    run(async () => {
-      await apiFetch("DELETE", `/api/tokens/${t.id}`);
-      await load();
-    });
+    confirm.ask(
+      { title: "Revoke token", message: `Revoke token "${t.name}"? Clients using it stop working at once.`, confirmLabel: "Revoke" },
+      () =>
+        run(async () => {
+          await apiFetch("DELETE", `/api/tokens/${t.id}`);
+          await load();
+        }),
+    );
   }
 
   async function copy() {
@@ -154,6 +159,7 @@ export default function TokensPanel({ onSignedOut, actionSlot }: { onSignedOut: 
         {error && <p role="alert">{error}</p>}
       </div>
       {identity.dialog}
+      {confirm.dialog}
       {creating && (
         <Modal title="New API token" onClose={closeDialog}>
           {secret ? (

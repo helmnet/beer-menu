@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { batch, beer, brewfatherStatus, importResult, stubApi } from "../testApi";
+import { batch, beer, brewfatherStatus, clickInDialog, importResult, inDialog, stubApi } from "../testApi";
 import BrewfatherPanel from "./BrewfatherPanel";
 
 afterEach(() => {
@@ -118,16 +118,16 @@ describe("BrewfatherPanel connection", () => {
       "DELETE /api/brewfather/connection": { status: 204 },
     };
     const calls = stubApi(routes);
-    const confirm = vi.fn(() => false);
-    vi.stubGlobal("confirm", confirm);
     renderPanel();
     fireEvent.click(await screen.findByRole("button", { name: "Disconnect" }));
-    expect(confirm).toHaveBeenCalled();
+    const message = "Disconnect Brewfather? Imported beers stay, and scheduled sync stops.";
+    expect(inDialog("Disconnect Brewfather").getByText(message)).toBeTruthy();
+    clickInDialog("Disconnect Brewfather", "Cancel");
     expect(calls.map((c) => c.key)).not.toContain("DELETE /api/brewfather/connection");
 
-    confirm.mockReturnValue(true);
     routes["GET /api/brewfather"] = { status: 200, body: brewfatherStatus() };
     fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
+    clickInDialog("Disconnect Brewfather", "Disconnect");
     expect(await screen.findByText("Not connected")).toBeTruthy();
     expect(calls.map((c) => c.key)).toContain("DELETE /api/brewfather/connection");
     expect(screen.getByLabelText("API key")).toBeTruthy();

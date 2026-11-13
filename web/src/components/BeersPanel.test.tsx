@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { beer, stubApi } from "../testApi";
+import { beer, clickInDialog, inDialog, stubApi } from "../testApi";
 import BeersPanel from "./BeersPanel";
 
 afterEach(() => {
@@ -115,7 +115,7 @@ describe("BeersPanel", () => {
     render(<BeersPanel onSignedOut={vi.fn()} />);
     await screen.findByText("Pale");
     fireEvent.click(screen.getByRole("button", { name: "Add beer" }));
-    fireEvent.click(within(screen.getByRole("dialog", { name: "Add beer" })).getByRole("button", { name: "Cancel" }));
+    clickInDialog("Add beer", "Cancel");
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(within(row("Pale")).getByRole("button", { name: "Edit" }));
     fireEvent(screen.getByRole("dialog", { name: "Edit Pale" }), new Event("cancel", { cancelable: true }));
@@ -211,18 +211,17 @@ describe("BeersPanel", () => {
       "DELETE /api/beers/1": { status: 204 },
     };
     const calls = stubApi(routes);
-    const confirm = vi.fn(() => false);
-    vi.stubGlobal("confirm", confirm);
     render(<BeersPanel onSignedOut={vi.fn()} />);
     await screen.findByText("Pale");
     fireEvent.click(within(row("Pale")).getByRole("button", { name: "Delete" }));
-    expect(confirm).toHaveBeenCalledWith("Delete Pale permanently?");
+    expect(inDialog("Delete beer").getByText("Delete Pale permanently?")).toBeTruthy();
+    clickInDialog("Delete beer", "Cancel");
     expect(calls.map((c) => c.key)).not.toContain("DELETE /api/beers/1");
     expect(screen.getByText("Pale")).toBeTruthy();
 
-    confirm.mockReturnValue(true);
     routes["GET /api/beers"] = { status: 200, body: [stout] };
     fireEvent.click(within(row("Pale")).getByRole("button", { name: "Delete" }));
+    clickInDialog("Delete beer", "Delete");
     await waitFor(() => expect(screen.queryByText("Pale")).toBeNull());
     expect(calls.map((c) => c.key)).toContain("DELETE /api/beers/1");
   });

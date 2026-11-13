@@ -1,3 +1,4 @@
+import { fireEvent, screen, within } from "@testing-library/react";
 import { onTestFinished, vi } from "vitest";
 import type {
   BatchSummary,
@@ -115,6 +116,13 @@ export function stubPendingPasskey() {
   });
   return { signal: () => signal, approve: (reply: object) => approve({ toJSON: () => reply }) };
 }
+
+/** inDialog queries inside the open dialog titled `title`. */
+export const inDialog = (title: string) => within(screen.getByRole("dialog", { name: title }));
+
+/** clickInDialog clicks the button named `button` in the open dialog titled `title`. */
+export const clickInDialog = (title: string, button: string) =>
+  fireEvent.click(inDialog(title).getByRole("button", { name: button }));
 
 /** nextTask waits one macrotask, so pending promise chains (a stubbed fetch, a prompt) run on. */
 export const nextTask = () => new Promise((resolve) => setTimeout(resolve, 0));
