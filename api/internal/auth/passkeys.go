@@ -28,8 +28,8 @@ var (
 	// ErrNoPasskeys means the admin has no passkey to sign in with.
 	ErrNoPasskeys = errors.New("no passkey is set up")
 	// ErrPasskeyFailed means a passkey response was refused: no open ceremony for it, or it
-	// failed a WebAuthn check. Its message carries only the library's short reason, never the
-	// raw response, so it can be logged.
+	// failed a WebAuthn check. Its message carries the library's reason (see refused), never the
+	// raw response, so it can be logged; responses use a fixed message instead.
 	ErrPasskeyFailed = errors.New("passkey refused")
 )
 
@@ -80,15 +80,21 @@ type ceremony struct {
 	Session webauthn.SessionData `json:"session"`
 }
 
-// refused wraps a WebAuthn check failure as ErrPasskeyFailed with the library's reason
-// (protocol.Error.Details: a fixed text, at most with an algorithm or a parse error, never
-// Info, which can quote values). Other errors (such as JSON syntax errors that quote the input) give no reason.
+// refused wraps a WebAuthn check failure as ErrPasskeyFailed with the library's reason,
+// protocol.Error.Details. DevInfo is added only for the plain verification error (the
+// authenticator data checks: RP ID hash, user present, user verified), whose DevInfo quotes no
+// client text; other DevInfo can quote the challenge, the origin or the parse input. Other
+// errors (such as JSON syntax errors that quote the input) give no reason. The text is for the
+// log only, never for a response.
 func refused(err error) error {
 	var pe *protocol.Error
-	if errors.As(err, &pe) {
+	if !errors.As(err, &pe) {
+		return ErrPasskeyFailed
+	}
+	if pe.DevInfo == "" || pe.Details != protocol.ErrVerification.Details {
 		return fmt.Errorf("%w: %s", ErrPasskeyFailed, pe.Details)
 	}
-	return ErrPasskeyFailed
+	return fmt.Errorf("%w: %s: %s", ErrPasskeyFailed, pe.Details, pe.DevInfo)
 }
 
 // ValidatePasskeyName trims name and returns it when it is 1 to 64 code points without control
