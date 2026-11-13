@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
+	"net/url"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/helmnet/beer-menu/api/internal/auth"
@@ -30,6 +33,9 @@ type config struct {
 	AdminPassword string
 	// SecretKey seals third-party credentials; nil means Brewfather import is not configured.
 	SecretKey []byte
+	// PublicOrigin and RPID come from BEER_MENU_PUBLIC_URL; empty means passkeys are off.
+	PublicOrigin string
+	RPID         string
 }
 
 // loadSecretKey reads the encryption key from the file named by BEER_MENU_SECRET_KEY_FILE,
@@ -56,6 +62,34 @@ func loadSecretKey(getenv func(string) string, readFile func(string) ([]byte, er
 		return key, nil
 	}
 	return nil, nil
+}
+
+// errPublicURL refuses startup for a bad BEER_MENU_PUBLIC_URL. It never holds the value.
+var errPublicURL = errors.New("BEER_MENU_PUBLIC_URL must be https://<host name>[:port] (or http://localhost[:port]) with no path, query or fragment")
+
+// loadPublicURL reads BEER_MENU_PUBLIC_URL, the address admins open the app at, and returns
+// its origin (lowercase scheme and host, port kept) and its host name as the WebAuthn RP ID.
+// Unset gives ("", "", nil): passkeys are off. A set value must be https with a host name, not
+// an IP address, or http on localhost, with no user info, path beyond "/", query or fragment;
+// anything else is an error that never contains the value (research R5), so a typo stops
+// startup instead of silently turning passkeys off.
+func loadPublicURL(getenv func(string) string) (origin, rpID string, err error) {
+	v := getenv("BEER_MENU_PUBLIC_URL")
+	if v == "" {
+		return "", "", nil
+	}
+	u, err := url.Parse(v)
+	// url.Parse errors quote the value, so they are dropped.
+	if err != nil || u.Opaque != "" || u.User != nil || (u.Path != "" && u.Path != "/") ||
+		u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(v, "#") {
+		return "", "", errPublicURL
+	}
+	host := strings.ToLower(u.Hostname())
+	scheme := strings.ToLower(u.Scheme)
+	if host == "" || net.ParseIP(host) != nil || !(scheme == "https" || (scheme == "http" && host == "localhost")) {
+		return "", "", errPublicURL
+	}
+	return scheme + "://" + strings.ToLower(u.Host), host, nil
 }
 
 // startup prepares the database before the API serves requests: it checks the data folder
@@ -138,5 +172,22 @@ func prepareAuth(ctx context.Context, db *sql.DB, cfg config, now func() time.Ti
 		return fmt.Errorf("first admin from BEER_MENU_ADMIN_USERNAME and BEER_MENU_ADMIN_PASSWORD: %w", err)
 	}
 	slog.InfoContext(ctx, "first admin created", "username", admin.Username)
+	return nil
+}
+
+// warnNoTwoFactorMethod logs a warning when 2FA is required but the server offers no way to
+// enroll a factor: no encryption key (authenticator apps) and no public URL (passkeys). Admins
+// without a factor then cannot finish signing in.
+func warnNoTwoFactorMethod(ctx context.Context, db *sql.DB, cfg config) error {
+	if cfg.SecretKey != nil || cfg.PublicOrigin != "" {
+		return nil
+	}
+	on, err := auth.RequireTwoFactor(db)
+	if err != nil {
+		return fmt.Errorf("read require 2FA setting: %w", err)
+	}
+	if on {
+		slog.WarnContext(ctx, "2FA is required but no method can be enrolled; admins without a factor cannot sign in. Set BEER_MENU_SECRET_KEY (or BEER_MENU_SECRET_KEY_FILE) or BEER_MENU_PUBLIC_URL")
+	}
 	return nil
 }

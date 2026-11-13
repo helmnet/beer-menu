@@ -75,9 +75,14 @@ Security is a top priority, and the repo may go public.
   first-admin creation (refused once an admin exists), sign-in, and the read-only API docs (the
   docs page and the OpenAPI document; the page MUST NOT offer a way to send API requests, beyond
   loading the OpenAPI document, and MUST NOT accept credentials).
+  Sign-in includes its later steps (second factor, and cancelling an unfinished sign-in); those
+  steps MUST act only on a short-lived, single-use pending sign-in that a correct password
+  created, held server-side and carried in an HttpOnly, SameSite cookie.
   Every other endpoint MUST
-  require a session or a token with the right scope. Public writes (first-admin creation and
-  sign-in) MUST also refuse cross-site browser requests.
+  require a session or a token with the right scope, with one exception: the routes that set up
+  a second factor MAY also accept a pending sign-in of an admin who must set one up before
+  signing in, and no other route may accept it. Public writes (first-admin creation and
+  sign-in, including its later steps) MUST also refuse cross-site browser requests.
 - Login MUST be rate limited.
 - Third-party secrets (such as the Brewfather API key) MUST be encrypted at rest, with the key
   held outside the database, and MUST never be returned by the API.
@@ -156,4 +161,4 @@ compromised.
 - Every pull request review MUST check compliance with these principles, including the
   NON-NEGOTIABLE ones (IV and V). `docs/project-brief.md` is the guidance file for product scope.
 
-**Version**: 1.3.0 | **Ratified**: 2026-11-08 | **Last Amended**: 2026-11-11
+**Version**: 1.4.0 | **Ratified**: 2026-11-08 | **Last Amended**: 2026-11-12

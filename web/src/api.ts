@@ -1,8 +1,65 @@
-/** Admin is an admin account as the API returns it. */
+/** Admin is an admin account as the API returns it; `two_factor` is whether it has a second factor. */
 export interface Admin {
   id: number;
   username: string;
   created_at: string;
+  two_factor: boolean;
+}
+
+/**
+ * SignInPending is the 202 body of POST /api/session: the password was right but sign-in is not
+ * finished. `second_factor` lists the usable `methods` (and `passkeys_origin` when passkeys are
+ * one); `enroll` means 2FA is required and this admin must set up a factor first.
+ */
+export interface SignInPending {
+  next: "second_factor" | "enroll";
+  methods?: ("totp" | "passkey" | "recovery")[];
+  passkeys_origin?: string;
+}
+
+/** Passkey is one of the admin's passkeys as listed; it never holds key material. */
+export interface Passkey {
+  id: number;
+  name: string;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+/**
+ * TwoFactorState is the body of GET /api/2fa: the caller's factors, the require setting, recovery
+ * codes left, and whether this server can add an authenticator (`totp_available`) or passkeys
+ * (`passkeys_available`, only at `passkeys_origin`). It never holds a secret.
+ */
+export interface TwoFactorState {
+  enabled: boolean;
+  required: boolean;
+  totp_available: boolean;
+  passkeys_available: boolean;
+  passkeys_origin: string | null;
+  totp: { created_at: string; last_used_at: string | null } | null;
+  passkeys: Passkey[];
+  recovery_codes_left: number;
+}
+
+/** TotpSetup is a new authenticator secret (base32) and its otpauth URI, shown once. */
+export interface TotpSetup {
+  secret: string;
+  uri: string;
+}
+
+/**
+ * FactorAdded is the reply to adding a factor: the new `passkey`, the `recovery_codes` when it
+ * was the first factor (shown once), and the `admin` when it finished an enroll sign-in.
+ */
+export interface FactorAdded {
+  passkey?: Passkey;
+  recovery_codes?: string[];
+  admin?: Admin;
+}
+
+/** RecoveryCodesReply is a new set of 10 recovery codes, shown once. */
+export interface RecoveryCodesReply {
+  recovery_codes: string[];
 }
 
 /** Token is an API token as the API lists it; it never holds the secret. */
@@ -317,6 +374,11 @@ export async function apiFetch<T = unknown>(
 /** isUnauthenticated reports whether err is a 401 from the API, meaning the session has ended. */
 export function isUnauthenticated(err: unknown): boolean {
   return err instanceof ApiError && err.status === 401;
+}
+
+/** isConfirmRequired reports whether err is a 403 confirm_required: confirm identity, then retry. */
+export function isConfirmRequired(err: unknown): boolean {
+  return err instanceof ApiError && err.code === "confirm_required";
 }
 
 /**

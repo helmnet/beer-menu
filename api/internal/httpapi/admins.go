@@ -22,10 +22,14 @@ func listAdmins(deps Deps) http.Handler {
 }
 
 // addAdmin handles POST /api/admins (admin): it creates an admin from the Credentials body and
-// returns 201 with the Admin. A username taken ignoring case gives 409 username_taken, bad
-// input 400 invalid_request, saturated hashing 503 busy.
+// returns 201 with the Admin. The setupCaller checks run first (403 confirm_required without a
+// recent confirm), so an unconfirmed caller cannot probe usernames. A username taken ignoring
+// case gives 409 username_taken, bad input 400 invalid_request, saturated hashing 503 busy.
 func addAdmin(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, _, ok := setupCaller(w, r, deps); !ok {
+			return
+		}
 		var body credentialsBody
 		if !decodeJSON(w, r, &body, maxBody) {
 			return
@@ -46,11 +50,15 @@ func addAdmin(deps Deps) http.Handler {
 
 // removeAdmin handles DELETE /api/admins/{id} (admin): it removes the admin and ends all their
 // sessions at once (FR-011), then returns 204. Removing yourself also clears your cookie. The
+// setupCaller checks run before any lookup (403 confirm_required without a recent confirm). The
 // last admin gives 409 last_admin; an unknown or non-positive id gives 404 not_found.
 func removeAdmin(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, ok := pathID(w, r)
 		if !ok {
+			return
+		}
+		if _, _, ok := setupCaller(w, r, deps); !ok {
 			return
 		}
 		username, err := auth.RemoveAdmin(deps.DB, id)
@@ -70,5 +78,40 @@ func removeAdmin(deps Deps) http.Handler {
 			clearSessionCookie(w, deps.CookieSecure)
 		}
 		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+// clearAdminTwoFactor handles DELETE /api/admins/{id}/2fa (admin): it deletes all of another
+// admin's factors, recovery codes, pending steps and sessions (FR-027), logs both usernames and
+// answers 204. It works while 2FA is required; that admin then enrolls at next sign-in. The
+// caller's own id is 409 cannot_clear_self; then the setupCaller checks apply (403
+// confirm_required without a recent confirm); an unknown or non-positive id is 404 not_found.
+func clearAdminTwoFactor(deps Deps) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id, ok := pathID(w, r)
+		if !ok {
+			return
+		}
+		if p, _ := principalFrom(r.Context()); id == p.AdminID {
+			writeError(w, http.StatusConflict, "cannot_clear_self", "You cannot clear your own two-factor sign-in here.")
+			return
+		}
+		_, caller, ok := setupCaller(w, r, deps)
+		if !ok {
+			return
+		}
+		target, err := auth.GetAdmin(deps.DB, id)
+		if err == nil {
+			err = auth.ClearTwoFactor(deps.DB, id)
+		}
+		switch {
+		case errors.Is(err, auth.ErrNotFound):
+			writeNotFound(w)
+		case err != nil:
+			writeInternal(w, r, err)
+		default:
+			slog.InfoContext(r.Context(), "admin 2fa cleared", "username", target.Username, "by", caller.Username)
+			w.WriteHeader(http.StatusNoContent)
+		}
 	})
 }

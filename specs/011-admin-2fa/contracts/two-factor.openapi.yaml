@@ -1,0 +1,795 @@
+# Feature 11 changes to api/openapi.yaml (0.9.0 -> 0.10.0). Additions only, plus one new
+# 202 response on POST /api/session that clients without 2FA admins never see, and one new
+# required property on Admin. Every new route refuses API tokens: x-access admin or enroll, or
+# public with a bm_pending cookie required (except DELETE /api/session/pending, which needs no
+# cookie and only ever destroys one). Shared responses (Invalid, Unauthenticated, Forbidden,
+# NotFound, RateLimited), headers (SessionCookie), parameters (Id) and schemas (Error) are the
+# existing ones. Kept in sync with api/openapi.yaml (T066); that file wins on any difference.
+#
+# Error codes added: invalid_code, confirm_required,
+# two_factor_required, totp_unavailable, passkeys_unavailable, passkey_failed, already_set_up,
+# no_factor, cannot_clear_self, too_many_passkeys, two_factor_unavailable.
+
+paths:
+  /api/session:
+    post:
+      # existing operation; new 202 response (its description now names the 202 case)
+      responses:
+        "202":
+          description: >
+            Password correct, sign-in not finished. Sets the bm_pending cookie (5 minutes,
+            single use) and no session cookie. next=second_factor: send one of methods to the
+            matching /api/session/* route. next=enroll: 2FA is required and this admin has none;
+            set one up with the x-access enroll routes.
+          headers:
+            Set-Cookie: { $ref: "#/components/headers/PendingCookie" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SignInPending" }
+
+  /api/session/pending:
+    delete:
+      operationId: cancelSignIn
+      summary: Cancel an unfinished sign-in
+      description: >
+        Public. Deletes the pending sign-in named by the bm_pending cookie, if any, and clears
+        the cookie. Always 204, whether or not a pending sign-in existed. Refuses cross-site
+        requests like every write. The login Cancel button and the enroll view's Sign out use it.
+      tags: [auth]
+      security: []
+      x-access: public
+      responses:
+        "204":
+          description: Cancelled (or nothing to cancel)
+          headers:
+            Set-Cookie:
+              $ref: "#/components/headers/PendingCookie"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/session/totp:
+    post:
+      operationId: signInTotp
+      summary: Finish sign-in with an authenticator code
+      description: >
+        Public, but needs a bm_pending cookie of kind second_factor, else 401 unauthenticated. A
+        wrong or reused code is 401 invalid_code, counts as a sign-in failure for the username
+        (5 per 15 minutes) and leaves the pending sign-in usable until it expires. Success ends
+        the pending step, clears its cookie and starts a session, as 200 from POST /api/session.
+      tags: [auth]
+      security: []
+      x-access: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CodeBody"
+      responses:
+        "200":
+          $ref: "#/components/responses/SignedIn"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/SecondStepFailed"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/session/recovery:
+    post:
+      operationId: signInRecovery
+      summary: Finish sign-in with a recovery code
+      description: >
+        Same rules as POST /api/session/totp; spaces, dashes and case in the code are ignored.
+        The code is spent, in the same step that ends the pending sign-in. A wrong or spent
+        code is 401 invalid_code.
+      tags: [auth]
+      security: []
+      x-access: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CodeBody"
+      responses:
+        "200":
+          $ref: "#/components/responses/SignedIn"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/SecondStepFailed"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/session/passkey/options:
+    post:
+      operationId: signInPasskeyOptions
+      summary: Get WebAuthn request options for the pending sign-in
+      description: >
+        Public, but needs a bm_pending cookie of kind second_factor, else 401 unauthenticated.
+        allowCredentials lists only this admin's passkeys; userVerification is required. A new
+        call replaces the earlier challenge. 409 passkeys_unavailable without
+        BEER_MENU_PUBLIC_URL, no_factor when the admin has no passkey.
+      tags: [auth]
+      security: []
+      x-access: public
+      responses:
+        "200":
+          description: Options for PublicKeyCredential.parseRequestOptionsFromJSON
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebAuthnOptions"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/TwoFactorConflict"
+
+  /api/session/passkey:
+    post:
+      operationId: signInPasskey
+      summary: Finish sign-in with a passkey
+      description: >
+        Public, but needs a bm_pending cookie of kind second_factor, else 401 unauthenticated.
+        The body is credential.toJSON() of the assertion for the latest options, checked against
+        the stored challenge, the BEER_MENU_PUBLIC_URL origin and RP ID, the user-verified flag,
+        the signature and the sign count. A refusal is 401 passkey_failed, uses up the challenge
+        (get new options to retry), counts as a sign-in failure for the username and leaves the
+        pending sign-in usable until it expires. Success is as 200 from POST /api/session.
+      tags: [auth]
+      security: []
+      x-access: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebAuthnResponse"
+      responses:
+        "200":
+          $ref: "#/components/responses/SignedIn"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/SecondStepFailed"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/2fa:
+    get:
+      operationId: getTwoFactor
+      summary: Return the caller's two-factor state
+      description: >
+        Factors (never their secrets), recovery codes left, the require setting, and whether
+        this server can add an authenticator (an encryption key is set) and passkeys
+        (BEER_MENU_PUBLIC_URL is set).
+      tags: [two-factor]
+      x-access: enroll
+      responses:
+        "200":
+          description: Two-factor state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TwoFactorState"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    delete:
+      operationId: turnOffTwoFactor
+      summary: Remove all of the caller's factors and recovery codes
+      description: >
+        Needs a recent confirm. Ends the caller's other sessions and pending sign-ins; this
+        session stays. 409 no_factor when two-factor sign-in is already off, two_factor_required
+        while 2FA is required for every admin.
+      tags: [two-factor]
+      x-access: admin
+      responses:
+        "204":
+          description: Turned off
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ConfirmRequired"
+        "409":
+          $ref: "#/components/responses/TwoFactorConflict"
+
+  /api/2fa/confirm:
+    post:
+      operationId: confirmIdentity
+      summary: Prove identity before a sensitive change
+      description: >
+        Current password, plus exactly one second factor (code, recovery_code or passkey) if the
+        caller has any. Success stamps the session; sensitive routes accept it for 5 minutes.
+        Rate limited with sign-in: failures count toward the 5 per username per 15 minutes. A
+        recovery code is spent. A passkey proof first needs POST /api/2fa/confirm/options.
+      tags: [two-factor]
+      x-access: admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmBody"
+      responses:
+        "204":
+          description: Confirmed
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: wrong_password, invalid_code or passkey_failed, or a token was used
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: invalid_code
+                message: That code did not work.
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Busy"
+
+  /api/2fa/confirm/options:
+    post:
+      operationId: confirmPasskeyOptions
+      summary: WebAuthn request options for a passkey confirm
+      description: >
+        allowCredentials lists only the caller's passkeys; userVerification is required. Held on
+        the session for 5 minutes; a new call replaces it. 409 passkeys_unavailable without
+        BEER_MENU_PUBLIC_URL, no_factor when the caller has no passkey.
+      tags: [two-factor]
+      x-access: admin
+      responses:
+        "200":
+          description: Options for PublicKeyCredential.parseRequestOptionsFromJSON
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebAuthnOptions"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/TwoFactorConflict"
+
+  /api/2fa/totp/setup:
+    post:
+      operationId: startTotpSetup
+      summary: Start adding an authenticator app
+      description: >
+        Needs a recent confirm (sign-in or POST /api/2fa/confirm in the last 5 minutes); an
+        enroll pending counts as confirmed. Returns a new secret, held unconfirmed on the server
+        for 5 minutes (with an enroll pending, until that sign-in expires); a new call replaces
+        it. 409 already_set_up if the caller has an authenticator, totp_unavailable without an
+        encryption key.
+      tags: [two-factor]
+      x-access: enroll
+      responses:
+        "200":
+          description: The new secret, shown once
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TotpSetup"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ConfirmRequired"
+        "409":
+          $ref: "#/components/responses/TwoFactorConflict"
+
+  /api/2fa/totp:
+    post:
+      operationId: finishTotpSetup
+      summary: Confirm the authenticator with a current code and save it
+      description: >
+        Needs a recent confirm (an enroll pending counts). A wrong code, or no setup open, is
+        400 invalid_code and saves nothing (the setup stays open until it expires). If this is
+        the caller's first factor, the response carries 10 recovery codes and the caller's other
+        sessions end. With an enroll pending, it also ends that pending sign-in, clears
+        bm_pending, starts a session (Set-Cookie as from POST /api/session) and returns the
+        admin.
+      tags: [two-factor]
+      x-access: enroll
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CodeBody"
+      responses:
+        "201":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FactorAdded"
+        "400":
+          description: invalid_request, or invalid_code for a wrong code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: invalid_code
+                message: That code did not work.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ConfirmRequired"
+        "409":
+          $ref: "#/components/responses/TwoFactorConflict"
+    delete:
+      operationId: removeTotp
+      summary: Remove the authenticator app
+      description: >
+        Needs a recent confirm. Ends the caller's other sessions and pending sign-ins; this
+        session stays. Removing the last factor also deletes the recovery codes, and is refused
+        (409 two_factor_required) while 2FA is required for every admin. 404 when no
+        authenticator is set up.
+      tags: [two-factor]
+      x-access: admin
+      responses:
+        "204":
+          description: Removed
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ConfirmRequired"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TwoFactorConflict"
+
+  /api/2fa/passkeys/options:
+    post:
+      operationId: startPasskeySetup
+      summary: WebAuthn creation options for a new passkey
+      description: >
+        Needs a recent confirm (an enroll pending counts). excludeCredentials lists the caller's
+        passkeys; userVerification required; attestation none; residentKey preferred. Held on
+        the server for 5 minutes (with an enroll pending, until that sign-in expires); a new
+        call replaces it. 409 passkeys_unavailable without BEER_MENU_PUBLIC_URL,
+        too_many_passkeys at 10.
+      tags: [two-factor]
+      x-access: enroll
+      responses:
+        "200":
+          description: Options for PublicKeyCredential.parseCreationOptionsFromJSON
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebAuthnOptions"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ConfirmRequired"
+        "409":
+          $ref: "#/components/responses/TwoFactorConflict"
+
+  /api/2fa/passkeys:
+    post:
+      operationId: finishPasskeySetup
+      summary: Save a new passkey
+      description: >
+        Needs a recent confirm. credential is credential.toJSON() of the creation for the latest
+        options. A refused credential, or no setup open, is 400 passkey_failed and saves nothing.
+        At most 10 passkeys per admin: an 11th is 409 too_many_passkeys. If this is the caller's
+        first factor, the response carries 10 recovery codes and the caller's other sessions
+        end. An enroll pending counts as confirmed and is finished as by POST /api/2fa/totp.
+      tags: [two-factor]
+      x-access: enroll
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, credential]
+              properties:
+                name:
+                  $ref: "#/components/schemas/PasskeyName"
+                credential:
+                  $ref: "#/components/schemas/WebAuthnResponse"
+      responses:
+        "201":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FactorAdded"
+        "400":
+          description: invalid_request (bad name or body), or passkey_failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: passkey_failed
+                message: The passkey could not be added. Try again.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ConfirmRequired"
+        "409":
+          $ref: "#/components/responses/TwoFactorConflict"
+
+  /api/2fa/passkeys/{id}:
+    patch:
+      operationId: renamePasskey
+      summary: Rename one of the caller's passkeys
+      description: Needs no recent confirm. Another admin's passkey id is 404.
+      tags: [two-factor]
+      x-access: admin
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name:
+                  $ref: "#/components/schemas/PasskeyName"
+      responses:
+        "200":
+          description: Renamed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Passkey"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: removePasskey
+      summary: Remove one of the caller's passkeys
+      description: Same rules as DELETE /api/2fa/totp. Another admin's passkey id is 404.
+      tags: [two-factor]
+      x-access: admin
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: Removed
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ConfirmRequired"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TwoFactorConflict"
+
+  /api/2fa/recovery-codes:
+    post:
+      operationId: replaceRecoveryCodes
+      summary: Make a new set of 10 recovery codes
+      description: >
+        Needs a recent confirm. All earlier codes stop working. 409 no_factor without a second
+        factor.
+      tags: [two-factor]
+      x-access: admin
+      responses:
+        "200":
+          description: The new codes, shown once
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecoveryCodes"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ConfirmRequired"
+        "409":
+          $ref: "#/components/responses/TwoFactorConflict"
+
+  /api/2fa/required:
+    put:
+      operationId: setTwoFactorRequired
+      summary: Turn "require 2FA for all admins" on or off
+      description: >
+        Needs a recent confirm and a second factor of the caller's own (409 no_factor). Turning
+        it on is 409 two_factor_unavailable while the server can set up no factor (no encryption
+        key and no BEER_MENU_PUBLIC_URL); turning it off is unaffected. Turning it on ends no
+        sessions; admins without a factor must set one up at their next sign-in.
+        While it is on, no admin can remove their last factor or turn 2FA off. Not part of
+        GET or PATCH /api/settings.
+      tags: [two-factor]
+      x-access: admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [required]
+              properties:
+                required:
+                  type: boolean
+      responses:
+        "204":
+          description: Saved
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ConfirmRequired"
+        "409":
+          $ref: "#/components/responses/TwoFactorConflict"
+
+  /api/admins/{id}/2fa:
+    delete:
+      operationId: clearAdminTwoFactor
+      summary: Clear another admin's factors and recovery codes
+      description: >
+        Deletes all of that admin's factors, recovery codes, pending sign-ins and sessions.
+        Needs a recent confirm (403 confirm_required), and works while 2FA is required. The
+        caller's own id is 409 cannot_clear_self.
+      tags: [admins]
+      x-access: admin
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: Cleared
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ConfirmRequired"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TwoFactorConflict"
+
+components:
+  headers:
+    PendingCookie:
+      description: "`bm_pending=<id>; Path=/api; Max-Age=300; HttpOnly; SameSite=Strict; Secure`"
+      schema:
+        type: string
+  responses:
+    SignedIn:
+      description: Signed in; same as 200 from POST /api/session
+      headers:
+        Set-Cookie:
+          $ref: "#/components/headers/SessionCookie"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Admin"
+    SecondStepFailed:
+      description: unauthenticated (no, expired or used pending sign-in), invalid_code or passkey_failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: invalid_code
+            message: That code did not work.
+    ConfirmRequired:
+      description: >
+        confirm_required: no sign-in or confirm in the last 5 minutes; or forbidden for a token
+        or a cross-site write
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: confirm_required
+            message: Confirm it is you first.
+    TwoFactorConflict:
+      description: >
+        The change conflicts with two-factor state. `error` is `two_factor_required` (it would
+        leave the caller without a factor while 2FA is required for every admin),
+        `totp_unavailable` (no encryption key), `already_set_up`, `passkeys_unavailable` (no BEER_MENU_PUBLIC_URL),
+        `too_many_passkeys` (10 already), `no_factor` (no passkey to check, or no second factor
+        at all), `cannot_clear_self` (clearing the caller's own factors as another admin) or
+        `two_factor_unavailable` (requiring 2FA while the server has neither an encryption key
+        nor BEER_MENU_PUBLIC_URL, so no admin could set up a factor).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Admin:
+      # existing schema; two_factor added to properties and to required
+      required: [id, username, created_at, two_factor]
+      properties:
+        two_factor:
+          type: boolean
+          description: Has at least one second factor.
+    SignInPending:
+      type: object
+      additionalProperties: false
+      required: [next]
+      properties:
+        next:
+          type: string
+          enum: [second_factor, enroll]
+        methods:
+          type: array
+          description: Present when next=second_factor. Recovery is listed when unused codes remain.
+          items:
+            type: string
+            enum: [totp, passkey, recovery]
+        passkeys_origin:
+          type: string
+          description: >
+            Present when methods lists passkey. The origin passkeys work on
+            (BEER_MENU_PUBLIC_URL). The client offers passkeys only when its location.origin
+            equals it.
+    CodeBody:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 32
+          description: Spaces and dashes ignored.
+    ConfirmBody:
+      type: object
+      additionalProperties: false
+      required: [password]
+      properties:
+        password:
+          type: string
+          format: password
+        code:
+          type: string
+          maxLength: 32
+        recovery_code:
+          type: string
+          maxLength: 32
+        passkey:
+          $ref: "#/components/schemas/WebAuthnResponse"
+    TwoFactorState:
+      type: object
+      additionalProperties: false
+      required: [enabled, required, totp_available, passkeys_available, passkeys_origin, totp, passkeys, recovery_codes_left]
+      properties:
+        enabled:
+          type: boolean
+        required:
+          type: boolean
+          description: The require-2FA-for-all setting.
+        totp_available:
+          type: boolean
+          description: False without an encryption key.
+        passkeys_available:
+          type: boolean
+          description: False without BEER_MENU_PUBLIC_URL.
+        passkeys_origin:
+          type: [string, "null"]
+          description: >
+            The configured origin, or null when passkeys are off. The client offers passkeys only
+            when its location.origin equals it (FR-016).
+        totp:
+          type: [object, "null"]
+          additionalProperties: false
+          required: [created_at, last_used_at]
+          properties:
+            created_at:
+              type: string
+              format: date-time
+            last_used_at:
+              type: [string, "null"]
+              format: date-time
+        passkeys:
+          type: array
+          items:
+            $ref: "#/components/schemas/Passkey"
+        recovery_codes_left:
+          type: integer
+          minimum: 0
+          maximum: 10
+    Passkey:
+      type: object
+      additionalProperties: false
+      required: [id, name, created_at, last_used_at]
+      properties:
+        id:
+          type: integer
+        name:
+          $ref: "#/components/schemas/PasskeyName"
+        created_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: [string, "null"]
+          format: date-time
+    PasskeyName:
+      type: string
+      minLength: 1
+      maxLength: 64
+      description: Trimmed; no control characters.
+    TotpSetup:
+      type: object
+      additionalProperties: false
+      required: [secret, uri]
+      properties:
+        secret:
+          type: string
+          description: Base32, no padding. Shown once.
+        uri:
+          type: string
+          description: "otpauth://totp/Beer%20Menu:<username>?secret=...&issuer=Beer%20Menu"
+    FactorAdded:
+      type: object
+      additionalProperties: false
+      properties:
+        passkey:
+          $ref: "#/components/schemas/Passkey"
+        recovery_codes:
+          type: array
+          description: Present only when this was the first factor. Shown once.
+          minItems: 10
+          maxItems: 10
+          items:
+            type: string
+            pattern: "^[a-z2-7]{5}-[a-z2-7]{5}$"
+        admin:
+          $ref: "#/components/schemas/Admin"
+    RecoveryCodes:
+      type: object
+      additionalProperties: false
+      required: [recovery_codes]
+      properties:
+        recovery_codes:
+          type: array
+          description: Shown once.
+          minItems: 10
+          maxItems: 10
+          items:
+            type: string
+            pattern: "^[a-z2-7]{5}-[a-z2-7]{5}$"
+    WebAuthnOptions:
+      type: object
+      description: >
+        { publicKey: PublicKeyCredentialCreationOptionsJSON or
+        PublicKeyCredentialRequestOptionsJSON } as defined by WebAuthn Level 3, base64url fields.
+      required: [publicKey]
+      properties:
+        publicKey:
+          type: object
+    WebAuthnResponse:
+      type: object
+      description: PublicKeyCredential.toJSON() output (WebAuthn Level 3). The whole request body is at most 16 KiB.
+      required: [id, rawId, type, response]
+      properties:
+        id:
+          type: string
+        rawId:
+          type: string
+        type:
+          type: string
+          enum: [public-key]
+        response:
+          type: object

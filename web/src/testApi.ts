@@ -1,5 +1,17 @@
-import { vi } from "vitest";
-import type { BatchSummary, Beer, BrewfatherStatus, ImportResult, Keg, KegType, Menu, Settings, Tap } from "./api";
+import { onTestFinished, vi } from "vitest";
+import type {
+  BatchSummary,
+  Beer,
+  BrewfatherStatus,
+  ImportResult,
+  Keg,
+  KegType,
+  Menu,
+  Passkey,
+  Settings,
+  Tap,
+  TwoFactorState,
+} from "./api";
 
 /** Reply is one stubbed API response. */
 export interface Reply {
@@ -42,7 +54,53 @@ export function testPassword(): string {
 }
 
 /** owner is the Admin body the stubs return. */
-export const owner = { id: 1, username: "owner", created_at: "2026-11-08T12:00:00Z" };
+export const owner = { id: 1, username: "owner", created_at: "2026-11-08T12:00:00Z", two_factor: false };
+
+/** twoFactorState returns a GET /api/2fa body for stubs: no factor, both kinds available. */
+export function twoFactorState(overrides: Partial<TwoFactorState> = {}): TwoFactorState {
+  return {
+    enabled: false,
+    required: false,
+    totp_available: true,
+    passkeys_available: true,
+    passkeys_origin: "http://localhost:3000",
+    totp: null,
+    passkeys: [],
+    recovery_codes_left: 0,
+    ...overrides,
+  };
+}
+
+/** passkey returns a Passkey body for stubs: "Phone", never used. */
+export function passkey(overrides: Partial<Passkey> = {}): Passkey {
+  return { id: 1, name: "Phone", created_at: "2026-11-10T12:00:00Z", last_used_at: null, ...overrides };
+}
+
+/** webAuthnOptions is a WebAuthn options body for stubs; stubPasskeys passes it through unparsed. */
+export const webAuthnOptions = { status: 200, body: { publicKey: { challenge: "Y2hhbGxlbmdl" } } };
+
+/**
+ * stubPasskeys makes this page passkey-capable for one test: a secure context, PublicKeyCredential
+ * whose JSON helpers pass options through, and navigator.credentials whose create and get resolve
+ * to a credential with toJSON() = `reply`, or reject with NotAllowedError (a closed prompt) for
+ * "cancel". Returns the mock behind create and get.
+ */
+export function stubPasskeys(reply: object | "cancel" = { id: "credential" }) {
+  const prompt = vi.fn(async () => {
+    if (reply === "cancel") throw new DOMException("The operation was not allowed.", "NotAllowedError");
+    return { toJSON: () => reply };
+  });
+  vi.stubGlobal("isSecureContext", true);
+  vi.stubGlobal("PublicKeyCredential", {
+    parseCreationOptionsFromJSON: (o: unknown) => o,
+    parseRequestOptionsFromJSON: (o: unknown) => o,
+  });
+  Object.defineProperty(navigator, "credentials", { value: { create: prompt, get: prompt }, configurable: true });
+  onTestFinished(() => {
+    Reflect.deleteProperty(navigator, "credentials");
+  });
+  return prompt;
+}
 
 /** beer returns a Beer body for stubs: a current, ready, manual beer with no optional data. */
 export function beer(overrides: Partial<Beer> = {}): Beer {

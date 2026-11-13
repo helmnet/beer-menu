@@ -29,9 +29,13 @@ func listTokens(deps Deps) http.Handler {
 
 // createToken handles POST /api/tokens (admin): it creates a token from the TokenRequest body
 // and returns 201 with the NewToken, the only response that ever holds the secret (FR-024).
-// A bad name or scope gives 400 invalid_request.
+// The setupCaller checks run first (403 confirm_required without a recent confirm). A bad name
+// or scope gives 400 invalid_request.
 func createToken(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, _, ok := setupCaller(w, r, deps); !ok {
+			return
+		}
 		var body tokenBody
 		if !decodeJSON(w, r, &body, maxBody) {
 			return

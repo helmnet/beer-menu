@@ -382,7 +382,18 @@ func TestGetDisplayIgnoresOtherKeys(t *testing.T) {
 // and 6 data and no display rows reads as all defaults and stays at version 5 (FR-014; there is
 // no migration to test).
 func TestDisplayDefaultsOnVersion5Data(t *testing.T) {
-	db := openDB(t)
+	db, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	ms, err := store.LoadMigrations(store.Migrations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Apply(db, ms[:5]); err != nil {
+		t.Fatal(err)
+	}
 	for _, q := range []string{
 		"INSERT INTO beers (name, created_at, updated_at) VALUES ('Pale', 1, 1)",
 		"INSERT INTO taps (position, label, created_at, updated_at) VALUES ((SELECT COALESCE(MAX(position), 0) + 1 FROM taps), 'Upgrade', 1, 1)",

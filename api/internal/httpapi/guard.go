@@ -22,9 +22,12 @@ const (
 	AccessWrite
 	// AccessPublic allows anyone, with or without credentials.
 	AccessPublic
+	// AccessEnroll allows a session, or the enroll pending sign-in of an admin who must set up
+	// 2FA before signing in. Only the factor setup routes use it (research R10).
+	AccessEnroll
 )
 
-// String returns the x-access name of a: "admin", "read", "write" or "public".
+// String returns the x-access name of a: "admin", "read", "write", "public" or "enroll".
 func (a Access) String() string {
 	switch a {
 	case AccessAdmin:
@@ -35,16 +38,38 @@ func (a Access) String() string {
 		return "write"
 	case AccessPublic:
 		return "public"
+	case AccessEnroll:
+		return "enroll"
 	}
 	return "unknown"
 }
 
 // principal is the credential a guarded request was allowed with: an admin session
-// (AdminID and SessionID set) or an API token (Token set).
+// (AdminID and SessionID set), an API token (Token set), or on AccessEnroll routes an enroll
+// pending sign-in (Pending, the bm_pending ID, and PendingUserID set).
 type principal struct {
-	AdminID   int64
-	SessionID string
-	Token     *auth.Token
+	AdminID       int64
+	SessionID     string
+	Token         *auth.Token
+	Pending       string
+	PendingUserID int64
+}
+
+// userID returns the admin of a session or enroll pending principal.
+func (p principal) userID() int64 {
+	if p.Pending != "" {
+		return p.PendingUserID
+	}
+	return p.AdminID
+}
+
+// setupChallenge returns the challenge that holds the principal's factor setup: an enroll
+// pending sign-in itself, or a session's setup row, keyed by the session ID.
+func (p principal) setupChallenge() (string, auth.ChallengeKind) {
+	if p.Pending != "" {
+		return p.Pending, auth.KindEnroll
+	}
+	return p.SessionID, auth.KindSetup
 }
 
 type principalKey struct{}
@@ -58,14 +83,19 @@ func principalFrom(ctx context.Context) (p principal, ok bool) {
 // guard enforces access on h. Public routes pass untouched. Otherwise an Authorization header,
 // if present, alone decides: it must be exactly one "Bearer bmt_..." for an active token, or
 // the request gets 401 even with a valid session cookie. Without one, the bm_session cookie
-// must name a valid session. No valid credential gives 401; a token on a write route without
-// write scope, or on an admin route, gives 403. The principal goes into the request context.
+// must name a valid session, or on an AccessEnroll route the bm_pending cookie may name an
+// enroll pending sign-in. No valid credential gives 401; a token on a write route without
+// write scope, or on an admin or enroll route, gives 403. The principal goes into the request
+// context.
 func guard(deps Deps, access Access, h http.Handler) http.Handler {
 	if access == AccessPublic {
 		return h
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p, err := resolve(deps, r)
+		if err == nil && p == nil && access == AccessEnroll && len(r.Header.Values("Authorization")) == 0 {
+			p, err = enrollPending(deps, r)
+		}
 		switch {
 		case err != nil:
 			writeInternal(w, r, err)
@@ -73,7 +103,7 @@ func guard(deps Deps, access Access, h http.Handler) http.Handler {
 		case p == nil:
 			writeError(w, http.StatusUnauthorized, "unauthenticated", "Sign in or send a valid API token.")
 			return
-		case p.Token != nil && (access == AccessAdmin || (access == AccessWrite && p.Token.Scope != auth.ScopeWrite)):
+		case p.Token != nil && (access == AccessAdmin || access == AccessEnroll || (access == AccessWrite && p.Token.Scope != auth.ScopeWrite)):
 			writeError(w, http.StatusForbidden, "forbidden", "This credential cannot do that.")
 			return
 		}
@@ -103,4 +133,14 @@ func resolve(deps Deps, r *http.Request) (*principal, error) {
 		return nil, err
 	}
 	return &principal{AdminID: uid, SessionID: c.Value}, nil
+}
+
+// enrollPending returns the principal of the request's enroll pending sign-in, or nil when it
+// has none or a bad one.
+func enrollPending(deps Deps, r *http.Request) (*principal, error) {
+	id, c, ok, err := pendingFrom(deps, r, auth.KindEnroll)
+	if err != nil || !ok {
+		return nil, err
+	}
+	return &principal{Pending: id, PendingUserID: c.UserID}, nil
 }

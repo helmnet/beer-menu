@@ -81,6 +81,43 @@ docker compose exec -it api /beer-menu-api reset-password <username>
 It asks for the new password twice without echoing it, refuses unless run in a terminal
 (`-it`), and ends all of that admin's sessions. There is no way to reset a password over HTTP.
 
+**Two-factor sign-in.** Each admin can add a second step to sign-in under Administration ›
+Two-Factor Sign-In: an authenticator app (6-digit codes), passkeys (fingerprint, face unlock
+or a security key; up to 10), or both. Adding the first one shows 10 single-use recovery codes
+once; keep them somewhere safe, and make a new set there when they run low. Any admin can turn
+on "Require two-factor sign-in for all admins"; an admin without a second factor must then set
+one up at their next sign-in before using the app. Another admin can clear a colleague's
+factors under Administration › Admin Users, after confirming it is them; adding or removing an
+admin there, creating an API token and changing your password ask the same.
+
+Each method needs a setting on the `api` service:
+
+| Variable | Meaning |
+| --- | --- |
+| `BEER_MENU_SECRET_KEY_FILE` or `BEER_MENU_SECRET_KEY` | The encryption key (see [Brewfather import](#brewfather-import)); authenticator apps need it |
+| `BEER_MENU_PUBLIC_URL` | The address admins open the app at, for passkeys: scheme and host name, plus the port if the address has one, exactly as the browser shows it, such as `https://taplist.example.org` |
+
+Set `BEER_MENU_PUBLIC_URL` on the `api` container only. It must be `https://` with a host name
+(not an IP address), or `http://localhost`, with no path; anything else stops the API at
+startup. Unset, passkeys are off. Passkeys work only when the browser's address matches it,
+so opening the app by IP address or another name offers authenticator codes only.
+
+With neither the encryption key nor `BEER_MENU_PUBLIC_URL`, no second factor can be set up:
+the admin app refuses to turn on the require setting, and if it is already on, the API logs a
+warning at startup, because admins without a factor cannot finish signing in.
+
+**Lost second factor.** Sign in with a recovery code, or ask another admin to clear your
+factors. If no admin can sign in, clear one admin's factors from the server:
+
+```sh
+docker compose exec api /beer-menu-api reset-2fa <username>
+```
+
+It deletes that admin's authenticator, passkeys and recovery codes and ends their sessions;
+their password and the require setting stay as they are. If the require setting is on, they
+set up a new factor at their next sign-in. Start the API at least once after an upgrade
+before running it.
+
 **API tokens.** Admins create tokens in the admin app for scripts and Home Assistant, with
 scope `read` or `write`. A token's secret is shown once, when it is created; only its hash is
 stored. Every secret starts with `bmt_`, so secret scanners can find leaked ones. Revoke a
@@ -140,6 +177,9 @@ Give it to the API in one of two ways:
 | `BEER_MENU_SECRET_KEY_FILE` | Path to a file holding the key, such as a compose secret (preferred; wins if both are set) |
 | `BEER_MENU_SECRET_KEY` | The key itself |
 
+The same key also protects the secrets of authenticator apps used for
+[two-factor sign-in](#admins-and-sign-in).
+
 Prefer the file: environment values show in `docker inspect` and in the process environment.
 `docker-compose.yaml` has a commented example that mounts the file as a compose secret. The key
 is standard base64 of exactly 32 bytes; a key that is set but unreadable or malformed stops the
@@ -147,9 +187,12 @@ API at startup with an error naming the variable, never the value. With neither 
 the API runs and the admin app says Brewfather import is not set up.
 
 Keep a copy of the key somewhere other than the data folder. Losing it, or changing it, loses
-only the Brewfather connection: the admin app shows "Reconnect needed" and you enter the
-Brewfather API key again. Imported beers are not affected. A restored backup needs the same
-encryption key to keep its connection.
+the Brewfather connection: the admin app shows "Reconnect needed" and you enter the
+Brewfather API key again. Imported beers are not affected. It also stops every authenticator
+app's codes from working: those admins sign in with a passkey or a recovery code, then remove
+the authenticator and add it again. While two-factor sign-in is required, an admin whose only
+factor is the authenticator cannot remove it; another admin clears their factors instead. A
+restored backup needs the same encryption key to keep its connection and authenticators.
 
 ## Restore from a backup
 
@@ -185,12 +228,13 @@ from. It keeps the 5 newest copies. To go back to one of them:
 
 The API backs up the restored file and re-applies any migrations newer than `v<N>`.
 
-A restore brings back admins, passwords and tokens as they were when the backup was taken.
-Tokens revoked since the backup must be revoked again, and admins removed or passwords
-changed since then must be removed or changed again.
+A restore brings back admins, passwords, two-factor settings and tokens as they were when the
+backup was taken. Tokens revoked since the backup must be revoked again, and admins removed or
+passwords changed since then must be removed or changed again.
 
-A restored connection to Brewfather opens only with the encryption key the API had when the
-backup was taken; otherwise reconnect (see [Brewfather import](#brewfather-import)).
+A restored connection to Brewfather, and restored authenticator apps, work only with the
+encryption key the API had when the backup was taken; otherwise reconnect (see
+[Brewfather import](#brewfather-import)) and add the authenticators again.
 
-Backups hold password and token hashes. Keep them, like the database, at mode `0600` and
-owned by the container user.
+Backups hold password and token hashes, and sealed authenticator secrets. Keep them, like the
+database, at mode `0600` and owned by the container user.

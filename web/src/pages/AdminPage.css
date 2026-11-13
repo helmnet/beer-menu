@@ -599,6 +599,13 @@ body:has(> #root > .admin) {
   list-style: none;
 }
 
+.admin .badge {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.8em;
+}
+
 .admin .plain-list li {
   display: flex;
   flex-wrap: wrap;
@@ -1043,4 +1050,13 @@ body:has(> #root > .admin) {
     width: 100%;
     height: 100%;
   }
+}
+
+/* Two-factor setup: the QR code needs dark modules on light, whatever the theme. */
+
+.admin .qr-code {
+  display: block;
+  width: 200px;
+  height: 200px;
+  background: #fff;
 }

@@ -100,3 +100,77 @@ func TestGuardAccessTable(t *testing.T) {
 	check(readTok.headers, AccessRead, principal{Token: &auth.Token{ID: readID, Scope: auth.ScopeRead}})
 	check(writeTok.headers, AccessWrite, principal{Token: &auth.Token{ID: writeID, Scope: auth.ScopeWrite}})
 }
+
+func TestGuardEnroll(t *testing.T) {
+	deps, clock := newTestDeps(t)
+	uid := insertUser(t, deps.DB, "owner")
+	sid, err := auth.CreateSession(deps.DB, uid, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := func(kind auth.ChallengeKind) []string {
+		id, err := auth.CreateChallenge(deps.DB, uid, kind, clock.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return []string{"Cookie", pendingCookieName + "=" + id}
+	}
+	readSecret, _ := insertToken(t, deps.DB, auth.ScopeRead, false)
+	writeSecret, _ := insertToken(t, deps.DB, auth.ScopeWrite, false)
+
+	var seen principal
+	var reached bool
+	stub := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen, reached = principalFrom(r.Context())
+		w.WriteHeader(http.StatusNoContent)
+	})
+	call := func(access Access, headers ...string) int {
+		t.Helper()
+		reached, seen = false, principal{}
+		rec := do(guard(deps, access, stub), http.MethodGet, "/x", "", headers...)
+		switch rec.Code {
+		case 401:
+			wantError(t, rec, 401, "unauthenticated")
+		case 403:
+			wantError(t, rec, 403, "forbidden")
+		}
+		return rec.Code
+	}
+	if got := call(AccessEnroll, "Cookie", sessionCookieName+"="+sid); got != 204 || seen.AdminID != uid || seen.SessionID != sid || seen.Pending != "" {
+		t.Fatalf("session = %d %+v", got, seen)
+	}
+	enroll := pending(auth.KindEnroll)
+	if got := call(AccessEnroll, enroll...); got != 204 || !reached || seen.AdminID != 0 || seen.SessionID != "" ||
+		seen.PendingUserID != uid || enroll[1] != pendingCookieName+"="+seen.Pending {
+		t.Fatalf("enroll pending = %d %+v", got, seen)
+	}
+	for _, kind := range []auth.ChallengeKind{auth.KindSecondFactor, auth.KindSetup} {
+		if got := call(AccessEnroll, pending(kind)...); got != 401 {
+			t.Errorf("%s pending = %d, want 401", kind, got)
+		}
+	}
+	if got := call(AccessEnroll, "Cookie", pendingCookieName+"=unknown"); got != 401 {
+		t.Errorf("unknown pending = %d, want 401", got)
+	}
+	for _, secret := range []string{readSecret, writeSecret} {
+		if got := call(AccessEnroll, "Authorization", "Bearer "+secret); got != 403 {
+			t.Errorf("token = %d, want 403", got)
+		}
+	}
+	// A bad Authorization header alone decides, as on every other level.
+	if got := call(AccessEnroll, append([]string{"Authorization", "Bearer bmt_x"}, enroll...)...); got != 401 {
+		t.Errorf("bad token with an enroll pending = %d, want 401", got)
+	}
+	for _, access := range []Access{AccessAdmin, AccessRead, AccessWrite} {
+		if got := call(access, enroll...); got != 401 {
+			t.Errorf("enroll pending on %s = %d, want 401", access, got)
+		}
+	}
+	clock.Advance(auth.ChallengeTTL)
+	if got := call(AccessEnroll, enroll...); got != 401 {
+		t.Errorf("expired enroll pending = %d, want 401", got)
+	}
+	if AccessEnroll.String() != "enroll" {
+		t.Errorf("AccessEnroll.String() = %q", AccessEnroll.String())
+	}
+}

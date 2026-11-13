@@ -7,13 +7,15 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/helmnet/beer-menu/api/internal/auth"
 	"github.com/helmnet/beer-menu/api/internal/importer"
+	"github.com/helmnet/beer-menu/api/internal/secrets"
 )
 
 // Deps holds what handlers need: the open database, the running app version, whether the
-// session cookie is marked Secure, the clock, the sign-in limiter, the import service and the
-// context of background work.
+// session cookie is marked Secure, the clock, the sign-in limiter, the import service, the
+// context of background work, and the 2FA keys.
 type Deps struct {
 	DB      *sql.DB
 	Version string
@@ -28,6 +30,10 @@ type Deps struct {
 	// Background is the context of work a request starts but does not wait for ("Sync now"); it
 	// ends at shutdown. NewMux uses context.Background() if nil.
 	Background context.Context
+	// Box seals authenticator secrets. Nil (no BEER_MENU_SECRET_KEY) turns authenticator apps off.
+	Box *secrets.Box
+	// WebAuthn checks passkeys for BEER_MENU_PUBLIC_URL. Nil (unset) turns passkeys off.
+	WebAuthn *webauthn.WebAuthn
 }
 
 // Route is one API endpoint. Every Route must be documented in api/openapi.yaml with an
@@ -49,6 +55,11 @@ var Routes = []Route{
 	{Method: http.MethodGet, Path: "/api/setup", Access: AccessPublic, Handler: getSetup},
 	{Method: http.MethodPost, Path: "/api/setup", Access: AccessPublic, Handler: createFirstAdmin},
 	{Method: http.MethodPost, Path: "/api/session", Access: AccessPublic, Handler: signIn},
+	{Method: http.MethodDelete, Path: "/api/session/pending", Access: AccessPublic, Handler: cancelSignIn},
+	{Method: http.MethodPost, Path: "/api/session/totp", Access: AccessPublic, Handler: signInTotp},
+	{Method: http.MethodPost, Path: "/api/session/recovery", Access: AccessPublic, Handler: signInRecovery},
+	{Method: http.MethodPost, Path: "/api/session/passkey/options", Access: AccessPublic, Handler: signInPasskeyOptions},
+	{Method: http.MethodPost, Path: "/api/session/passkey", Access: AccessPublic, Handler: signInPasskey},
 	{Method: http.MethodGet, Path: "/api/menu", Access: AccessPublic, Handler: getMenu},
 	{Method: http.MethodGet, Path: "/api/docs", Access: AccessPublic, Handler: getDocs},
 	{Method: http.MethodGet, Path: "/api/docs/{file}", Access: AccessPublic, Handler: getDocsAsset},
@@ -56,9 +67,23 @@ var Routes = []Route{
 	{Method: http.MethodGet, Path: "/api/session", Access: AccessAdmin, Handler: getSession},
 	{Method: http.MethodDelete, Path: "/api/session", Access: AccessAdmin, Handler: signOut},
 	{Method: http.MethodPost, Path: "/api/password", Access: AccessAdmin, Handler: changePassword},
+	{Method: http.MethodGet, Path: "/api/2fa", Access: AccessEnroll, Handler: getTwoFactor},
+	{Method: http.MethodDelete, Path: "/api/2fa", Access: AccessAdmin, Handler: turnOffTwoFactor},
+	{Method: http.MethodPost, Path: "/api/2fa/confirm", Access: AccessAdmin, Handler: confirmIdentity},
+	{Method: http.MethodPost, Path: "/api/2fa/confirm/options", Access: AccessAdmin, Handler: confirmPasskeyOptions},
+	{Method: http.MethodPost, Path: "/api/2fa/totp/setup", Access: AccessEnroll, Handler: startTotpSetup},
+	{Method: http.MethodPost, Path: "/api/2fa/totp", Access: AccessEnroll, Handler: finishTotpSetup},
+	{Method: http.MethodDelete, Path: "/api/2fa/totp", Access: AccessAdmin, Handler: removeTotp},
+	{Method: http.MethodPost, Path: "/api/2fa/passkeys/options", Access: AccessEnroll, Handler: startPasskeySetup},
+	{Method: http.MethodPost, Path: "/api/2fa/passkeys", Access: AccessEnroll, Handler: finishPasskeySetup},
+	{Method: http.MethodPatch, Path: "/api/2fa/passkeys/{id}", Access: AccessAdmin, Handler: renamePasskey},
+	{Method: http.MethodDelete, Path: "/api/2fa/passkeys/{id}", Access: AccessAdmin, Handler: removePasskey},
+	{Method: http.MethodPost, Path: "/api/2fa/recovery-codes", Access: AccessAdmin, Handler: replaceRecoveryCodes},
+	{Method: http.MethodPut, Path: "/api/2fa/required", Access: AccessAdmin, Handler: setTwoFactorRequired},
 	{Method: http.MethodGet, Path: "/api/admins", Access: AccessAdmin, Handler: listAdmins},
 	{Method: http.MethodPost, Path: "/api/admins", Access: AccessAdmin, Handler: addAdmin},
 	{Method: http.MethodDelete, Path: "/api/admins/{id}", Access: AccessAdmin, Handler: removeAdmin},
+	{Method: http.MethodDelete, Path: "/api/admins/{id}/2fa", Access: AccessAdmin, Handler: clearAdminTwoFactor},
 	{Method: http.MethodGet, Path: "/api/tokens", Access: AccessAdmin, Handler: listTokens},
 	{Method: http.MethodPost, Path: "/api/tokens", Access: AccessAdmin, Handler: createToken},
 	{Method: http.MethodDelete, Path: "/api/tokens/{id}", Access: AccessAdmin, Handler: revokeToken},

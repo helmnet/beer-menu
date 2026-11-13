@@ -1,7 +1,8 @@
 import { Plus } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { apiFetch, errorMessage, isUnauthenticated, Token } from "../api";
+import { apiFetch, errorMessage, isConfirmRequired, isUnauthenticated, Token } from "../api";
+import { useConfirm } from "./ConfirmIdentity";
 import Modal from "./Modal";
 
 /**
@@ -9,7 +10,8 @@ import Modal from "./Modal";
  * revokes them after confirmation (DELETE /api/tokens/{id}). "New token" opens the "New API
  * token" dialog with Name and Scope; a server error keeps the form open with its message. On
  * success (POST /api/tokens) the dialog swaps the form for the secret, shown once with Copy
- * and Close, and the list reloads. Closing the dialog, by Close or Escape, drops the secret from
+ * and Close, and the list reloads. A 403 confirm_required on create loads the caller's factors
+ * (GET /api/2fa), opens `ConfirmIdentity` over the dialog and creates again once confirmed. Closing the dialog, by Close or Escape, drops the secret from
  * state, so it cannot be shown again. Any 401 calls `onSignedOut`. Given `actionSlot` (the phone
  * top bar's slot), a second New token is portaled there; CSS shows one of the two. Under the
  * list, an "API docs" link opens the read-only API docs (/api/docs) in a new tab.
@@ -23,6 +25,7 @@ export default function TokensPanel({ onSignedOut, actionSlot }: { onSignedOut: 
   const [copied, setCopied] = useState("");
   const [formError, setFormError] = useState("");
   const [error, setError] = useState("");
+  const identity = useConfirm(onSignedOut, setError);
 
   async function run(action: () => Promise<void>) {
     setError("");
@@ -56,14 +59,20 @@ export default function TokensPanel({ onSignedOut, actionSlot }: { onSignedOut: 
     setCopied("");
   }
 
-  async function create(e: FormEvent) {
+  function create(e: FormEvent) {
     e.preventDefault();
+    save({ name, scope });
+  }
+
+  // save posts the new token; on confirm_required it confirms, then posts the same request again.
+  async function save(req: { name: string; scope: Token["scope"] }) {
     setFormError("");
     try {
-      const created = await apiFetch<Token & { secret: string }>("POST", "/api/tokens", { name, scope });
+      const created = await apiFetch<Token & { secret: string }>("POST", "/api/tokens", req);
       setSecret(created.secret);
     } catch (err) {
       if (isUnauthenticated(err)) onSignedOut();
+      else if (isConfirmRequired(err)) identity.ask(() => save(req));
       else setFormError(errorMessage(err));
       return;
     }
@@ -144,6 +153,7 @@ export default function TokensPanel({ onSignedOut, actionSlot }: { onSignedOut: 
         </p>
         {error && <p role="alert">{error}</p>}
       </div>
+      {identity.dialog}
       {creating && (
         <Modal title="New API token" onClose={closeDialog}>
           {secret ? (

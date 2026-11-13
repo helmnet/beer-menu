@@ -375,3 +375,105 @@ func TestLoadSecretKey(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadPublicURL(t *testing.T) {
+	env := func(v string) func(string) string {
+		return func(k string) string {
+			if k == "BEER_MENU_PUBLIC_URL" {
+				return v
+			}
+			return ""
+		}
+	}
+	origin, rpID, err := loadPublicURL(env(""))
+	if err != nil || origin != "" || rpID != "" {
+		t.Fatalf("unset = %q %q (err %v), want passkeys off", origin, rpID, err)
+	}
+	good := []struct{ in, origin, rpID string }{
+		{"https://taplist.example.org", "https://taplist.example.org", "taplist.example.org"},
+		{"https://taplist.example.org/", "https://taplist.example.org", "taplist.example.org"},
+		{"https://Taplist.Example.org:8443", "https://taplist.example.org:8443", "taplist.example.org"},
+		{"http://localhost:5173", "http://localhost:5173", "localhost"},
+	}
+	for _, c := range good {
+		origin, rpID, err := loadPublicURL(env(c.in))
+		if err != nil || origin != c.origin || rpID != c.rpID {
+			t.Errorf("%s = %q %q (err %v), want %q %q", c.in, origin, rpID, err, c.origin, c.rpID)
+		}
+	}
+	bad := []string{
+		"http://taplist.example.org",
+		"https://192.168.1.10",
+		"https://[fd00::1]",
+		"https://taplist.example.org/menu",
+		"https://taplist.example.org/?a=b",
+		"https://taplist.example.org/?",
+		"https://taplist.example.org/#top",
+		"https://user@taplist.example.org",
+		"https://",
+		"taplist.example.org",
+		"ftp://taplist.example.org",
+		"https://taplist.example.org:bad",
+		"%zz://taplist",
+	}
+	for _, v := range bad {
+		origin, rpID, err := loadPublicURL(env(v))
+		if err == nil || origin != "" || rpID != "" {
+			t.Errorf("%q = %q %q (err %v), want a startup error", v, origin, rpID, err)
+			continue
+		}
+		if !strings.Contains(err.Error(), "BEER_MENU_PUBLIC_URL") {
+			t.Errorf("%q: error %q does not name the variable", v, err)
+		}
+		// "https://" alone is also in the message's own example.
+		if (v != "https://" && strings.Contains(err.Error(), v)) || strings.Contains(err.Error(), "taplist") {
+			t.Errorf("%q: error %q contains the value", v, err)
+		}
+	}
+}
+
+func TestWarnNoTwoFactorMethod(t *testing.T) {
+	const warning = "2FA is required but no method can be enrolled"
+	for _, tc := range []struct {
+		name string
+		on   bool
+		cfg  config
+		want bool
+	}{
+		{"required, no method", true, config{}, true},
+		{"not required, no method", false, config{}, false},
+		{"required, encryption key", true, config{SecretKey: make([]byte, 32)}, false},
+		{"required, public URL", true, config{PublicOrigin: "https://menu.example"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logs := captureLog(t)
+			db, err := startAuth(t, config{DataDir: t.TempDir()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := auth.SetRequireTwoFactor(db, tc.on, fixedNow()); err != nil {
+				t.Fatal(err)
+			}
+			if err := warnNoTwoFactorMethod(context.Background(), db, tc.cfg); err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Contains(logs.String(), warning); got != tc.want {
+				t.Fatalf("warned = %v, want %v: %s", got, tc.want, logs)
+			}
+			if tc.want && (!strings.Contains(logs.String(), "BEER_MENU_SECRET_KEY") || !strings.Contains(logs.String(), "BEER_MENU_PUBLIC_URL")) {
+				t.Errorf("warning does not name both settings: %s", logs)
+			}
+		})
+	}
+}
+
+func TestWarnNoTwoFactorMethodReadError(t *testing.T) {
+	db, err := startAuth(t, config{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	if err := warnNoTwoFactorMethod(context.Background(), db, config{}); err == nil {
+		t.Fatal("want error when the setting cannot be read")
+	}
+}

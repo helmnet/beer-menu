@@ -1,6 +1,6 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { stubApi, testPassword } from "../testApi";
+import { stubApi, testPassword, twoFactorState } from "../testApi";
 import PasswordForm from "./PasswordForm";
 
 afterEach(() => {
@@ -70,5 +70,47 @@ describe("PasswordForm", () => {
     render(<PasswordForm onSignedOut={onSignedOut} />);
     submit(testPassword(), testPassword());
     await waitFor(() => expect(onSignedOut).toHaveBeenCalled());
+  });
+
+  describe("confirm identity", () => {
+    const confirmRequired = { status: 403, body: { error: "confirm_required", message: "Confirm it is you first." } };
+
+    it("confirms, then sends the same change again", async () => {
+      const routes: Parameters<typeof stubApi>[0] = {
+        "POST /api/password": confirmRequired,
+        "GET /api/2fa": { status: 200, body: twoFactorState({}) },
+        "POST /api/2fa/confirm": { status: 204 },
+      };
+      const calls = stubApi(routes);
+      render(<PasswordForm onSignedOut={vi.fn()} />);
+      const current = testPassword();
+      const next = testPassword();
+      submit(current, next);
+      const confirm = await screen.findByRole("dialog", { name: "Confirm it is you" });
+      expect(screen.queryByRole("alert")).toBeNull();
+      routes["POST /api/password"] = { status: 204 };
+      fireEvent.change(within(confirm).getByLabelText("Password"), { target: { value: current } });
+      fireEvent.click(within(confirm).getByRole("button", { name: "Confirm" }));
+      expect(await screen.findByText("Password changed. Your other sessions have ended.")).toBeTruthy();
+      expect(screen.queryByRole("dialog", { name: "Confirm it is you" })).toBeNull();
+      const posts = calls.filter((c) => c.key === "POST /api/password");
+      expect(posts).toHaveLength(2);
+      expect(posts[1].body).toEqual({ current_password: current, new_password: next });
+    });
+
+    it("sends nothing more when the confirm is cancelled", async () => {
+      const calls = stubApi({
+        "POST /api/password": confirmRequired,
+        "GET /api/2fa": { status: 200, body: twoFactorState({}) },
+      });
+      render(<PasswordForm onSignedOut={vi.fn()} />);
+      submit(testPassword(), testPassword());
+      const confirm = await screen.findByRole("dialog", { name: "Confirm it is you" });
+      fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
+      expect(screen.queryByRole("dialog", { name: "Confirm it is you" })).toBeNull();
+      expect(screen.queryByText("Password changed. Your other sessions have ended.")).toBeNull();
+      expect(calls.filter((c) => c.key === "POST /api/password")).toHaveLength(1);
+      expect((screen.getByRole("button", { name: "Change password" }) as HTMLButtonElement).disabled).toBe(false);
+    });
   });
 });

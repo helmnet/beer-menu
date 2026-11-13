@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import SideNav, { GroupKey, groupOf, PageKey } from "./SideNav";
+import SideNav, { GroupKey, groupOf, isPageKey, PageKey } from "./SideNav";
 
 afterEach(() => {
   cleanup();
@@ -74,6 +74,11 @@ describe("SideNav", () => {
     expect(within(nav()).getByRole("button", { name: "Menu" }).getAttribute("aria-expanded")).toBe("false");
     expect(within(nav()).queryByRole("button", { name: "Taps" })).toBeNull();
     expect(within(nav()).getByRole("button", { name: "API Tokens" })).toBeTruthy();
+    expect(
+      within(document.getElementById(within(nav()).getByRole("button", { name: "Administration" }).getAttribute("aria-controls")!)!)
+        .getAllByRole("button")
+        .map((b) => b.textContent),
+    ).toEqual(["Admin Users", "API Tokens", "Change Password", "Two-Factor Sign-In"]);
     fireEvent.click(within(nav()).getByRole("button", { name: "Integrations" }));
     expect(within(nav()).getByRole("button", { name: "Brewfather" })).toBeTruthy();
     expect(within(nav()).queryByRole("button", { name: "API Tokens" })).toBeNull();
@@ -158,6 +163,13 @@ describe("SideNav phone drawer", () => {
   it("shows the current page title in the top bar", () => {
     render(<Shell start="tokens" />);
     expect(within(screen.getByRole("banner")).getByText("API Tokens")).toBeTruthy();
+  });
+
+  it("knows the two-factor page", () => {
+    expect(isPageKey("two-factor")).toBe(true);
+    expect(groupOf("two-factor")).toBe("administration");
+    render(<Shell start="two-factor" />);
+    expect(within(screen.getByRole("banner")).getByText("Two-Factor Sign-In")).toBeTruthy();
   });
 
   it("opens, moves focus to the current page and closes on selecting a page", () => {
