@@ -81,6 +81,18 @@ describe("createPasskey and getPasskey", () => {
     expect(await getPasskey(request)).toBe("cancelled");
   });
 
+  it("pass the signal on and map an aborted prompt (AbortError) to cancelled", async () => {
+    const abort = vi.fn(async () => {
+      throw new DOMException("The operation was aborted.", "AbortError");
+    });
+    stubCredentials(abort, abort);
+    const signal = new AbortController().signal;
+    expect(await createPasskey(creation, signal)).toBe("cancelled");
+    expect(abort).toHaveBeenLastCalledWith({ publicKey: { parsed: "create", ...creation.publicKey }, signal });
+    expect(await getPasskey(request, signal)).toBe("cancelled");
+    expect(abort).toHaveBeenLastCalledWith({ publicKey: { parsed: "get", ...request.publicKey }, signal });
+  });
+
   it("say when the device already has a passkey here", async () => {
     stubCredentials(
       vi.fn(async () => {
@@ -151,5 +163,34 @@ describe("lowered dialogs during the prompt", () => {
     stubCredentials(during(async () => Promise.reject(new DOMException("x", "InvalidStateError"))), vi.fn());
     await expect(createPasskey(creation)).rejects.toThrow("This device already has a passkey for this account.");
     expectWrapped();
+  });
+
+  it("stop waiting and restore when the signal aborts a prompt that never settles", async () => {
+    const never = vi.fn(() => new Promise<never>(() => {}));
+    stubCredentials(never, never);
+    for (const call of [
+      (signal: AbortSignal) => getPasskey(request, signal),
+      (signal: AbortSignal) => createPasskey(creation, signal),
+    ]) {
+      restore.mockClear();
+      const controller = new AbortController();
+      const reply = call(controller.signal);
+      expect(restore).not.toHaveBeenCalled();
+      controller.abort();
+      expect(await reply).toBe("cancelled");
+      expect(restore).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("return cancelled for an already aborted signal without lowering or prompting", async () => {
+    const get = vi.fn();
+    const create = vi.fn();
+    stubCredentials(create, get);
+    const signal = AbortSignal.abort();
+    expect(await getPasskey(request, signal)).toBe("cancelled");
+    expect(await createPasskey(creation, signal)).toBe("cancelled");
+    expect(lowerModals).not.toHaveBeenCalled();
+    expect(get).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
   });
 });

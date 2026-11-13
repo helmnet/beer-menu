@@ -74,6 +74,12 @@ is running.
 - Set `inert` on the page siblings. The 1Password element can be a sibling of our root, so it
   would be blocked again.
 
+**Follow-up (owner, after PR #44)**: mouse clicks behind the dialogs are blocked during the
+prompt with `pointer-events` (FR-009); `.admin` holds the app, while the password manager's prompt
+sits outside it. Keyboard Tab can still leave a non-modal dialog for those seconds.
+Closing a dialog aborts its WebAuthn request through an `AbortSignal` (FR-010), so the prompt
+goes away instead of lingering. Whether 1Password honours the abort is checked manually (row 13).
+
 ## R3. Look while lowered
 
 **Decision**: Two rules go under the existing dialog styles in `web/src/pages/AdminPage.css`:

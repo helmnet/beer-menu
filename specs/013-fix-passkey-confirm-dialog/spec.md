@@ -66,6 +66,8 @@ An admin on a desktop browser opens Two-Factor Sign-In and clicks "Add passkey".
 - **FR-006**: Passkey sign-in on the sign-in page, and passkey use through the browser's or operating system's own prompt, MUST keep working unchanged.
 - **FR-007**: The fix MUST NOT weaken the identity check: the password and the passkey proof are still both required, and the server-side checks do not change.
 - **FR-008**: When dialogs are stacked, every dialog that was open when the passkey check started MUST, once the check ends, be open again in the same order, with only the top one usable.
+- **FR-009**: While a passkey check runs, mouse clicks MUST NOT reach the page behind the dialogs; the top dialog and the password manager's prompt stay usable.
+- **FR-010**: Closing the dialog that started a passkey check (Cancel, Close or Escape) MUST cancel that check, so the password manager's prompt goes away and nothing is confirmed or saved afterwards.
 
 ## Success Criteria *(mandatory)*
 

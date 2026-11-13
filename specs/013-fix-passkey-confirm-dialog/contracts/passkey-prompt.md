@@ -16,20 +16,35 @@
 
 ## `web/src/webauthn.ts`
 
-Public signatures are unchanged:
+Public signatures gain an optional `signal` (FR-010); callers without one, like `LoginForm`, are unchanged:
 
-- `getPasskey(options): Promise<PasskeyReply>`
-- `createPasskey(options): Promise<PasskeyReply>`
+- `getPasskey(options, signal?: AbortSignal): Promise<PasskeyReply>`
+- `createPasskey(options, signal?: AbortSignal): Promise<PasskeyReply>`
+
+`signal` is passed to `navigator.credentials.get/create({ publicKey, signal })`.
 
 The shared `prompt()` calls `lowerModals()` before the browser's credential call and `restore()`
 in a `finally` block. It does this on success, on `"cancelled"`, and on every error. Return values
 and error mapping (`NotAllowedError` to `"cancelled"`, `InvalidStateError` to the "already has a
-passkey" error) are unchanged.
+passkey" error) are unchanged; an aborted prompt (`AbortError`) also maps to `"cancelled"`.
+`prompt()` stops waiting when `signal` aborts, even if a password manager never settles the call,
+so `restore()` still runs; a signal already aborted returns `"cancelled"` without lowering or prompting.
+
+New export: `usePromptAbort(): { signal(): AbortSignal; abort(): void }`, a React hook for a
+dialog that starts a prompt. `signal()` makes a new `AbortController` and returns its signal;
+`abort()` aborts the latest one; unmounting the component also aborts it.
+
+- `ConfirmIdentity` passes `signal()` to `getPasskey`, taken before the options fetch so a close
+  during that fetch aborts too; unmounting (Cancel, Close, Escape) aborts.
+- `TwoFactorSetup` passes `signal()` to `createPasskey`; `cancel()` and unmounting abort. After an
+  abort it sends no `POST /api/2fa/passkeys` and shows no error, even if the prompt answered.
 
 ## Styling
 
 - `.admin dialog.modal.modal-lowered`: centred, above the admin layout.
 - `.admin dialog.modal.modal-lowered-top`: above the other lowered dialogs, with the scrim over
-  everything else.
+  everything else, and clickable.
+- `.admin:has(dialog.modal-lowered)`: `pointer-events: none`, so clicks reach only the top dialog
+  and the password manager's prompt, which sits outside `.admin` (FR-009).
 
 Together these look the same as the modal stack.

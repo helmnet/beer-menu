@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { stubApi, stubPasskeys, testPassword, webAuthnOptions } from "../testApi";
+import { nextTask, stubApi, stubPasskeys, stubPendingPasskey, testPassword, webAuthnOptions } from "../testApi";
 import ConfirmIdentity from "./ConfirmIdentity";
 
 afterEach(() => {
@@ -92,7 +92,7 @@ describe("ConfirmIdentity", () => {
     confirm();
     props.unmount();
     await waitFor(() => expect(calls).toHaveLength(1));
-    await new Promise((r) => setTimeout(r, 0));
+    await nextTask();
     expect(props.onConfirmed).not.toHaveBeenCalled();
   });
 });
@@ -141,17 +141,41 @@ describe("ConfirmIdentity with a passkey", () => {
   });
 
   it("does nothing when closed while the prompt is open, even if the prompt then succeeds", async () => {
-    let approve: (cred: { toJSON: () => object }) => void = () => {};
-    stubPasskeys().mockImplementationOnce(() => new Promise((resolve) => (approve = resolve)));
+    const prompt = stubPendingPasskey();
     const calls = stubApi({ "POST /api/2fa/confirm/options": webAuthnOptions, "POST /api/2fa/confirm": { status: 204 } });
     const props = setupPasskey(false);
     type("Password", testPassword());
     confirm();
     await waitFor(() => expect(navigator.credentials.get).toHaveBeenCalled());
     props.unmount();
-    approve({ toJSON: () => ({ id: "assertion" }) });
-    await new Promise((r) => setTimeout(r, 0));
+    prompt.approve({ id: "assertion" });
+    await nextTask();
     expect(calls.map((c) => c.key)).toEqual(["POST /api/2fa/confirm/options"]);
+    expect(props.onConfirmed).not.toHaveBeenCalled();
+  });
+
+  it("cancels the open prompt when closed", async () => {
+    const prompt = stubPendingPasskey();
+    stubApi({ "POST /api/2fa/confirm/options": webAuthnOptions });
+    const props = setupPasskey(false);
+    type("Password", testPassword());
+    confirm();
+    await waitFor(() => expect(navigator.credentials.get).toHaveBeenCalled());
+    expect(prompt.signal()?.aborted).toBe(false);
+    props.unmount();
+    expect(prompt.signal()?.aborted).toBe(true);
+  });
+
+  it("cancels the prompt when closed while its options load", async () => {
+    stubPasskeys();
+    const calls = stubApi({ "POST /api/2fa/confirm/options": webAuthnOptions });
+    const props = setupPasskey(false);
+    type("Password", testPassword());
+    confirm();
+    props.unmount();
+    await waitFor(() => expect(calls).toHaveLength(1));
+    await nextTask(); // let getPasskey see the aborted signal
+    expect(navigator.credentials.get).not.toHaveBeenCalled();
     expect(props.onConfirmed).not.toHaveBeenCalled();
   });
 

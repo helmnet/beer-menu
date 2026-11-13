@@ -35,3 +35,5 @@ Expected: all pass, including the new `Modal.test.tsx` and `webauthn.test.ts` ca
 | 9 | During row 1, click outside the 1Password prompt | Dialog stays open, password still typed |
 | 10 | During row 1, click Confirm again | Nothing happens (Confirm disabled); only one passkey check runs |
 | 11 | After row 2, check the stack | "Confirm it is you" is still on top of "New API token"; Escape closes only the top one |
+| 12 | During row 1, click the dimmed page behind the dialogs | Nothing behind reacts; the 1Password prompt and the top dialog still work (FR-009) |
+| 13 | During row 1 or row 5, press Cancel on the dialog | The 1Password prompt goes away; nothing is confirmed or saved (FR-010) |

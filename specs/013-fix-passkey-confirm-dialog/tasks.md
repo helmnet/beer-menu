@@ -108,6 +108,17 @@ Write these first and confirm they fail without T003 and T004 (revert them local
 
 ---
 
+## Phase 6: Follow-up (owner request after PR #44)
+
+- [X] T014 [US1] FR-009: In `web/src/pages/AdminPage.css`, next to the `.modal-lowered` rules, add `.admin:has(dialog.modal-lowered) { pointer-events: none; }` and `.admin dialog.modal.modal-lowered-top { pointer-events: auto; }` (only the top dialog is usable, as in the modal stack; password-manager prompts live outside `.admin`). Extend the existing why-comment by one line. No test (jsdom has no hit testing); covered by quickstart row 12.
+- [X] T015 [US1] [US2] FR-010: Let a passkey prompt be cancelled when its dialog closes.
+  - `web/src/webauthn.ts`: `getPasskey` and `createPasskey` take an optional `signal?: AbortSignal`, passed through `prompt()` to `navigator.credentials.get/create({ publicKey, signal })`. An `AbortError` maps to `"cancelled"`, like `NotAllowedError`. Signatures otherwise unchanged; `LoginForm` keeps calling without a signal.
+  - `web/src/components/ConfirmIdentity.tsx`: abort the in-flight prompt when the dialog unmounts (Cancel, Close, Escape all unmount it). Reuse the existing `mounted` effect cleanup; keep both `mounted` guards (they still cover the confirm POST).
+  - `web/src/components/TwoFactorSetup.tsx`: the "Add passkey" dialog closes via `cancel()` without unmounting the component, so abort the in-flight prompt in `cancel()` and on unmount.
+  - No duplication: if both components need the same "controller per prompt, abort on close" logic, extract one small shared helper (for example in `webauthn.ts`) instead of copying it.
+  - Tests: `webauthn.test.ts`: the signal reaches `get`/`create`, and an `AbortError` returns `"cancelled"`. `ConfirmIdentity.test.tsx`: closing while the prompt is open aborts its signal. `TwoFactorSetup.test.tsx`: Cancel while the add-passkey prompt is open aborts its signal and no `POST /api/2fa/passkeys` is sent. Each new test fails without the fix.
+- [ ] T016 Owner runs `quickstart.md` rows 12 and 13 with 1Password.
+
 ## Dependencies & Execution Order
 
 - Order: T001 (done), then T002, then T003, then T004, then the story phases, then T012 and T013.

@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MenuTap } from "../api";
-import { menu, settings, stubApi } from "../testApi";
+import { menu, nextTask, settings, stubApi } from "../testApi";
 import { FONTS } from "../fonts";
 import { SAMPLE_MENU } from "../tv";
 import SettingsPanel from "./SettingsPanel";
@@ -81,7 +81,7 @@ describe("SettingsPanel", () => {
     const { onChange } = await shown();
     type("Title", "Helm Taproom");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await new Promise((r) => setTimeout(r, 0));
+    await nextTask();
     expect(calls.filter((c) => c.key !== "GET /api/menu").map((c) => c.key)).toEqual(["GET /api/settings"]);
     expect(onChange).toHaveBeenCalledTimes(1);
   });

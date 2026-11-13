@@ -102,6 +102,23 @@ export function stubPasskeys(reply: object | "cancel" = { id: "credential" }) {
   return prompt;
 }
 
+/**
+ * stubPendingPasskey stubs a passkey prompt that waits for `approve(reply)`; `signal()` is the
+ * AbortSignal the prompt was given.
+ */
+export function stubPendingPasskey() {
+  let signal: AbortSignal | undefined;
+  let approve: (cred: { toJSON: () => object }) => void = () => {};
+  stubPasskeys().mockImplementationOnce((opts?: { signal?: AbortSignal }) => {
+    signal = opts?.signal;
+    return new Promise((resolve) => (approve = resolve));
+  });
+  return { signal: () => signal, approve: (reply: object) => approve({ toJSON: () => reply }) };
+}
+
+/** nextTask waits one macrotask, so pending promise chains (a stubbed fetch, a prompt) run on. */
+export const nextTask = () => new Promise((resolve) => setTimeout(resolve, 0));
+
 /** beer returns a Beer body for stubs: a current, ready, manual beer with no optional data. */
 export function beer(overrides: Partial<Beer> = {}): Beer {
   return {

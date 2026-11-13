@@ -655,7 +655,12 @@ body:has(> #root > .admin) {
 /*
  * Passkey-prompt state (lowerModals): ::backdrop exists only for modal dialogs, so the top
  * dialog paints the scrim itself, and its class keeps it above the other lowered dialogs.
+ * pointer-events blocks clicks behind the top dialog; password-manager prompts sit outside .admin.
  */
+.admin:has(dialog.modal-lowered) {
+  pointer-events: none;
+}
+
 .admin dialog.modal.modal-lowered {
   inset: 0;
   z-index: 1000;
@@ -664,6 +669,7 @@ body:has(> #root > .admin) {
 .admin dialog.modal.modal-lowered-top {
   z-index: 1001;
   box-shadow: 0 0 0 100vmax var(--scrim);
+  pointer-events: auto;
 }
 
 .admin dialog.modal > h2 {
