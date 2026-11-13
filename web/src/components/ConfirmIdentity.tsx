@@ -11,7 +11,8 @@ type Proof = "code" | "passkey" | "recovery";
  * posts the password to POST /api/2fa/confirm and, when `hasFactor`, exactly one proof: an
  * authenticator code (when `hasTotp`, the default), a passkey (when `passkeyOrigin` is set and
  * passkeys work on this page; the device prompt runs on Confirm, after
- * POST /api/2fa/confirm/options), or a recovery code (which is then spent). Buttons switch
+ * POST /api/2fa/confirm/options, which checks the password first so a wrong one shows without
+ * a prompt), or a recovery code (which is then spent). Buttons switch
  * between the proofs on offer. A 204 calls `onConfirmed`; the API's message shows for a wrong
  * password, code or passkey, a cancelled prompt keeps the dialog open, and a 429 says how long to
  * wait. Cancel or Escape calls `onCancel`; a 401 calls `onSignedOut`.
@@ -59,7 +60,7 @@ export default function ConfirmIdentity({
       let sent: object = {};
       if (hasFactor && proof === "passkey") {
         const signal = promptAbort.signal(); // before the options fetch, so a close during it aborts too
-        const passkey = await getPasskey(await apiFetch("POST", "/api/2fa/confirm/options"), signal);
+        const passkey = await getPasskey(await apiFetch("POST", "/api/2fa/confirm/options", { password }), signal);
         if (!mounted.current) return;
         if (passkey === "cancelled") {
           setBusy(false);
