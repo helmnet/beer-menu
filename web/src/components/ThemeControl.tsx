@@ -14,6 +14,9 @@ const options: { value: Theme; label: string; icon: LucideIcon }[] = [
  * control with Sun, Moon and Monitor icons. `theme` is checked; choosing another calls
  * `onChange` with it. It only reports the choice: saving and applying it is the caller's job.
  * The selected segment gets the accent fill with white text (CSS), never accent-colored text.
+ * Each word shows while the side panel's bottom block is wide enough for it; below that, a CSS
+ * container query hides the words visually (they stay the radios' names), leaving the icons.
+ * Each option's `title` gives its name as a hover tooltip at every width.
  */
 export default function ThemeControl({ theme, onChange }: { theme: Theme; onChange: (theme: Theme) => void }) {
   const name = useId();
@@ -21,7 +24,7 @@ export default function ThemeControl({ theme, onChange }: { theme: Theme; onChan
     <fieldset className="theme-control" role="radiogroup">
       <legend className="sr-only">Theme</legend>
       {options.map((o) => (
-        <label key={o.value} className={o.value === theme ? "theme-option selected" : "theme-option"}>
+        <label key={o.value} className={o.value === theme ? "theme-option selected" : "theme-option"} title={o.label}>
           <input
             type="radio"
             name={name}
@@ -30,7 +33,7 @@ export default function ThemeControl({ theme, onChange }: { theme: Theme; onChan
             onChange={() => onChange(o.value)}
           />
           <o.icon aria-hidden="true" />
-          <span>{o.label}</span>
+          <span className="theme-label">{o.label}</span>
         </label>
       ))}
     </fieldset>

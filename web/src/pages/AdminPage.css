@@ -478,6 +478,7 @@ body:has(> #root > .admin) {
 }
 
 .admin .nav-bottom {
+  container-type: inline-size;
   display: grid;
   gap: 8px;
   margin-top: auto;
@@ -489,6 +490,10 @@ body:has(> #root > .admin) {
  * Theme control: a segmented radio group. Each native radio is transparent and covers its
  * segment, so the whole segment is the click and touch target; the selected one is filled
  * with the accent and white text.
+ * Below the width the words need, the words are visually hidden and only the icons show (see
+ * the @container rule). .nav-bottom is the container because an element cannot query its own
+ * size. The threshold is in rem, the unit of the words' font size, so a larger default text
+ * size switches to icons sooner.
  */
 .admin .theme-control {
   display: grid;
@@ -506,7 +511,7 @@ body:has(> #root > .admin) {
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 2px;
   min-height: 32px;
   padding: 0 4px;
   border-radius: 6px;
@@ -530,6 +535,30 @@ body:has(> #root > .admin) {
   flex: none;
   width: 16px;
   height: 16px;
+}
+
+.admin .theme-control .theme-label {
+  white-space: nowrap;
+}
+
+/*
+ * Threshold measured in headless Firefox (system-ui = Noto Sans): the words need a 230 px wide
+ * bottom block for 4 px between each word and its segment edge (icon-word gap 2 px). The
+ * default 256 px panel gives a 231 px block, so the words show there. 14.4rem = 230.4 px.
+ */
+@container (width < 14.4rem) {
+  /* Same declarations as .admin .sr-only: a container-scoped rule cannot join its selector. */
+  .admin .theme-control .theme-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
 }
 
 .admin .theme-control .theme-option.selected {
