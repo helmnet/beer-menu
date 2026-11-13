@@ -1,5 +1,5 @@
 import { FormEvent, useState } from "react";
-import { apiFetch, errorMessage, isUnauthenticated } from "../api";
+import { apiFetch, errorMessage, isUnauthenticated, TwoFactorState } from "../api";
 import { getPasskey, passkeysSupported } from "../webauthn";
 import Modal from "./Modal";
 
@@ -132,4 +132,38 @@ export default function ConfirmIdentity({
       </form>
     </Modal>
   );
+}
+
+/**
+ * useConfirm asks to confirm, then retries: `ask(action)` takes the caller's 2FA state from `known`,
+ * else loads it (GET /api/2fa), then shows `dialog`, ConfirmIdentity, which runs `action` once
+ * confirmed. Confirm or cancel drops `action` (and anything it holds, like a password). A failed
+ * load calls `onSignedOut` on 401, else `onError` with the message.
+ */
+export function useConfirm(onSignedOut: () => void, onError: (message: string) => void, known?: TwoFactorState | null) {
+  const [retry, setRetry] = useState<{ state: TwoFactorState; action: () => void } | null>(null);
+
+  async function ask(action: () => void) {
+    try {
+      setRetry({ state: known ?? (await apiFetch<TwoFactorState>("GET", "/api/2fa")), action });
+    } catch (err) {
+      if (isUnauthenticated(err)) onSignedOut();
+      else onError(errorMessage(err));
+    }
+  }
+
+  const dialog = retry && (
+    <ConfirmIdentity
+      hasFactor={retry.state.enabled}
+      hasTotp={!!retry.state.totp}
+      passkeyOrigin={retry.state.passkeys.length > 0 && retry.state.passkeys_available ? retry.state.passkeys_origin : null}
+      onConfirmed={() => {
+        setRetry(null);
+        retry.action();
+      }}
+      onCancel={() => setRetry(null)}
+      onSignedOut={onSignedOut}
+    />
+  );
+  return { ask, dialog };
 }

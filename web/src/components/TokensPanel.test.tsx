@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { stubApi } from "../testApi";
+import { stubApi, testPassword, twoFactorState } from "../testApi";
 import TokensPanel from "./TokensPanel";
 
 afterEach(() => {
@@ -183,5 +183,60 @@ describe("TokensPanel", () => {
     const onSignedOut = vi.fn();
     render(<TokensPanel onSignedOut={onSignedOut} />);
     await waitFor(() => expect(onSignedOut).toHaveBeenCalled());
+  });
+
+  describe("confirm identity", () => {
+    const confirmRequired = { status: 403, body: { error: "confirm_required", message: "Confirm it is you first." } };
+
+    function startCreate() {
+      fireEvent.click(screen.getByRole("button", { name: "New token" }));
+      const dialog = screen.getByRole("dialog", { name: "New API token" });
+      fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "ha" } });
+      fireEvent.change(within(dialog).getByLabelText("Scope"), { target: { value: "write" } });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Create token" }));
+      return dialog;
+    }
+
+    it("confirms over the New API token dialog, then creates", async () => {
+      const secret = `bmt_${crypto.randomUUID()}`;
+      const routes: Parameters<typeof stubApi>[0] = {
+        "GET /api/tokens": { status: 200, body: [] },
+        "POST /api/tokens": confirmRequired,
+        "GET /api/2fa": { status: 200, body: twoFactorState({}) },
+        "POST /api/2fa/confirm": { status: 204 },
+      };
+      const calls = stubApi(routes);
+      render(<TokensPanel onSignedOut={vi.fn()} />);
+      await waitFor(() => expect(calls.some((c) => c.key === "GET /api/tokens")).toBe(true));
+      const dialog = startCreate();
+      const confirm = await screen.findByRole("dialog", { name: "Confirm it is you" });
+      expect(screen.getByRole("dialog", { name: "New API token" })).toBe(dialog);
+      expect(within(dialog).queryByRole("alert")).toBeNull();
+      routes["POST /api/tokens"] = { status: 201, body: { ...unused, name: "ha", scope: "write", secret } };
+      fireEvent.change(within(confirm).getByLabelText("Password"), { target: { value: testPassword() } });
+      fireEvent.click(within(confirm).getByRole("button", { name: "Confirm" }));
+      expect(await within(dialog).findByText(secret)).toBeTruthy();
+      expect(screen.queryByRole("dialog", { name: "Confirm it is you" })).toBeNull();
+      const posts = calls.filter((c) => c.key === "POST /api/tokens");
+      expect(posts).toHaveLength(2);
+      expect(posts[1].body).toEqual({ name: "ha", scope: "write" });
+    });
+
+    it("keeps the New API token dialog and sends nothing more when the confirm is cancelled", async () => {
+      const calls = stubApi({
+        "GET /api/tokens": { status: 200, body: [] },
+        "POST /api/tokens": confirmRequired,
+        "GET /api/2fa": { status: 200, body: twoFactorState({}) },
+      });
+      render(<TokensPanel onSignedOut={vi.fn()} />);
+      await waitFor(() => expect(calls.some((c) => c.key === "GET /api/tokens")).toBe(true));
+      const dialog = startCreate();
+      const confirm = await screen.findByRole("dialog", { name: "Confirm it is you" });
+      fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
+      expect(screen.queryByRole("dialog", { name: "Confirm it is you" })).toBeNull();
+      expect(screen.getByRole("dialog", { name: "New API token" })).toBe(dialog);
+      expect(within(dialog).getByLabelText("Name")).toBeTruthy();
+      expect(calls.filter((c) => c.key === "POST /api/tokens")).toHaveLength(1);
+    });
   });
 });

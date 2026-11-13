@@ -354,25 +354,29 @@ type passwordChangeBody struct {
 // changePassword handles POST /api/password (admin): it sets the signed-in admin's password
 // from the PasswordChange body, ends their other sessions, keeps this one and returns 204
 // (FR-012). Wrong current passwords give 403 wrong_password and count toward the sign-in
-// rate limit for this username, which is checked first (429 too_many_attempts). A bad new
-// password gives 400 invalid_request, saturated hashing 503 busy.
+// rate limit for this username (429 too_many_attempts). A bad new password gives 400
+// invalid_request, saturated hashing 503 busy. Checks run in order: setupCaller (403
+// confirm_required without a recent confirm), the body, the rate limit, then the password; so
+// an unconfirmed caller cannot test a current password here and does not count toward the limit.
 func changePassword(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p, admin, ok := setupCaller(w, r, deps)
+		if !ok {
+			return
+		}
 		var body passwordChangeBody
 		if !decodeJSON(w, r, &body, maxBody) {
 			return
 		}
-		p, _ := principalFrom(r.Context())
-		admin, err := auth.GetAdmin(deps.DB, p.AdminID)
-		if err == nil {
-			if retry, ok := deps.Limiter.Check(admin.Username); !ok {
-				slog.WarnContext(r.Context(), "sign-in rate limited", "username", admin.Username)
-				writeRateLimited(w, retry)
-				return
-			}
-			defer func() { deps.Limiter.Done(admin.Username, errors.Is(err, auth.ErrWrongPassword)) }()
-			err = auth.ChangePassword(deps.DB, p.AdminID, body.CurrentPassword, body.NewPassword, p.SessionID)
+		retry, ok := deps.Limiter.Check(admin.Username)
+		if !ok {
+			slog.WarnContext(r.Context(), "sign-in rate limited", "username", admin.Username)
+			writeRateLimited(w, retry)
+			return
 		}
+		var err error
+		defer func() { deps.Limiter.Done(admin.Username, errors.Is(err, auth.ErrWrongPassword)) }()
+		err = auth.ChangePassword(deps.DB, p.AdminID, body.CurrentPassword, body.NewPassword, p.SessionID)
 		switch {
 		case errors.Is(err, auth.ErrNotFound):
 			// Removed between the session lookup and now.

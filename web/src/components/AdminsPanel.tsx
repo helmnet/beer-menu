@@ -1,11 +1,9 @@
 import { Plus } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Admin, ApiError, apiFetch, errorMessage, isUnauthenticated, TwoFactorState } from "../api";
-import ConfirmIdentity from "./ConfirmIdentity";
+import { Admin, apiFetch, errorMessage, isConfirmRequired, isUnauthenticated } from "../api";
+import { useConfirm } from "./ConfirmIdentity";
 import Modal from "./Modal";
-
-const isConfirmRequired = (err: unknown) => err instanceof ApiError && err.code === "confirm_required";
 
 /**
  * AdminsPanel is the Admin Users page: the "Admin Users" heading with "Add admin", then a card
@@ -38,7 +36,7 @@ export default function AdminsPanel({
   const [formError, setFormError] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [retry, setRetry] = useState<{ state: TwoFactorState; action: () => Promise<void> } | null>(null);
+  const identity = useConfirm(onSignedOut, setError);
 
   // run does an action; confirm_required asks to confirm (with the caller's factors), then runs it again.
   async function run(action: () => Promise<void>) {
@@ -47,13 +45,10 @@ export default function AdminsPanel({
       await action();
     } catch (err) {
       if (isUnauthenticated(err)) onSignedOut();
-      else if (isConfirmRequired(err)) askConfirm(action);
+      else if (isConfirmRequired(err)) identity.ask(() => run(action));
       else setError(errorMessage(err));
     }
   }
-
-  const askConfirm = (action: () => Promise<void>) =>
-    run(async () => setRetry({ state: await apiFetch<TwoFactorState>("GET", "/api/2fa"), action }));
 
   const load = async () => setAdmins(await apiFetch<Admin[]>("GET", "/api/admins"));
 
@@ -81,7 +76,7 @@ export default function AdminsPanel({
       await apiFetch("POST", "/api/admins", creds);
     } catch (err) {
       if (isUnauthenticated(err)) onSignedOut();
-      else if (isConfirmRequired(err)) askConfirm(() => save(creds));
+      else if (isConfirmRequired(err)) identity.ask(() => save(creds));
       else setFormError(errorMessage(err));
       return;
     } finally {
@@ -142,21 +137,7 @@ export default function AdminsPanel({
         </ul>
         {error && <p role="alert">{error}</p>}
       </div>
-      {retry && (
-        <ConfirmIdentity
-          hasFactor={retry.state.enabled}
-          hasTotp={!!retry.state.totp}
-          passkeyOrigin={
-            retry.state.passkeys.length > 0 && retry.state.passkeys_available ? retry.state.passkeys_origin : null
-          }
-          onConfirmed={() => {
-            setRetry(null);
-            run(retry.action);
-          }}
-          onCancel={() => setRetry(null)}
-          onSignedOut={onSignedOut}
-        />
-      )}
+      {identity.dialog}
       {adding && (
         <Modal title="Add admin" onClose={close}>
           <form className="inline-form" onSubmit={add}>

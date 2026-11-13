@@ -157,8 +157,8 @@ token (rejected: cannot be single-use or revoked).
 **Decision**: `POST /api/2fa/confirm` takes the current password and, if the admin has any
 factor, one second factor (code, recovery code or passkey assertion). Success stamps the session
 with `confirmed_at`. Adding or removing a factor, new recovery codes, turning 2FA off,
-changing the "require" setting, clearing another admin's factors and adding or removing an
-admin all need `confirmed_at`
+changing the "require" setting, clearing another admin's factors, adding or removing an
+admin, creating an API token and changing your own password all need `confirmed_at`
 within the last 5 minutes, else 403 `confirm_required`. Renaming a passkey does not.
 
 This is slightly stricter than FR-023 for adding a factor (it also asks for an existing factor):

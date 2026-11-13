@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/helmnet/beer-menu/api/internal/auth"
 )
@@ -93,5 +94,28 @@ func TestTokenRoutesRefuseTokens(t *testing.T) {
 		wantError(t, do(mux, http.MethodGet, "/api/tokens", "", bearer...), 403, "forbidden")
 		wantError(t, do(mux, http.MethodPost, "/api/tokens", `{"name":"x","scope":"write"}`, bearer...), 403, "forbidden")
 		wantError(t, do(mux, http.MethodDelete, "/api/tokens/"+strconv.FormatInt(id, 10), "", bearer...), 403, "forbidden")
+	}
+}
+
+func TestCreateTokenNeedsConfirm(t *testing.T) {
+	deps, clock := newTestDeps(t)
+	pw := createAdmin(t, deps)
+	mux := NewMux(deps)
+	owner := signInAs(t, mux, "owner", pw)
+	// The sign-in no longer counts as a recent confirm.
+	clock.Advance(auth.ConfirmWindow + time.Second)
+
+	wantError(t, do(mux, http.MethodPost, "/api/tokens", `{"name":"script","scope":"write"}`, owner...), 403, "confirm_required")
+	// The confirm check runs before the body is read.
+	wantError(t, do(mux, http.MethodPost, "/api/tokens", `{"name":"","scope":"admin"}`, owner...), 403, "confirm_required")
+	if tokens, err := auth.ListTokens(deps.DB); err != nil || len(tokens) != 0 {
+		t.Fatalf("ListTokens = %v, %v; want none created", tokens, err)
+	}
+
+	if rec := do(mux, http.MethodPost, "/api/2fa/confirm", confirmJSON(map[string]string{"password": pw}), owner...); rec.Code != 204 {
+		t.Fatalf("confirm = %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(mux, http.MethodPost, "/api/tokens", `{"name":"script","scope":"write"}`, owner...); rec.Code != 201 {
+		t.Fatalf("create after confirm = %d %s", rec.Code, rec.Body)
 	}
 }

@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
-import { ApiError, apiFetch, errorMessage, isUnauthenticated, Passkey, RecoveryCodesReply, TwoFactorState } from "../api";
-import ConfirmIdentity from "./ConfirmIdentity";
+import { ApiError, apiFetch, errorMessage, isConfirmRequired, isUnauthenticated, Passkey, RecoveryCodesReply, TwoFactorState } from "../api";
+import { useConfirm } from "./ConfirmIdentity";
 import Modal from "./Modal";
 import RecoveryCodes from "./RecoveryCodes";
 import TwoFactorSetup from "./TwoFactorSetup";
@@ -34,7 +34,7 @@ export default function TwoFactorPanel({ onSignedOut }: { onSignedOut: () => voi
   const [state, setState] = useState<TwoFactorState | null>(null);
   const [error, setError] = useState("");
   const [loads, setLoads] = useState(0);
-  const [retry, setRetry] = useState<(() => Promise<void>) | null>(null);
+  const identity = useConfirm(onSignedOut, setError, state);
   const [codes, setCodes] = useState<string[] | null>(null);
   const [renaming, setRenaming] = useState<Passkey | null>(null);
   const [name, setName] = useState("");
@@ -65,7 +65,7 @@ export default function TwoFactorPanel({ onSignedOut }: { onSignedOut: () => voi
       await action();
     } catch (err) {
       if (isUnauthenticated(err)) onSignedOut();
-      else if (err instanceof ApiError && err.code === "confirm_required") setRetry(() => action);
+      else if (isConfirmRequired(err)) identity.ask(() => run(action));
       else if (err instanceof ApiError && err.code === "two_factor_required")
         setError(`"${REQUIRE_LABEL}" is on, so you must keep at least one second factor. Add another first, or turn that setting off.`);
       else setError(errorMessage(err));
@@ -219,19 +219,7 @@ export default function TwoFactorPanel({ onSignedOut }: { onSignedOut: () => voi
               </>
             )}
             <TwoFactorSetup state={state} onDone={reload} onSignedOut={onSignedOut} />
-            {retry && (
-              <ConfirmIdentity
-                hasFactor={state.enabled}
-                hasTotp={!!state.totp}
-                passkeyOrigin={state.passkeys.length > 0 && state.passkeys_available ? state.passkeys_origin : null}
-                onConfirmed={() => {
-                  setRetry(null);
-                  run(retry);
-                }}
-                onCancel={() => setRetry(null)}
-                onSignedOut={onSignedOut}
-              />
-            )}
+            {identity.dialog}
             {codes && (
               // Only Done closes the dialog, so the codes are not lost by accident.
               <Modal title="New recovery codes" onClose={() => {}}>

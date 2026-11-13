@@ -88,7 +88,7 @@ once; keep them somewhere safe, and make a new set there when they run low. Any 
 on "Require two-factor sign-in for all admins"; an admin without a second factor must then set
 one up at their next sign-in before using the app. Another admin can clear a colleague's
 factors under Administration › Admin Users, after confirming it is them; adding or removing an
-admin there asks the same.
+admin there, creating an API token and changing your password ask the same.
 
 Each method needs a setting on the `api` service:
 

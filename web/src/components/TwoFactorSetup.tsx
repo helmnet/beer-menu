@@ -1,7 +1,7 @@
 import { FormEvent, useState } from "react";
-import { Admin, ApiError, apiFetch, errorMessage, FactorAdded, isUnauthenticated, TotpSetup, TwoFactorState } from "../api";
+import { Admin, ApiError, apiFetch, errorMessage, FactorAdded, isConfirmRequired, isUnauthenticated, TotpSetup, TwoFactorState } from "../api";
 import { createPasskey, passkeysSupported } from "../webauthn";
-import ConfirmIdentity from "./ConfirmIdentity";
+import { useConfirm } from "./ConfirmIdentity";
 import Modal from "./Modal";
 import QrCode from "./QrCode";
 import RecoveryCodes from "./RecoveryCodes";
@@ -43,20 +43,20 @@ export default function TwoFactorSetup({
   const [setup, setSetup] = useState<TotpSetup | null>(null);
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
-  const [confirming, setConfirming] = useState<"totp" | "passkey" | null>(null);
   const [code, setCode] = useState("");
   const [codes, setCodes] = useState<string[] | null>(null);
   const [signedIn, setSignedIn] = useState<Admin | undefined>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const identity = useConfirm(onSignedOut, setError, state);
 
   // fail handles an API error of flow: 401 signs out, confirm_required asks to confirm, else shows it.
   function fail(err: unknown, flow: "totp" | "passkey" = "totp") {
     if (isUnauthenticated(err)) onSignedOut();
-    else if (err instanceof ApiError && err.code === "confirm_required") {
+    else if (isConfirmRequired(err)) {
       setSetup(null);
       setNaming(false);
-      setConfirming(flow);
+      identity.ask(flow === "totp" ? start : () => setNaming(true));
     } else if (err instanceof ApiError && err.code === "too_many_passkeys") setError(TOO_MANY);
     else setError(errorMessage(err));
   }
@@ -162,21 +162,7 @@ export default function TwoFactorSetup({
       )}
       {!passkeyNote && full && <p>{TOO_MANY}</p>}
       {!setup && !naming && error && <p role="alert">{error}</p>}
-      {confirming && (
-        <ConfirmIdentity
-          hasFactor={state.enabled}
-          hasTotp={!!state.totp}
-          passkeyOrigin={state.passkeys.length > 0 && state.passkeys_available ? state.passkeys_origin : null}
-          onConfirmed={() => {
-            const flow = confirming;
-            setConfirming(null);
-            if (flow === "totp") start();
-            else setNaming(true);
-          }}
-          onCancel={() => setConfirming(null)}
-          onSignedOut={onSignedOut}
-        />
-      )}
+      {identity.dialog}
       {naming && (
         // While the codes show, only their Done closes the dialog, so they are not lost by accident.
         <Modal title="Add passkey" onClose={codes ? () => {} : cancel}>

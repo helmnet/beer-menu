@@ -1,11 +1,14 @@
 import { FormEvent, useState } from "react";
-import { apiFetch, errorMessage, isUnauthenticated } from "../api";
+import { apiFetch, errorMessage, isConfirmRequired, isUnauthenticated } from "../api";
+import { useConfirm } from "./ConfirmIdentity";
 
 /**
  * PasswordForm is the Change Password page, the heading above one card form. It changes the signed-in admin's
  * password with POST /api/password. It checks the two new entries match before sending, shows the
  * server's message for a wrong current password, how long to wait when rate limited, and a success
- * note (the API has ended the admin's other sessions). Any 401 calls `onSignedOut`.
+ * note (the API has ended the admin's other sessions). A 403 confirm_required loads the caller's
+ * factors (GET /api/2fa), opens `ConfirmIdentity` and sends the same change again once confirmed.
+ * Any 401 calls `onSignedOut`.
  */
 export default function PasswordForm({ onSignedOut }: { onSignedOut: () => void }) {
   const [current, setCurrent] = useState("");
@@ -14,24 +17,31 @@ export default function PasswordForm({ onSignedOut }: { onSignedOut: () => void 
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
+  const identity = useConfirm(onSignedOut, setError);
 
-  async function submit(e: FormEvent) {
+  function submit(e: FormEvent) {
     e.preventDefault();
     setDone(false);
     if (next !== confirm) {
       setError("The new passwords do not match.");
       return;
     }
+    save({ current_password: current, new_password: next });
+  }
+
+  // save sends the change; on confirm_required the retry holds the passwords only until confirm or cancel.
+  async function save(change: { current_password: string; new_password: string }) {
     setError("");
     setBusy(true);
     try {
-      await apiFetch("POST", "/api/password", { current_password: current, new_password: next });
+      await apiFetch("POST", "/api/password", change);
       setCurrent("");
       setNext("");
       setConfirm("");
       setDone(true);
     } catch (err) {
       if (isUnauthenticated(err)) onSignedOut();
+      else if (isConfirmRequired(err)) await identity.ask(() => save(change));
       else setError(errorMessage(err));
     } finally {
       setBusy(false);
@@ -78,6 +88,7 @@ export default function PasswordForm({ onSignedOut }: { onSignedOut: () => void 
           Change password
         </button>
       </form>
+      {identity.dialog}
     </section>
   );
 }

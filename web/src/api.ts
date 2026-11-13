@@ -376,6 +376,11 @@ export function isUnauthenticated(err: unknown): boolean {
   return err instanceof ApiError && err.status === 401;
 }
 
+/** isConfirmRequired reports whether err is a 403 confirm_required: confirm identity, then retry. */
+export function isConfirmRequired(err: unknown): boolean {
+  return err instanceof ApiError && err.code === "confirm_required";
+}
+
 /**
  * errorMessage returns the text to show for err: for a 429 with Retry-After, when to retry (the
  * local clock time for Brewfather's rate limit, else how many minutes to wait); otherwise the

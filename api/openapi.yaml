@@ -365,9 +365,11 @@ paths:
       operationId: changePassword
       summary: Change the signed-in admin's password
       description: >
-        Needs the current password. Wrong current passwords count toward the sign-in rate
-        limit for this username. Ends the admin's other sessions and pending sign-ins; this
-        one stays.
+        Needs the current password and a recent confirm (403 confirm_required), checked before
+        the body, so an unconfirmed caller cannot test a current password here and such a
+        request does not count toward the rate limit. Wrong current passwords count toward the
+        sign-in rate limit for this username. Ends the admin's other sessions and pending
+        sign-ins; this one stays.
       tags: [auth]
       x-access: admin
       requestBody:
@@ -384,7 +386,9 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
-          description: Wrong current password, or a token was used
+          description: >
+            wrong_password: the current password is wrong; confirm_required: no sign-in or
+            confirm in the last 5 minutes; or forbidden for a token or a cross-site write
           content:
             application/json:
               schema:
@@ -911,7 +915,9 @@ paths:
     post:
       operationId: createToken
       summary: Create an API token
-      description: The response is the only time the secret is shown.
+      description: >
+        The response is the only time the secret is shown. Needs a recent confirm (403
+        confirm_required), checked before the body.
       tags: [tokens]
       x-access: admin
       requestBody:
@@ -932,7 +938,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
-          $ref: "#/components/responses/Forbidden"
+          $ref: "#/components/responses/ConfirmRequired"
 
   /api/tokens/{id}:
     delete:

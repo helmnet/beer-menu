@@ -280,6 +280,42 @@ func TestChangePasswordWrongCountsTowardLimit(t *testing.T) {
 	}
 }
 
+func TestChangePasswordNeedsConfirm(t *testing.T) {
+	deps, clock := newTestDeps(t)
+	pw := createAdmin(t, deps)
+	mux := NewMux(deps)
+	this := signInAs(t, mux, "owner", pw)
+	other := signInAs(t, mux, "owner", pw)
+	// The sign-in no longer counts as a recent confirm.
+	clock.Advance(auth.ConfirmWindow + time.Second)
+
+	wantError(t, do(mux, http.MethodPost, "/api/password", passwordChange(pw, testPassword()), this...), 403, "confirm_required")
+	// The confirm check runs before the body is read: a wrong current password is not revealed
+	// and does not count toward the rate limit (6 tries, limit 5).
+	for range 6 {
+		wantError(t, do(mux, http.MethodPost, "/api/password", passwordChange(testPassword(), testPassword()), this...), 403, "confirm_required")
+	}
+	wantError(t, do(mux, http.MethodPost, "/api/password", `{"bad":`, this...), 403, "confirm_required")
+	if _, err := auth.Authenticate(deps.DB, "owner", pw); err != nil {
+		t.Fatalf("password changed while unconfirmed: %v", err)
+	}
+	if got := do(mux, http.MethodGet, "/api/session", "", other...); got.Code != 200 {
+		t.Fatalf("other session after refused change = %d, want 200", got.Code)
+	}
+
+	if rec := do(mux, http.MethodPost, "/api/2fa/confirm", confirmJSON(map[string]string{"password": pw}), this...); rec.Code != 204 {
+		t.Fatalf("confirm = %d %s", rec.Code, rec.Body)
+	}
+	next := testPassword()
+	if rec := do(mux, http.MethodPost, "/api/password", passwordChange(pw, next), this...); rec.Code != 204 {
+		t.Fatalf("change after confirm = %d %s", rec.Code, rec.Body)
+	}
+	if _, err := auth.Authenticate(deps.DB, "owner", next); err != nil {
+		t.Fatalf("new password refused: %v", err)
+	}
+	wantError(t, do(mux, http.MethodGet, "/api/session", "", other...), 401, "unauthenticated")
+}
+
 func TestSignInConcurrentGuessesLimited(t *testing.T) {
 	deps, _ := newTestDeps(t)
 	createAdmin(t, deps)
