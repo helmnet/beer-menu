@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Keg } from "../api";
-import { beer, keg, kegTypes, stubApi } from "../testApi";
+import { beer, clickInDialog, inDialog, keg, kegTypes, stubApi } from "../testApi";
 import { volumeToLitres } from "../units";
 import KegCard from "./KegCard";
 
@@ -128,14 +128,13 @@ describe("KegCard", () => {
 
   it("kicks only after confirmation", async () => {
     const calls = stubApi({ "PATCH /api/kegs/10": { status: 200, body: { ...onTap, state: "kicked" } } });
-    const confirm = vi.fn(() => false);
-    vi.stubGlobal("confirm", confirm);
     const { onChanged } = renderCard(onTap);
     fireEvent.click(screen.getByRole("button", { name: "Kick" }));
-    expect(confirm).toHaveBeenCalledWith("Kick the Stout keg? It moves to keg history.");
+    expect(inDialog("Kick keg").getByText("Kick the Stout keg? It moves to keg history.")).toBeTruthy();
+    clickInDialog("Kick keg", "Cancel");
     expect(calls).toEqual([]);
-    confirm.mockReturnValue(true);
     fireEvent.click(screen.getByRole("button", { name: "Kick" }));
+    clickInDialog("Kick keg", "Kick");
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
     expect(calls.find((c) => c.key === "PATCH /api/kegs/10")?.body).toEqual({ kicked: true });
   });

@@ -2,6 +2,7 @@ import { Plus } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Admin, apiFetch, errorMessage, isConfirmRequired, isUnauthenticated } from "../api";
+import { useConfirmAction } from "./ConfirmDialog";
 import { useConfirm } from "./ConfirmIdentity";
 import Modal from "./Modal";
 
@@ -37,6 +38,7 @@ export default function AdminsPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const identity = useConfirm(onSignedOut, setError);
+  const confirm = useConfirmAction();
 
   // run does an action; confirm_required asks to confirm (with the caller's factors), then runs it again.
   async function run(action: () => Promise<void>) {
@@ -88,20 +90,31 @@ export default function AdminsPanel({
 
   function remove(a: Admin) {
     const self = a.id === me.id;
-    if (!window.confirm(self ? "Remove yourself? You will be signed out." : `Remove admin "${a.username}"?`)) return;
-    run(async () => {
-      await apiFetch("DELETE", `/api/admins/${a.id}`);
-      if (self) onSignedOut();
-      else await load();
-    });
+    const request = self
+      ? { title: "Remove yourself", message: "Remove yourself? You will be signed out.", confirmLabel: "Remove" }
+      : { title: "Remove admin", message: `Remove admin "${a.username}"?`, confirmLabel: "Remove" };
+    confirm.ask(request, () =>
+      run(async () => {
+        await apiFetch("DELETE", `/api/admins/${a.id}`);
+        if (self) onSignedOut();
+        else await load();
+      }),
+    );
   }
 
   function clearTwoFactor(a: Admin) {
-    if (!window.confirm(`Clear two-factor sign-in for "${a.username}"? They will be signed out everywhere.`)) return;
-    run(async () => {
-      await apiFetch("DELETE", `/api/admins/${a.id}/2fa`);
-      await load();
-    });
+    confirm.ask(
+      {
+        title: "Clear two-factor sign-in",
+        message: `Clear two-factor sign-in for "${a.username}"? They will be signed out everywhere.`,
+        confirmLabel: "Clear",
+      },
+      () =>
+        run(async () => {
+          await apiFetch("DELETE", `/api/admins/${a.id}/2fa`);
+          await load();
+        }),
+    );
   }
 
   const addAdmin = (
@@ -137,6 +150,7 @@ export default function AdminsPanel({
         </ul>
         {error && <p role="alert">{error}</p>}
       </div>
+      {confirm.dialog}
       {identity.dialog}
       {adding && (
         <Modal title="Add admin" onClose={close}>

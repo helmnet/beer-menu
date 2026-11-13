@@ -10,6 +10,7 @@ import {
   isUnauthenticated,
   SyncInterval,
 } from "../api";
+import { useConfirmAction } from "./ConfirmDialog";
 
 const POLL_MS = 2000;
 
@@ -34,7 +35,7 @@ const outcomes: Record<ImportResult["outcome"], string> = {
  * BrewfatherPanel is the Brewfather page. It loads GET /api/brewfather and shows a
  * not-set-up note when the server has no encryption key; otherwise two cards. "Connection":
  * the connection state with a connect form (PUT /api/brewfather/connection) when not connected
- * or a reconnect is needed, or a Disconnect button (confirm, then DELETE) when connected; the
+ * or a reconnect is needed, or a Disconnect button (a confirmation dialog, then DELETE) when connected; the
  * sync interval (PUT /api/brewfather/schedule); and, while connected, "Sync now" (POST
  * /api/brewfather/sync) and the last sync result. "Batches", only while connected: the batch
  * list (GET /api/brewfather/batches, Refresh with ?refresh=true) with checkboxes to import
@@ -57,6 +58,7 @@ export default function BrewfatherPanel({ onSignedOut }: { onSignedOut: () => vo
   // A count, not a flag, since actions can overlap (an import while a finished sync reloads the list).
   const [busy, setBusy] = useState(0);
   const [error, setError] = useState("");
+  const confirm = useConfirmAction();
 
   async function run(action: () => Promise<void>) {
     setError("");
@@ -146,12 +148,19 @@ export default function BrewfatherPanel({ onSignedOut }: { onSignedOut: () => vo
   }
 
   function disconnect() {
-    if (!window.confirm("Disconnect Brewfather? Imported beers stay, and scheduled sync stops.")) return;
-    run(async () => {
-      await apiFetch("DELETE", "/api/brewfather/connection");
-      setResults([]);
-      await loadStatus();
-    });
+    confirm.ask(
+      {
+        title: "Disconnect Brewfather",
+        message: "Disconnect Brewfather? Imported beers stay, and scheduled sync stops.",
+        confirmLabel: "Disconnect",
+      },
+      () =>
+        run(async () => {
+          await apiFetch("DELETE", "/api/brewfather/connection");
+          setResults([]);
+          await loadStatus();
+        }),
+    );
   }
 
   function changeInterval(interval: SyncInterval) {
@@ -276,6 +285,7 @@ export default function BrewfatherPanel({ onSignedOut }: { onSignedOut: () => vo
           </p>
         )}
       </section>
+      {confirm.dialog}
       {listable && (
         <section className="card" aria-labelledby={`${id}-batches`}>
           <div className="page-header">

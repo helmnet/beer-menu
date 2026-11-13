@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { apiFetch, errorMessage, isUnauthenticated, Keg, KegType, Units } from "../api";
 import { formatVolume, inputToLitres, pourPrefill, pourToLitres, pourUnit, volumeText, volumeToLitres, volumeUnit } from "../units";
 import BeerArt from "./BeerArt";
+import { useConfirmAction } from "./ConfirmDialog";
 import KegForm from "./KegForm";
 
 /** Open is the one inline form open in the card: a pour, a set level, the keg edit form, or none. */
@@ -14,7 +15,7 @@ type Open = "pour" | "set" | "edit" | null;
  * "x of y" in `units` (default US). Its buttons, in order: Pour (prefilled 16 fl oz or 500 mL,
  * so a pour is two clicks; POST /api/kegs/{id}/pours), Set level (PATCH remaining_l, sent only
  * when changed), Edit keg (KegForm inline in this card), Take off (PATCH {"tap_id": null}) and
- * Kick (after a confirm prompt; PATCH {"kicked": true}). Pour, Set level and Take off show only
+ * Kick (after a confirmation dialog; PATCH {"kicked": true}). Pour, Set level and Take off show only
  * on a tap, so a waiting keg has just Edit keg (which can still change its level) and Kick.
  * Volumes are always sent in litres. The inline forms are keyed by `units`, so a form open
  * during a units change restarts in the new units. After a successful change the form closes and `onChanged`
@@ -35,6 +36,7 @@ export default function KegCard({
 }) {
   const [open, setOpen] = useState<Open>(null);
   const [error, setError] = useState("");
+  const confirm = useConfirmAction();
 
   async function change(method: string, path: string, body?: unknown) {
     setError("");
@@ -62,9 +64,9 @@ export default function KegCard({
   }
 
   function kick() {
-    if (window.confirm(`Kick the ${keg.beer_name} keg? It moves to keg history.`)) {
-      change("PATCH", `/api/kegs/${keg.id}`, { kicked: true });
-    }
+    confirm.ask({ title: "Kick keg", message: `Kick the ${keg.beer_name} keg? It moves to keg history.`, confirmLabel: "Kick" }, () =>
+      change("PATCH", `/api/kegs/${keg.id}`, { kicked: true }),
+    );
   }
 
   const type = types.find((t) => t.type === keg.type);
@@ -150,6 +152,7 @@ export default function KegCard({
           onSignedOut={onSignedOut}
         />
       )}
+      {confirm.dialog}
       {error && <p role="alert">{error}</p>}
     </div>
   );

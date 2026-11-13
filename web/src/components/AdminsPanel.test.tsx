@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { owner, stubApi, testPassword, twoFactorState } from "../testApi";
+import { clickInDialog, inDialog, owner, stubApi, testPassword, twoFactorState } from "../testApi";
 import AdminsPanel from "./AdminsPanel";
 
 afterEach(() => {
@@ -37,7 +37,7 @@ describe("AdminsPanel", () => {
     expect(calls.find((c) => c.key === "POST /api/admins")?.body).toEqual({ username: "second", password: pw });
     // Reopened, the dialog starts empty.
     fireEvent.click(screen.getByRole("button", { name: "Add admin" }));
-    expect((within(screen.getByRole("dialog", { name: "Add admin" })).getByLabelText("Username") as HTMLInputElement).value).toBe("");
+    expect((inDialog("Add admin").getByLabelText("Username") as HTMLInputElement).value).toBe("");
   });
 
   it("keeps the dialog open with the server message when the username is taken", async () => {
@@ -95,18 +95,17 @@ describe("AdminsPanel", () => {
       "DELETE /api/admins/2": { status: 204 },
     };
     const calls = stubApi(routes);
-    const confirm = vi.fn(() => false);
-    vi.stubGlobal("confirm", confirm);
     const onSignedOut = vi.fn();
     render(<AdminsPanel me={owner} onSignedOut={onSignedOut} />);
     await screen.findByText("second");
     fireEvent.click(removeButton("second"));
-    expect(confirm).toHaveBeenCalled();
+    expect(inDialog("Remove admin").getByText('Remove admin "second"?')).toBeTruthy();
+    clickInDialog("Remove admin", "Cancel");
     expect(calls.map((c) => c.key)).not.toContain("DELETE /api/admins/2");
 
-    confirm.mockReturnValue(true);
     routes["GET /api/admins"] = { status: 200, body: [owner] };
     fireEvent.click(removeButton("second"));
+    clickInDialog("Remove admin", "Remove");
     await waitFor(() => expect(screen.queryByText("second")).toBeNull());
     expect(onSignedOut).not.toHaveBeenCalled();
   });
@@ -128,23 +127,27 @@ describe("AdminsPanel", () => {
         body: { error: "last_admin", message: "The last admin cannot be removed." },
       },
     });
-    vi.stubGlobal("confirm", () => true);
     render(<AdminsPanel me={owner} onSignedOut={vi.fn()} />);
     await screen.findByText("owner");
     fireEvent.click(removeButton("owner"));
+    clickInDialog("Remove yourself", "Remove");
     expect((await screen.findByRole("alert")).textContent).toBe("The last admin cannot be removed.");
   });
 
   it("signs out after removing yourself", async () => {
-    stubApi({
+    const calls = stubApi({
       "GET /api/admins": { status: 200, body: [owner, second] },
       "DELETE /api/admins/1": { status: 204 },
     });
-    vi.stubGlobal("confirm", () => true);
     const onSignedOut = vi.fn();
     render(<AdminsPanel me={owner} onSignedOut={onSignedOut} />);
     await screen.findByText("owner");
     fireEvent.click(removeButton("owner"));
+    expect(inDialog("Remove yourself").getByText("Remove yourself? You will be signed out.")).toBeTruthy();
+    clickInDialog("Remove yourself", "Cancel");
+    expect(calls.map((c) => c.key)).not.toContain("DELETE /api/admins/1");
+    fireEvent.click(removeButton("owner"));
+    clickInDialog("Remove yourself", "Remove");
     await waitFor(() => expect(onSignedOut).toHaveBeenCalled());
   });
 
@@ -177,7 +180,7 @@ describe("AdminsPanel", () => {
     render(<AdminsPanel me={owner} onSignedOut={vi.fn()} />);
     await screen.findByText("owner");
     fireEvent.click(screen.getByRole("button", { name: "Add admin" }));
-    const pw = () => within(screen.getByRole("dialog", { name: "Add admin" })).getByLabelText("Password") as HTMLInputElement;
+    const pw = () => inDialog("Add admin").getByLabelText("Password") as HTMLInputElement;
     expect(pw().autocomplete).toBe("new-password");
     fireEvent.change(pw(), { target: { value: testPassword() } });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
@@ -267,10 +270,10 @@ describe("AdminsPanel", () => {
         "POST /api/2fa/confirm": { status: 204 },
       };
       const calls = stubApi(routes);
-      vi.stubGlobal("confirm", () => true);
       render(<AdminsPanel me={owner} onSignedOut={vi.fn()} />);
       await screen.findByText("second");
       fireEvent.click(removeButton("second"));
+      clickInDialog("Remove admin", "Remove");
       const dialog = await screen.findByRole("dialog", { name: "Confirm it is you" });
       expect(screen.getByText("second")).toBeTruthy();
       routes["DELETE /api/admins/2"] = { status: 204 };
@@ -311,17 +314,17 @@ describe("AdminsPanel", () => {
         "DELETE /api/admins/2/2fa": { status: 204 },
       };
       const calls = stubApi(routes);
-      const confirm = vi.fn(() => false);
-      vi.stubGlobal("confirm", confirm);
       render(<AdminsPanel me={owner} onSignedOut={vi.fn()} />);
       await screen.findByText("second");
       fireEvent.click(clearButton("second")!);
-      expect(confirm).toHaveBeenCalled();
+      const message = 'Clear two-factor sign-in for "second"? They will be signed out everywhere.';
+      expect(inDialog("Clear two-factor sign-in").getByText(message)).toBeTruthy();
+      clickInDialog("Clear two-factor sign-in", "Cancel");
       expect(calls.map((c) => c.key)).not.toContain("DELETE /api/admins/2/2fa");
 
-      confirm.mockReturnValue(true);
       routes["GET /api/admins"] = { status: 200, body: [owner, second] };
       fireEvent.click(clearButton("second")!);
+      clickInDialog("Clear two-factor sign-in", "Clear");
       await waitFor(() => expect(clearButton("second")).toBeNull());
       expect(calls.map((c) => c.key)).toContain("DELETE /api/admins/2/2fa");
       expect(within(screen.getByText("second").closest("li") as HTMLElement).queryByText("2FA")).toBeNull();
@@ -335,10 +338,10 @@ describe("AdminsPanel", () => {
         "POST /api/2fa/confirm": { status: 204 },
       };
       const calls = stubApi(routes);
-      vi.stubGlobal("confirm", () => true);
       render(<AdminsPanel me={owner} onSignedOut={vi.fn()} />);
       await screen.findByText("second");
       fireEvent.click(clearButton("second")!);
+      clickInDialog("Clear two-factor sign-in", "Clear");
       // The caller has no factor of their own, so the password alone confirms.
       const dialog = await screen.findByRole("dialog", { name: "Confirm it is you" });
       expect(within(dialog).queryByLabelText("Authenticator code")).toBeNull();

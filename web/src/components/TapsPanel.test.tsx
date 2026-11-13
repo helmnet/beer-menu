@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { formatVolume, volumeToLitres } from "../units";
-import { beer, keg, kegTypes, Reply, stubApi, tap } from "../testApi";
+import { beer, clickInDialog, inDialog, keg, kegTypes, Reply, stubApi, tap } from "../testApi";
 import TapsPanel from "./TapsPanel";
 
 afterEach(() => {
@@ -106,7 +106,7 @@ describe("TapsPanel taps", () => {
     render(<TapsPanel onSignedOut={vi.fn()} />);
     await screen.findByRole("article", { name: "Left" });
     fireEvent.click(screen.getByRole("button", { name: "Add tap" }));
-    fireEvent.click(within(screen.getByRole("dialog", { name: "Add tap" })).getByRole("button", { name: "Cancel" }));
+    clickInDialog("Add tap", "Cancel");
     expect(screen.queryByRole("dialog", { name: "Add tap" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Add tap" }));
     fireEvent(screen.getByRole("dialog", { name: "Add tap" }), new Event("cancel", { cancelable: true }));
@@ -124,7 +124,7 @@ describe("TapsPanel taps", () => {
     expect(screen.getAllByRole("button", { name: "Add tap" })).toHaveLength(2);
     r["GET /api/taps"] = { status: 200, body: [one, tap({ id: 4, position: 2, label: "Tap 2" })] };
     fireEvent.click(within(slot).getByRole("button", { name: "Add tap" }));
-    fireEvent.click(within(screen.getByRole("dialog", { name: "Add tap" })).getByRole("button", { name: "Save" }));
+    clickInDialog("Add tap", "Save");
     expect(await screen.findByRole("article", { name: "Tap 2" })).toBeTruthy();
     expect(calls.find((c) => c.key === "POST /api/taps")?.body).toEqual({});
     slot.remove();
@@ -207,17 +207,16 @@ describe("TapsPanel taps", () => {
   it("removes a tap only after confirmation", async () => {
     const r = routes([one, three], { "DELETE /api/taps/3": { status: 204 } });
     const calls = stubApi(r);
-    const confirm = vi.fn(() => false);
-    vi.stubGlobal("confirm", confirm);
     render(<TapsPanel onSignedOut={vi.fn()} />);
     await screen.findByRole("article", { name: "Right" });
     fireEvent.click(within(item("Right")).getByRole("button", { name: "Remove" }));
-    expect(confirm).toHaveBeenCalledWith("Remove Right?");
+    expect(inDialog("Remove tap").getByText("Remove Right?")).toBeTruthy();
+    clickInDialog("Remove tap", "Cancel");
     expect(keys(calls)).not.toContain("DELETE /api/taps/3");
 
-    confirm.mockReturnValue(true);
     r["GET /api/taps"] = { status: 200, body: [one] };
     fireEvent.click(within(item("Right")).getByRole("button", { name: "Remove" }));
+    clickInDialog("Remove tap", "Remove");
     await waitFor(() => expect(screen.queryByRole("article", { name: "Right" })).toBeNull());
     expect(keys(calls)).toContain("DELETE /api/taps/3");
   });
@@ -228,10 +227,10 @@ describe("TapsPanel taps", () => {
         "DELETE /api/taps/1": { status: 409, body: { error: "last_tap", message: "The last tap cannot be removed." } },
       }),
     );
-    vi.stubGlobal("confirm", () => true);
     render(<TapsPanel onSignedOut={vi.fn()} />);
     await screen.findByRole("article", { name: "Left" });
     fireEvent.click(within(item("Left")).getByRole("button", { name: "Remove" }));
+    clickInDialog("Remove tap", "Remove");
     expect((await screen.findByRole("alert")).textContent).toBe("The last tap cannot be removed.");
   });
 
@@ -302,7 +301,7 @@ describe("TapsPanel kegs", () => {
     render(<TapsPanel onSignedOut={vi.fn()} />);
     await screen.findByText("Stout");
     fireEvent.click(within(item("Right")).getByRole("button", { name: "Add keg" }));
-    fireEvent.click(within(screen.getByRole("dialog", { name: "Add keg" })).getByRole("button", { name: "Cancel" }));
+    clickInDialog("Add keg", "Cancel");
     expect(screen.queryByRole("dialog", { name: "Add keg" })).toBeNull();
     expect(keys(calls).filter((k) => !k.startsWith("GET"))).toEqual([]);
   });
@@ -425,17 +424,16 @@ describe("TapsPanel kick", () => {
   it("kicks a keg only after confirmation, then reloads", async () => {
     const r = kegRoutes([], { "PATCH /api/kegs/10": { status: 200, body: { ...tapped, state: "kicked" } } });
     const calls = stubApi(r);
-    const confirm = vi.fn(() => false);
-    vi.stubGlobal("confirm", confirm);
     render(<TapsPanel onSignedOut={vi.fn()} />);
     await screen.findByText("Stout");
     fireEvent.click(within(item("Left")).getByRole("button", { name: "Kick" }));
-    expect(confirm).toHaveBeenCalledWith("Kick the Stout keg? It moves to keg history.");
+    expect(inDialog("Kick keg").getByText("Kick the Stout keg? It moves to keg history.")).toBeTruthy();
+    clickInDialog("Kick keg", "Cancel");
     expect(keys(calls).filter((k) => !k.startsWith("GET"))).toEqual([]);
 
-    confirm.mockReturnValue(true);
     r["GET /api/taps"] = { status: 200, body: [one, empty] };
     fireEvent.click(within(item("Left")).getByRole("button", { name: "Kick" }));
+    clickInDialog("Kick keg", "Kick");
     expect(await within(item("Left")).findByRole("button", { name: "Add keg" })).toBeTruthy();
     expect(calls.find((c) => c.key === "PATCH /api/kegs/10")?.body).toEqual({ kicked: true });
   });

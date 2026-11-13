@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { beer, keg, kegTypes, Reply, stubApi } from "../testApi";
+import { beer, clickInDialog, keg, kegTypes, Reply, stubApi } from "../testApi";
 import OnDeckPanel from "./OnDeckPanel";
 
 afterEach(() => {
@@ -86,11 +86,11 @@ describe("OnDeckPanel", () => {
   });
 
   it("kicks a waiting keg and reloads", async () => {
-    vi.stubGlobal("confirm", vi.fn(() => true));
     const calls = stubApi(routes({ "PATCH /api/kegs/2": { status: 200, body: { ...waitOld, state: "kicked" } } }));
     render(<OnDeckPanel onSignedOut={vi.fn()} />);
     await screen.findByRole("article", { name: "Zwickel" });
     fireEvent.click(within(item("Zwickel")).getByRole("button", { name: "Kick" }));
+    clickInDialog("Kick keg", "Kick");
     await waitFor(() => expect(keys(calls).filter((k) => k === "GET /api/kegs")).toHaveLength(2));
     expect(calls.find((c) => c.key === "PATCH /api/kegs/2")?.body).toEqual({ kicked: true });
   });
@@ -143,7 +143,7 @@ describe("OnDeckPanel", () => {
     render(<OnDeckPanel onSignedOut={vi.fn()} />);
     await screen.findByRole("article", { name: "Bock" });
     fireEvent.click(screen.getByRole("button", { name: "Add keg" }));
-    fireEvent.click(within(screen.getByRole("dialog", { name: "Add keg" })).getByRole("button", { name: "Cancel" }));
+    clickInDialog("Add keg", "Cancel");
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(keys(calls).filter((k) => !k.startsWith("GET"))).toEqual([]);
   });

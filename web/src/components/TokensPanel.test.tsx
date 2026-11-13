@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { stubApi, testPassword, twoFactorState } from "../testApi";
+import { clickInDialog, inDialog, stubApi, testPassword, twoFactorState } from "../testApi";
 import TokensPanel from "./TokensPanel";
 
 afterEach(() => {
@@ -164,16 +164,15 @@ describe("TokensPanel", () => {
       "DELETE /api/tokens/2": { status: 204 },
     };
     const calls = stubApi(routes);
-    const confirm = vi.fn(() => false);
-    vi.stubGlobal("confirm", confirm);
     render(<TokensPanel onSignedOut={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "Revoke" }));
-    expect(confirm).toHaveBeenCalled();
+    expect(inDialog("Revoke token").getByText('Revoke token "script"? Clients using it stop working at once.')).toBeTruthy();
+    clickInDialog("Revoke token", "Cancel");
     expect(calls.map((c) => c.key)).not.toContain("DELETE /api/tokens/2");
 
-    confirm.mockReturnValue(true);
     routes["GET /api/tokens"] = { status: 200, body: [{ ...unused, revoked_at: "2026-11-08T13:00:00Z" }] };
     fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
+    clickInDialog("Revoke token", "Revoke");
     expect(await screen.findByText("Revoked")).toBeTruthy();
     expect(calls.map((c) => c.key)).toContain("DELETE /api/tokens/2");
   });

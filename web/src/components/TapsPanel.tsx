@@ -2,6 +2,7 @@ import { ArrowDown, ArrowUp, GlassWater, Pencil, Plus, Power, Trash2 } from "luc
 import { FormEvent, type JSX, useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { ApiError, apiFetch, errorMessage, isUnauthenticated, Keg, KegType, Tap, Units } from "../api";
+import { useConfirmAction } from "./ConfirmDialog";
 import KegCard from "./KegCard";
 import KegForm from "./KegForm";
 import Modal from "./Modal";
@@ -17,7 +18,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
  * headed "<position>. <label>" (plus "(disabled)") with icon buttons: Rename (reveals an
  * inline label form; PATCH /api/taps/{id}, sent only when changed), Move up and Move down
  * (PUT /api/taps/order with every id in the new order; absent at the ends), Disable or Enable
- * (PATCH enabled) and Remove (after a confirm prompt; DELETE /api/taps/{id}). A tap with a keg
+ * (PATCH enabled) and Remove (after a confirmation dialog; DELETE /api/taps/{id}). A tap with a keg
  * shows it in KegCard (pour, set level, edit, take off, kick). An empty tap shows "Empty tap",
  * Add keg (KegForm for this tap in the "Add keg" dialog) and, while kegs wait (GET
  * /api/kegs?state=waiting), a "Waiting keg" select with Put on tap (PATCH /api/kegs/{id}
@@ -44,6 +45,7 @@ export default function TapsPanel({
   const [addingTap, setAddingTap] = useState(false);
   const [renaming, setRenaming] = useState<number | null>(null);
   const [error, setError] = useState("");
+  const confirm = useConfirmAction();
 
   async function run(action: () => Promise<void>) {
     setError("");
@@ -94,7 +96,9 @@ export default function TapsPanel({
   }
 
   function remove(t: Tap) {
-    if (window.confirm(`Remove ${t.label}?`)) change("DELETE", `/api/taps/${t.id}`);
+    confirm.ask({ title: "Remove tap", message: `Remove ${t.label}?`, confirmLabel: "Remove" }, () =>
+      change("DELETE", `/api/taps/${t.id}`),
+    );
   }
 
   function putOnTap(t: Tap, e: FormEvent<HTMLFormElement>) {
@@ -241,6 +245,7 @@ export default function TapsPanel({
           <AddTapForm onSaved={saved} onCancel={() => setAddingTap(false)} onSignedOut={onSignedOut} />
         </Modal>
       )}
+      {confirm.dialog}
     </section>
   );
 }

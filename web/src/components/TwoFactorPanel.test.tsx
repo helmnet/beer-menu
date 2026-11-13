@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { passkey, stubApi, testPassword, twoFactorState } from "../testApi";
+import { clickInDialog, inDialog, passkey, stubApi, testPassword, twoFactorState } from "../testApi";
 import TwoFactorPanel from "./TwoFactorPanel";
 
 afterEach(() => {
@@ -187,16 +187,16 @@ describe("TwoFactorPanel", () => {
       "POST /api/2fa/confirm": { status: 204 },
     };
     const calls = stubApi(routes);
-    const ask = vi.fn(() => false);
-    vi.stubGlobal("confirm", ask);
     render(<TwoFactorPanel onSignedOut={vi.fn()} />);
     const row = (await screen.findByText(/Phone/)).closest("li") as HTMLElement;
     fireEvent.click(within(row).getByRole("button", { name: "Remove" }));
-    expect(ask).toHaveBeenCalled();
+    const message = 'Remove the passkey "Phone"? Your other sessions will be signed out.';
+    expect(inDialog("Remove second factor").getByText(message)).toBeTruthy();
+    clickInDialog("Remove second factor", "Cancel");
     expect(calls.map((c) => c.key)).not.toContain("DELETE /api/2fa/passkeys/1");
 
-    ask.mockReturnValue(true);
     fireEvent.click(within(row).getByRole("button", { name: "Remove" }));
+    clickInDialog("Remove second factor", "Remove");
     routes["DELETE /api/2fa/passkeys/1"] = { status: 204 };
     routes["GET /api/2fa"] = { status: 200, body: twoFactorState({ enabled: true, totp: totpOn, recovery_codes_left: 10 }) };
     await confirmWithCode();
@@ -211,11 +211,11 @@ describe("TwoFactorPanel", () => {
       "DELETE /api/2fa/totp": { status: 204 },
     };
     stubApi(routes);
-    vi.stubGlobal("confirm", () => true);
     render(<TwoFactorPanel onSignedOut={vi.fn()} />);
     const row = (await screen.findByText(/Authenticator app/)).closest("li") as HTMLElement;
     routes["GET /api/2fa"] = { status: 200, body: twoFactorState() };
     fireEvent.click(within(row).getByRole("button", { name: "Remove" }));
+    clickInDialog("Remove second factor", "Remove");
     expect(await screen.findByText("Two-factor sign-in is off.")).toBeTruthy();
   });
 
@@ -228,14 +228,15 @@ describe("TwoFactorPanel", () => {
       "DELETE /api/2fa": { status: 204 },
     };
     const calls = stubApi(routes);
-    const ask = vi.fn(() => false);
-    vi.stubGlobal("confirm", ask);
     render(<TwoFactorPanel onSignedOut={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "Turn off 2FA" }));
+    const message = "Turn off two-factor sign-in? This removes every factor and recovery code.";
+    expect(inDialog("Turn off 2FA").getByText(message)).toBeTruthy();
+    clickInDialog("Turn off 2FA", "Cancel");
     expect(calls.map((c) => c.key)).not.toContain("DELETE /api/2fa");
-    ask.mockReturnValue(true);
     routes["GET /api/2fa"] = { status: 200, body: twoFactorState() };
     fireEvent.click(screen.getByRole("button", { name: "Turn off 2FA" }));
+    clickInDialog("Turn off 2FA", "Turn off");
     expect(await screen.findByText("Two-factor sign-in is off.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Turn off 2FA" })).toBeNull();
     expect(screen.queryByRole("list", { name: "Second factors" })).toBeNull();
@@ -273,10 +274,10 @@ describe("TwoFactorPanel", () => {
       "GET /api/2fa": { status: 200, body: twoFactorState({ enabled: true, totp: totpOn, recovery_codes_left: 10 }) },
       "DELETE /api/2fa": { status: 401, body: { error: "unauthenticated", message: "x" } },
     });
-    vi.stubGlobal("confirm", () => true);
     const onSignedOut = vi.fn();
     render(<TwoFactorPanel onSignedOut={onSignedOut} />);
     fireEvent.click(await screen.findByRole("button", { name: "Turn off 2FA" }));
+    clickInDialog("Turn off 2FA", "Turn off");
     await waitFor(() => expect(onSignedOut).toHaveBeenCalled());
   });
 
@@ -373,12 +374,13 @@ describe("TwoFactorPanel", () => {
       "DELETE /api/2fa/totp": required,
       "DELETE /api/2fa": required,
     });
-    vi.stubGlobal("confirm", () => true);
     render(<TwoFactorPanel onSignedOut={vi.fn()} />);
     const row = (await screen.findByText(/Authenticator app/)).closest("li") as HTMLElement;
     fireEvent.click(within(row).getByRole("button", { name: "Remove" }));
+    clickInDialog("Remove second factor", "Remove");
     expect((await screen.findByRole("alert")).textContent).toContain(`"${requireLabel}" is on`);
     fireEvent.click(screen.getByRole("button", { name: "Turn off 2FA" }));
+    clickInDialog("Turn off 2FA", "Turn off");
     await waitFor(() => expect(screen.getAllByRole("alert")).toHaveLength(1));
     expect(screen.getByRole("alert").textContent).toContain(`"${requireLabel}" is on`);
     expect(screen.getByText(/Authenticator app/)).toBeTruthy();

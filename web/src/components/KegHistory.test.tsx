@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { keg, kegTypes, Reply, stubApi } from "../testApi";
+import { clickInDialog, inDialog, keg, kegTypes, Reply, stubApi } from "../testApi";
 import KegHistory from "./KegHistory";
 
 afterEach(() => {
@@ -72,17 +72,16 @@ describe("KegHistory", () => {
   it("deletes a keg only after confirmation", async () => {
     const r = routes({ "DELETE /api/kegs/4": { status: 204 } });
     const calls = stubApi(r);
-    const confirm = vi.fn(() => false);
-    vi.stubGlobal("confirm", confirm);
     render(<KegHistory onSignedOut={vi.fn()} />);
     await screen.findByText("Stout");
     fireEvent.click(within(row("Stout")).getByRole("button", { name: "Delete" }));
-    expect(confirm).toHaveBeenCalledWith("Delete the Stout keg from history permanently?");
+    expect(inDialog("Delete keg").getByText("Delete the Stout keg from history permanently?")).toBeTruthy();
+    clickInDialog("Delete keg", "Cancel");
     expect(calls.map((c) => c.key)).not.toContain("DELETE /api/kegs/4");
 
-    confirm.mockReturnValue(true);
     r["GET /api/kegs?state=kicked"] = { status: 200, body: [never] };
     fireEvent.click(within(row("Stout")).getByRole("button", { name: "Delete" }));
+    clickInDialog("Delete keg", "Delete");
     await waitFor(() => expect(screen.queryByText("Stout")).toBeNull());
     expect(calls.map((c) => c.key)).toContain("DELETE /api/kegs/4");
   });
