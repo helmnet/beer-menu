@@ -82,7 +82,8 @@ No setup. No new dependency, file or configuration (plan.md, Constitution VII).
 ## Phase 5: Polish & Cross-Cutting Concerns
 
 - [X] T007 Run the full web gate in `web/`: `npx vitest run --maxWorkers=2`, then `npm run build` (it runs `tsc --noEmit` before `vite build`). All pass.
-- [ ] T008 Owner runs quickstart.md manual steps 1–7 in a real browser (light, dark, system theme; 200–400 px sweep; larger default font size; phone drawer incl. 320 px window; accessibility tree) and records the result in this file. This is the behavior proof for Constitution IV; the PR body states that the switch point is verified by hand because jsdom cannot lay out.
+- [X] T008 Owner runs quickstart.md manual steps 1–7 in a real browser (light, dark, system theme; 200–400 px sweep; larger default font size; phone drawer incl. 320 px window; accessibility tree) and records the result in this file. This is the behavior proof for Constitution IV; the PR body states that the switch point is verified by hand because jsdom cannot lay out.
+  - Result (2026-11-13): owner checked on a local stack built from this branch and approved it; 1 px margin at the default width accepted as is.
 
 ---
 
