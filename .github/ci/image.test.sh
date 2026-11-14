@@ -1,5 +1,5 @@
 #!/bin/sh
-# Self-check for image.sh: the committed Dockerfiles give digest-pinned refs, and a missing, unpinned
+# Self-check for image.sh: the committed Dockerfiles give digest-pinned refs, and a missing, unpinned,
 # doubled, CRLF or dash-prefixed FROM fails with no output. The `changes` job in ci.yml runs it.
 # Run locally with: sh .github/ci/image.test.sh
 set -eu
