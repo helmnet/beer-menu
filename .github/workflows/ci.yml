@@ -29,6 +29,7 @@ jobs:
       - run: sh .github/ci/changed-sides.test.sh
       - run: sh .github/ci/notices-patch.test.sh
       - run: sh .github/ci/image.test.sh
+      - run: sh .github/ci/pre-commit.test.sh
       - id: sides
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
