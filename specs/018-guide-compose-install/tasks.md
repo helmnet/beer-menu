@@ -110,7 +110,7 @@ No setup: the guide build has no dependencies to install and every folder exists
 - [X] T016 [P] Update `guide/README.md`: Layout list gains `src/copy.js` (Copy button for `<pre class="copy">`, the only script; loaded by a fragment with `<script src="copy.js" defer></script>`) and notes that `build.mjs` fills `{{compose}}` from the root `docker-compose.yaml` (comments and `build:` lines stripped); `build.test.mjs` line points to both contracts (017 and 018); "Write for end users" note: the Install page also documents environment variables, and the test fails until every variable the API startup code or compose file reads is listed there.
 - [X] T017 [P] Update the header comment of `guide/build.test.mjs` to reference `specs/017-user-guide/contracts/guide-site.md` and `specs/018-guide-compose-install/contracts/guide-site.md`.
 - [X] T018 Confirm no other file still points users to cloning for the guide flow: `grep -rn -i "clone\|beer-menu-main\|Download ZIP" guide/src` returns nothing.
-- [ ] T019 Run `node --test guide/` and `sh .github/ci/changed-sides.test.sh` (both must pass), then walk through `specs/018-guide-compose-install/quickstart.md` by hand and record any step that fails.
+- [X] T019 Run `node --test guide/` and `sh .github/ci/changed-sides.test.sh` (both must pass), then walk through `specs/018-guide-compose-install/quickstart.md` by hand and record any step that fails.
 
 ---
 
