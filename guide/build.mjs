@@ -1,7 +1,9 @@
 // Builds the static user guide (contract: specs/017-user-guide/contracts/guide-site.md).
-// Inputs: guide/src/layout.html, guide/src/guide.css, guide/src/pages/<slug>.html (page bodies),
-// guide/src/images/*, and the admin app's color tokens in web/src/pages/AdminPage.css.
-// Output: guide/_site/ (emptied first): one <slug>.html per NAV entry, guide.css and images/.
+// Changes: specs/018-guide-compose-install/contracts/guide-site.md.
+// Inputs: guide/src/layout.html, guide/src/guide.css, guide/src/copy.js, guide/src/pages/<slug>.html
+// (page bodies), guide/src/images/*, the admin app's color tokens in web/src/pages/AdminPage.css,
+// and the root docker-compose.yaml, from which a fragment's {{compose}} is filled.
+// Output: guide/_site/ (emptied first): one <slug>.html per NAV entry, guide.css, copy.js and images/.
 // Fails, naming the problem, when a NAV entry has no fragment, a fragment has no NAV entry, or
 // the .admin / .admin.theme-dark block or a required token is missing from AdminPage.css.
 // Node standard library only. Run: node guide/build.mjs
@@ -32,7 +34,7 @@ export const REQUIRED_TOKENS = [
   "--accent", "--accent-tint", "--danger", "--radius", "--nav-width",
 ];
 
-const escape = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+export const escape = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 /** declarations returns the custom properties of the first rule whose selector is exactly selector. */
 function declarations(css, selector) {
@@ -49,6 +51,22 @@ export function extractTokens(css) {
   const missing = REQUIRED_TOKENS.filter((t) => !(t in tokens));
   if (missing.length) throw new Error(`AdminPage.css: missing token(s) ${missing.join(" ")}`);
   return tokens;
+}
+
+/**
+ * deriveCompose returns the image-only compose file the Install page shows, from the root
+ * docker-compose.yaml: lines whose first non-space character is # and build: lines removed, runs
+ * of blank lines collapsed to one, trimmed. CRLF line ends become LF.
+ * shortcut: only a one-line `build: <path>` is removed; its mapping form would leave its
+ * context: lines, so extend this if the root file adopts it.
+ */
+export function deriveCompose(text) {
+  return text
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*(#|build:)/.test(line))
+    .join("\n")
+    .replace(/\n\s*\n/g, "\n\n")
+    .trim();
 }
 
 /** renderNav is the nav markup for the page current: one h2 per group, then its links. */
@@ -82,16 +100,21 @@ export function build({ root = join(fileURLToPath(import.meta.url), "..", "..") 
   const links = readdirSync(src, { recursive: true, withFileTypes: true }).filter((d) => d.isSymbolicLink());
   if (links.length) throw new Error(`symbolic link(s) in guide/src: ${links.map((d) => join(d.parentPath, d.name)).join(", ")}`);
 
+  const compose = escape(deriveCompose(readFileSync(join(root, "docker-compose.yaml"), "utf8")));
+
   rmSync(out, { recursive: true, force: true });
   mkdirSync(out, { recursive: true });
   for (const p of NAV) {
-    const fill = { title: escape(p.title), tokens: style, nav: renderNav(p.slug), content: readFileSync(join(src, "pages", `${p.slug}.html`), "utf8").trim() };
+    // A function, so $& or $n in the compose text are never read as replacement patterns.
+    const content = readFileSync(join(src, "pages", `${p.slug}.html`), "utf8").trim().replace("{{compose}}", () => compose);
+    const fill = { title: escape(p.title), tokens: style, nav: renderNav(p.slug), content };
     writeFileSync(join(out, `${p.slug}.html`), layout.replace(/\{\{(\w+)\}\}/g, (_, key) => {
       if (!(key in fill)) throw new Error(`layout.html: unknown placeholder {{${key}}}`);
       return fill[key];
     }));
   }
   cpSync(join(src, "guide.css"), join(out, "guide.css"));
+  cpSync(join(src, "copy.js"), join(out, "copy.js"));
   cpSync(join(src, "images"), join(out, "images"), { recursive: true });
   return out;
 }

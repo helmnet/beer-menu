@@ -29,7 +29,8 @@ a {
 }
 
 a:focus-visible,
-summary:focus-visible {
+summary:focus-visible,
+.copy-button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -56,11 +57,19 @@ nav {
   padding: 12px;
 }
 
-summary {
-  padding: 10px 12px;
+/* The boxed look shared by the Menu toggle, figures, warnings, code blocks and the Copy button. */
+summary,
+figure,
+.warning,
+pre,
+.copy-button {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+}
+
+summary {
+  padding: 10px 12px;
   font-weight: 600;
   cursor: pointer;
 }
@@ -95,7 +104,8 @@ nav a {
   text-decoration: none;
 }
 
-nav a:hover {
+nav a:hover,
+.copy-button:hover {
   background: var(--accent-tint);
 }
 
@@ -124,12 +134,15 @@ main h2 {
   line-height: 1.25;
 }
 
+main h3 {
+  margin: 24px 0 6px;
+  font-size: 1.1rem;
+  line-height: 1.25;
+}
+
 figure {
   margin: 20px 0;
   padding: 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
 }
 
 img {
@@ -156,10 +169,7 @@ li + li {
 .warning {
   margin: 16px 0;
   padding: 12px 16px;
-  background: var(--surface);
-  border: 1px solid var(--border);
   border-left: 4px solid var(--danger);
-  border-radius: var(--radius);
 }
 
 .warning p {
@@ -170,11 +180,41 @@ li + li {
 pre {
   margin: 12px 0;
   padding: 12px 16px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
   overflow-x: auto;
   overflow-wrap: normal;
+}
+
+/* copy.js wraps each <pre class="copy"> in .copy-block and puts the button in its top-right corner. */
+.copy-block {
+  position: relative;
+}
+
+/* Room on the right so no code line sits under the button. */
+.copy-block pre {
+  padding-right: 72px;
+}
+
+.copy-button {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 2px 8px;
+  font-size: 13px;
+  color: var(--text);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* Hidden until hover only where hover exists; touch screens always show it. Focus shows it too. */
+@media (hover: hover) {
+  .copy-button {
+    opacity: 0;
+  }
+
+  .copy-block:hover .copy-button,
+  .copy-block:focus-within .copy-button {
+    opacity: 1;
+  }
 }
 
 /* Desktop: a fixed side panel like the app's, always open, with no script. */

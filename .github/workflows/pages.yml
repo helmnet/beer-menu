@@ -1,7 +1,8 @@
 # Publishes the user guide (guide/) to GitHub Pages at https://helmnet.github.io/beer-menu/ on
-# every push to main that changes it or its color source (web/src/pages/AdminPage.css), and on
-# demand. The build job runs the guide test, which also builds guide/_site, and uploads that
-# folder; only the deploy job may write to Pages.
+# every push to main that changes it, its color source (web/src/pages/AdminPage.css) or the
+# compose file it derives the Install page from (docker-compose.yaml), and on demand. The build
+# job runs the guide test, which also builds guide/_site, and uploads that folder; only the
+# deploy job may write to Pages.
 # One-time owner steps (only the repository owner can do these):
 #   1. Settings > Pages > Source: GitHub Actions. The deploy job fails until it is set.
 #   2. Add `guide` (the ci.yml job) to the required status checks of the main ruleset.
@@ -13,6 +14,7 @@ on:
     paths:
       - "guide/**"
       - "web/src/pages/AdminPage.css"
+      - "docker-compose.yaml"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
