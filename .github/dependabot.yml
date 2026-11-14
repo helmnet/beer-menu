@@ -25,7 +25,8 @@ updates:
         update-types: [minor, patch]
 
   - package-ecosystem: docker
-    directories: [/api, /web]
+    # .github/ci/images: scanner images the workflows run, pinned in never-built Dockerfiles so Dependabot sees them.
+    directories: [/api, /web, /.github/ci/images/gitleaks, /.github/ci/images/trivy]
     schedule:
       interval: weekly
     cooldown:

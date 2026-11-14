@@ -27,6 +27,7 @@ jobs:
           persist-credentials: false
       - run: sh .github/ci/changed-sides.test.sh
       - run: sh .github/ci/notices-patch.test.sh
+      - run: sh .github/ci/image.test.sh
       - id: sides
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -236,10 +237,11 @@ jobs:
       # Scans a saved tarball so the third-party scanner never gets the Docker socket (root on the runner).
       - name: Scan the changed images for vulnerabilities
         run: |
+          trivy=$(sh .github/ci/image.sh trivy)
           for img in $IMAGES; do
             docker save -o "$RUNNER_TEMP/image.tar" "$img"
             docker run --rm -v "$RUNNER_TEMP/image.tar:/image.tar:ro" \
-              aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c \
+              "$trivy" \
               image --input /image.tar --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
           done
       # 12345:12345 is a UID/GID the images were not built for.

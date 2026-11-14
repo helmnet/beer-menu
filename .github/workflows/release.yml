@@ -57,9 +57,10 @@ jobs:
           IMAGE: ghcr.io/helmnet/beer-menu-${{ matrix.image }}
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
+          trivy=$(sh .github/ci/image.sh trivy)
           docker save -o "$RUNNER_TEMP/image.tar" "$IMAGE:$VERSION"
           docker run --rm -v "$RUNNER_TEMP/image.tar:/image.tar:ro" \
-            aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c \
+            "$trivy" \
             image --input /image.tar --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
       # Logs in only now, so the token is not on disk while the build and scan run third-party code.
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
