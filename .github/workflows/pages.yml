@@ -1,4 +1,4 @@
-# Publishes the user guide (guide/) to GitHub Pages at https://helmnet.github.io/beer-menu/ on
+# Publishes the user guide (guide/) to GitHub Pages at https://beermenu.helmnettech.org on
 # every push to main that changes it, its color source (web/src/pages/AdminPage.css) or the
 # compose file it derives the Install page from (docker-compose.yaml), and on demand. The build
 # job runs the guide test, which also builds guide/_site, and uploads that folder; only the
