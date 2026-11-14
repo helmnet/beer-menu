@@ -238,3 +238,13 @@ encryption key the API had when the backup was taken; otherwise reconnect (see
 
 Backups hold password and token hashes, and sealed authenticator secrets. Keep them, like the
 database, at mode `0600` and owned by the container user.
+
+## License
+
+Copyright (C) 2026 Brian Helm
+
+Beer Menu is free software, licensed under the GNU General Public License version 3 or (at your
+option) any later version (`GPL-3.0-or-later`); see [LICENSE](LICENSE). Third-party software
+shipped in the images keeps its own license; see
+[api/THIRD_PARTY_NOTICES](api/THIRD_PARTY_NOTICES) and
+[web/THIRD_PARTY_NOTICES](web/THIRD_PARTY_NOTICES).

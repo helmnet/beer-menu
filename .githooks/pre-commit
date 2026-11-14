@@ -1,0 +1,20 @@
+#!/bin/sh
+# Regenerates the third-party notices when a staged file can change them, and stages the result.
+# Which files count is decided by .github/ci/changed-sides.sh, the same rules CI uses.
+# Turn on once per clone: git config core.hooksPath .githooks
+# Uses the working tree, so a partly staged go.sum or package-lock.json is read as on disk.
+set -eu
+cd "$(git rev-parse --show-toplevel)"
+
+# Captured first: sh has no pipefail, so a failing git diff would be hidden by the classifier.
+# quotePath=false keeps non-ASCII names unquoted, so "api/café.go" still matches api/*.
+staged=$(git -c core.quotePath=false diff --cached --no-renames --name-only)
+printf '%s\n' "$staged" | sh .github/ci/changed-sides.sh | grep -qx notices=true || exit 0
+
+if ! sh scripts/third-party-notices.sh; then
+	echo "pre-commit: scripts/third-party-notices.sh failed; fix it (needs go and npm ci in web/)," >&2
+	echo "or skip the hook with git commit --no-verify and let CI flag stale notices." >&2
+	exit 1
+fi
+# shellcheck disable=SC2046 # one path per line, no spaces
+git add -- $(sh scripts/third-party-notices.sh --outputs)
