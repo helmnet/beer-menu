@@ -1,6 +1,6 @@
 #!/bin/sh
 # Self-check for image.sh: the committed Dockerfiles give digest-pinned refs, and a missing, unpinned
-# doubled or CRLF FROM fails with no output. The `changes` job in ci.yml runs it.
+# doubled, CRLF or dash-prefixed FROM fails with no output. The `changes` job in ci.yml runs it.
 # Run locally with: sh .github/ci/image.test.sh
 set -eu
 
@@ -37,6 +37,7 @@ bad two-from "FROM a:1@$digest
 FROM b:2@$digest"
 bad empty ""
 bad crlf "FROM a:1@$digest$(printf '\r')"
+bad dash "FROM -eX=1:y@$digest"
 if sh "$tmp/image.sh" missing >/dev/null 2>&1; then echo "FAIL missing file"; failed=1; fi
 if sh "$script" >/dev/null 2>&1; then echo "FAIL no argument"; failed=1; fi
 

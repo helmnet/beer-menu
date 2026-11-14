@@ -11,9 +11,11 @@ if [ "$#" -ne 1 ]; then
 fi
 file="$(dirname "$0")/images/$1/Dockerfile"
 # grep -c: a second FROM line must fail, not pass as a second ref. No trailing whitespace allowed, so a
-# CRLF line fails here instead of passing the \r on to docker run.
+# CRLF line fails here instead of passing the \r on to docker run. The ref must start [a-z0-9] (as every
+# Docker image name does): a leading - would make docker run read it as an option and run the next
+# argument as an unpinned image.
 if [ ! -f "$file" ] || [ "$(grep -c '^FROM' "$file")" -ne 1 ] ||
-  ! ref=$(grep -xE 'FROM[[:space:]]+[^[:space:]@]+:[^[:space:]@]+@sha256:[0-9a-f]{64}' "$file"); then
+  ! ref=$(grep -xE 'FROM[[:space:]]+[a-z0-9][^[:space:]@]*:[^[:space:]@]+@sha256:[0-9a-f]{64}' "$file"); then
   echo "::error::$file must have exactly one FROM IMAGE:TAG@sha256:DIGEST line" >&2
   exit 1
 fi
