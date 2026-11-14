@@ -115,10 +115,9 @@ nav a[aria-current="page"] {
   font-weight: 600;
 }
 
-/* Page content: one readable column. */
+/* Page content: fills all the width the nav leaves free, with no width cap. */
 
 main {
-  max-width: 760px;
   padding: 24px 16px 48px;
   overflow-wrap: anywhere;
 }
