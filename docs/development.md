@@ -10,7 +10,9 @@ How to work on beer-menu. To run it, see the [README](../README.md); for the API
 - `web/`: React + TypeScript app built with Vite, and the nginx config of the web image.
 - `docker-compose.yaml`: example compose file that starts both containers.
 - `scripts/`: repo maintenance scripts (third-party notices, below).
-- `specs/`: feature specifications and plans.
+- `specs/`: feature specifications and plans. Each one records the plan as it stood when that
+  feature merged and is not kept up to date afterwards; where a spec and the code disagree, the
+  code is current.
 - `docs/`: this guide, the [API overview](api.md) and the [project brief](project-brief.md).
 
 ## Local development
