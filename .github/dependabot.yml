@@ -25,8 +25,9 @@ updates:
         update-types: [minor, patch]
 
   - package-ecosystem: docker
-    # .github/ci/images: scanner images the workflows run, pinned in never-built Dockerfiles so Dependabot sees them.
-    directories: [/api, /web, /.github/ci/images/gitleaks, /.github/ci/images/trivy]
+    # ci/images: scanner images the workflows run, pinned in never-built Dockerfiles so Dependabot sees them.
+    # Outside .github/: Dependabot cannot open pull requests that change files there (other than workflows).
+    directories: [/api, /web, /ci/images/gitleaks, /ci/images/trivy]
     schedule:
       interval: weekly
     cooldown:

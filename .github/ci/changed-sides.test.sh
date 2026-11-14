@@ -26,8 +26,8 @@ check "node version" ".tool-versions" false true "web" false
 check "compose file" "docker-compose.yaml" true true "api web" false
 check "ci workflow" ".github/workflows/ci.yml" true true "api web" true
 check "ci helper" ".github/ci/changed-sides.sh" true true "api web" true
-check "trivy image" ".github/ci/images/trivy/Dockerfile" true true "api web" true
-check "gitleaks image" ".github/ci/images/gitleaks/Dockerfile" true true "api web" true
+check "trivy image" "ci/images/trivy/Dockerfile" true true "api web" false
+check "gitleaks image" "ci/images/gitleaks/Dockerfile" true true "api web" false
 check "both sides" "api/x.go${nl}web/y.ts" true true "api web" false
 check "web plus spec" "web/a.ts${nl}specs/016-x/contracts/a.yaml" false true "web" false
 check "api markdown" "api/README.md" false false "" false

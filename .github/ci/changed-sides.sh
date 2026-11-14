@@ -20,6 +20,8 @@ while IFS= read -r path || [ -n "$path" ]; do
     web/* | .tool-versions) web=true ;;
     LICENSE | scripts/third-party-notices.sh) notices=true ;;
     .github/workflows/ci.yml | .github/ci/*) api=true web=true notices=true ;;
+    # Scanner image pins: a Trivy bump must run the images job.
+    ci/images/*) api=true web=true ;;
     docker-compose.yaml) api=true web=true ;;
     # A root file literally named ALL also forces every check; harmless.
     ALL) api=true web=true notices=true ;;
