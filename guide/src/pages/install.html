@@ -1,22 +1,78 @@
-<p>This page starts Beer Menu for the first time on a computer that already has Docker with Compose installed. You type a few commands in a terminal; after that, everything is done in the browser.</p>
+<p>This page starts Beer Menu for the first time on a computer that already has Docker with Compose installed. You do not need a copy of the Beer Menu project: you save one short file and type a few commands in a terminal. After that, everything is done in the browser.</p>
 <h2>Start Beer Menu for the first time</h2>
 <ol>
-<li>Get the Beer Menu files: either download them from the <a href="https://github.com/helmnet/beer-menu">Beer Menu project page</a> (Code, then Download ZIP) and unzip them, or copy them with git:
-<pre><code>git clone https://github.com/helmnet/beer-menu.git</code></pre>
+<li>Make a folder for Beer Menu, with a folder named "data" inside it where Beer Menu keeps its data, and open a terminal there:
+<pre class="copy"><code>mkdir -p ~/beer-menu/data
+cd ~/beer-menu</code></pre>
 </li>
-<li>Open a terminal in the Beer Menu folder. If you downloaded the ZIP, the folder is named "beer-menu-main" instead.
-<pre><code>cd beer-menu</code></pre>
+<li>Copy the compose file below with the <strong>Copy</strong> button, and save it in that folder as <code>docker-compose.yaml</code>:
+<pre class="copy"><code>{{compose}}</code></pre>
+<script src="copy.js" defer></script>
 </li>
-<li>Choose where Beer Menu keeps its data. It uses a folder named "data" inside the Beer Menu folder, and runs as your own user so it can write there. Create the folder and set the user:
-<pre><code>export PUID=$(id -u) PGID=$(id -g)
-mkdir -p data</code></pre>
-</li>
+<li>Tell Beer Menu to run as your own user, so it can write to the "data" folder. It refuses to run as root.
+<pre class="copy"><code>(set -C &amp;&amp; printf 'PUID=%s\nPGID=%s\n' "$(id -u)" "$(id -g)" &gt; .env)
+chmod 600 .env</code></pre>
+This writes a file named <code>.env</code>, which Docker Compose reads every time Beer Menu starts, so you do this only once. If <code>.env</code> already exists, the command leaves it unchanged and reports that it cannot overwrite it. Only you can read it, because it may later hold a password.</li>
 <li>Download Beer Menu and start it:
-<pre><code>docker compose pull
-docker compose up -d</code></pre>
+<pre class="copy"><code>docker compose up -d</code></pre>
 </li>
 <li>For the admin app, open <strong>http://localhost:8080/</strong> in a browser on the same computer.</li>
 <li>For the TV display, open <strong>http://localhost:8080/display</strong>. It shows an empty tap until you put a keg on it.</li>
 </ol>
 <p>Beer Menu keeps running in the background and starts again after a restart. Keep the "data" folder safe: it holds all your beers, kegs and settings.</p>
+<p>To use another port or change other settings, see "Environment variables" below.</p>
 <p>Next, create your admin account: see <a href="getting-started.html">Getting started</a>.</p>
+<h2>Environment variables</h2>
+<p>Beer Menu runs without any of these settings; each one is optional. Use them to change the port, run a fixed release, create the first admin from a file, open the admin app from other devices over plain HTTP, or turn on Brewfather import, authenticator apps and passkeys.</p>
+<h3>How to set a variable</h3>
+<p>There are two kinds of setting.</p>
+<p>Compose settings (<code>PUID</code>, <code>PGID</code>, <code>BEER_MENU_DATA</code>, <code>BEER_MENU_WEB_PORT</code> and <code>BEER_MENU_VERSION</code>) go in the <code>.env</code> file next to <code>docker-compose.yaml</code>, one <code>NAME=value</code> line each, for example:</p>
+<pre class="copy"><code>BEER_MENU_WEB_PORT=8081</code></pre>
+<p>App settings (every other name starting with <code>BEER_MENU_</code>) go in an <code>environment:</code> block under <code>api:</code> in <code>docker-compose.yaml</code>. Add the <code>environment:</code> line once, then one line per setting under it, indented as shown:</p>
+<pre class="copy"><code>  api:
+    environment:
+      BEER_MENU_COOKIE_SECURE: "false"</code></pre>
+<p>Never write a secret value in <code>docker-compose.yaml</code>. Put it in <code>.env</code> instead, and refer to it in <code>docker-compose.yaml</code> as <code>${NAME}</code>, as the First admin example below shows.</p>
+<p>A variable set in the terminal (<code>export NAME=value</code>) overrides the same name in <code>.env</code>, but only for that terminal, so keep your settings in <code>.env</code>.</p>
+<p>After any change, run <code>docker compose up -d</code>; Compose restarts whatever changed. Run every <code>docker compose</code> command from the Beer Menu folder (<code>cd ~/beer-menu</code>), where <code>docker-compose.yaml</code> and <code>.env</code> are.</p>
+<h3>Run as your user: PUID and PGID</h3>
+<p><code>PUID</code> and <code>PGID</code> are the user and group IDs Beer Menu runs as. That user must own the data folder. Neither may be 0: Beer Menu refuses to start as root. If they are not set, Beer Menu runs as 65532. The install steps above already set them to your own IDs in <code>.env</code>.</p>
+<h3>Data folder: BEER_MENU_DATA</h3>
+<p><code>BEER_MENU_DATA</code> is the folder on this computer that holds the database and its backups. The default is <code>./data</code>, the "data" folder next to <code>docker-compose.yaml</code>. If you choose another folder, it must exist and be owned by the <code>PUID</code>:<code>PGID</code> user before Beer Menu starts.</p>
+<h3>Web port: BEER_MENU_WEB_PORT</h3>
+<p><code>BEER_MENU_WEB_PORT</code> is the port the admin app and the TV display open on. The default is 8080. Choose another if something else already uses 8080; the addresses above change with it. For example, with <code>BEER_MENU_WEB_PORT=8081</code> the admin app is at <strong>http://localhost:8081/</strong>.</p>
+<h3>Version: BEER_MENU_VERSION</h3>
+<p><code>BEER_MENU_VERSION</code> is the release to run, such as <code>1.0.0</code>. The default is <code>latest</code>, the newest release. With a version set, Beer Menu changes only when you change this line. With <code>latest</code>, <code>docker compose up -d</code> keeps the release it already downloaded and does not look for a newer one. To update, set the new version, or keep <code>latest</code> for the newest release, then run:</p>
+<pre class="copy"><code>docker compose pull
+docker compose up -d</code></pre>
+<h3>First admin: BEER_MENU_ADMIN_USERNAME and BEER_MENU_ADMIN_PASSWORD</h3>
+<p><code>BEER_MENU_ADMIN_USERNAME</code> and <code>BEER_MENU_ADMIN_PASSWORD</code> create the first admin when Beer Menu starts, but only while no admin exists. Set both or neither. The username must be 1 to 64 letters, digits, dots, underscores or hyphens, and the password 12 to 256 characters. Setting only one, or a value outside those limits, stops Beer Menu at startup. If they are not set, you create the first admin in the browser instead: see <a href="getting-started.html">Getting started</a>.</p>
+<p>Open <code>.env</code> in a text editor and add the password line. Replace <code>CHANGE-ME</code> with your password, keeping the single quotes so Compose reads it exactly as typed. Left unchanged, it is too short, so Beer Menu stops at startup:</p>
+<pre class="copy"><code>BEER_MENU_ADMIN_PASSWORD='CHANGE-ME'</code></pre>
+<p>Then add these lines to the <code>environment:</code> block under <code>api:</code> in <code>docker-compose.yaml</code>:</p>
+<pre class="copy"><code>      BEER_MENU_ADMIN_USERNAME: owner
+      BEER_MENU_ADMIN_PASSWORD: ${BEER_MENU_ADMIN_PASSWORD}</code></pre>
+<div class="warning"><p>Never write the password itself in <code>docker-compose.yaml</code>. Keep <code>.env</code> readable only by you (<code>chmod 600 .env</code>, as the install steps did). After the first start, remove both lines from <code>docker-compose.yaml</code> and the password line from <code>.env</code>, then run <code>docker compose up -d</code>. Until you do, the password stays in the running container, where <code>docker inspect</code> shows it.</p></div>
+<h3>Plain HTTP on your network: BEER_MENU_COOKIE_SECURE</h3>
+<p><code>BEER_MENU_COOKIE_SECURE</code> is <code>true</code> by default: the sign-in cookie then works only over HTTPS or at <strong>http://localhost</strong>. Set it to <code>"false"</code> only if you open the admin app over plain HTTP by the computer's network address, such as from your phone; otherwise sign-in seems to work but the next page is not signed in. Leave it on when the app is behind HTTPS.</p>
+<div class="warning"><p>Over plain HTTP, your password and sign-in cookie cross your network unencrypted, so anyone on it can read them. Where you can, put Beer Menu behind HTTPS (for example a reverse proxy) instead of turning this off.</p></div>
+<h3>Encryption key: BEER_MENU_SECRET_KEY_FILE or BEER_MENU_SECRET_KEY</h3>
+<p>The encryption key protects the stored Brewfather API key and the secrets of authenticator apps. If it is not set, Brewfather import and authenticator apps are off.</p>
+<p>Create the key once, in the Beer Menu folder:</p>
+<pre class="copy"><code>(umask 077 &amp;&amp; set -C &amp;&amp; openssl rand -base64 32 &gt; beer-menu-secret-key)</code></pre>
+<p>The <code>umask 077</code> makes the file readable only by you from the moment it is created. The <code>set -C</code> stops the command from replacing a key that already exists.</p>
+<p>The file must be owned by the <code>PUID</code>:<code>PGID</code> user. It is when you create it as yourself after the install steps above.</p>
+<p>Then give the file to Beer Menu with <code>BEER_MENU_SECRET_KEY_FILE</code>. Add the <code>environment:</code> and <code>secrets:</code> lines under <code>api:</code>, and the second <code>secrets:</code> block at the end of <code>docker-compose.yaml</code>, not indented:</p>
+<pre class="copy"><code>  api:
+    environment:
+      BEER_MENU_SECRET_KEY_FILE: /run/secrets/beer_menu_secret_key
+    secrets:
+      - beer_menu_secret_key
+
+secrets:
+  beer_menu_secret_key:
+    file: ./beer-menu-secret-key</code></pre>
+<p><code>BEER_MENU_SECRET_KEY</code> holds the key itself instead of a file. If both are set, the file wins. The file is safer, because environment values show in <code>docker inspect</code>.</p>
+<div class="warning"><p>Keep a copy of the key somewhere other than the data folder. If you lose or change it, Brewfather is disconnected (enter the Brewfather API key again) and every authenticator app's codes stop working (those admins sign in with a passkey or a recovery code, then remove the authenticator app and add it again). A restored backup needs the same key.</p></div>
+<h3>Passkeys: BEER_MENU_PUBLIC_URL</h3>
+<p><code>BEER_MENU_PUBLIC_URL</code> is the address admins open the admin app at, exactly as the browser shows it: scheme, host name and port if any, such as <code>https://taplist.example.org</code>. Passkeys need it; if it is not set, passkeys are off. It must be <code>https://</code> with a host name (not an IP address), or <code>http://localhost</code>, with an optional port and no path. A wrong value stops Beer Menu at startup.</p>

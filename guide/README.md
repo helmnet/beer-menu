@@ -1,18 +1,23 @@
 # User guide (maintainer notes)
 
 The end-user guide for the admin app, published at <https://helmnet.github.io/beer-menu/> by
-`.github/workflows/pages.yml` on every push to `main` that changes `guide/` or
-`web/src/pages/AdminPage.css`. This file is for maintainers and is not published.
+`.github/workflows/pages.yml` on every push to `main` that changes `guide/`,
+`web/src/pages/AdminPage.css` or `docker-compose.yaml`. This file is for maintainers and is not
+published.
 
 ## Layout
 
 - `build.mjs`: builds the site into `guide/_site/` (git-ignored). It holds the only navigation
-  list (`NAV`) and reads the color tokens from the admin app.
+  list (`NAV`) and reads the color tokens from the admin app. It fills `{{compose}}` in a
+  fragment with the root `docker-compose.yaml`, comments and `build:` lines stripped.
 - `build.test.mjs`: builds the site and checks it against
-  [the site contract](../specs/017-user-guide/contracts/guide-site.md).
+  [the site contract](../specs/017-user-guide/contracts/guide-site.md) and
+  [its changes](../specs/018-guide-compose-install/contracts/guide-site.md).
 - `seed.sh`: fills a fresh, throwaway stack with invented sample data for screenshots.
 - `src/layout.html`: the page shell shared by every page (head, nav, main).
 - `src/guide.css`: the guide's styles.
+- `src/copy.js`: adds a Copy button after each `<pre class="copy">`; the only script. A fragment
+  that needs it loads it with `<script src="copy.js" defer></script>`.
 - `src/pages/<slug>.html`: one body fragment per page.
 - `src/images/<slug>[-<state>].png`: the screenshots.
 
@@ -39,6 +44,9 @@ file system with no server.
    a fragment has no `NAV` entry or an entry has no fragment.
 
 Write for end users: plain words, no code (only the Install with Docker page shows commands).
+The Install with Docker page also documents the environment variables; the test fails until
+every variable the API startup code (`api/cmd/beer-menu-api/`) or `docker-compose.yaml` reads is
+named there.
 Copy button, field and heading names exactly from the admin app's components in
 `web/src/components/`.
 
@@ -105,8 +113,9 @@ no real names, hostnames, IP addresses, tokens, recovery codes or QR codes.
 ## Keeping the guide current
 
 A pull request that changes an admin page should update that page's guide fragment and
-screenshot in the same pull request. The `guide` CI job runs when `guide/`, `AdminPage.css` or
-the CI files change; changing only this README does not run it.
+screenshot in the same pull request. The `guide` CI job runs when `guide/`, `AdminPage.css`,
+`docker-compose.yaml`, `api/cmd/beer-menu-api/` or the CI files change; changing only this
+README does not run it.
 
 ## One-time owner steps
 

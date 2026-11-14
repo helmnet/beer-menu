@@ -24,7 +24,10 @@ check "web file" "web/src/App.tsx" false true false "web" false
 check "api file" "api/cmd/main.go" true false false "api" false
 check "openapi doc" "api/openapi.yaml" true false false "api" false
 check "node version" ".tool-versions" false true false "web" false
-check "compose file" "docker-compose.yaml" true true false "api web" false
+check "compose file" "docker-compose.yaml" true true true "api web" false
+check "api startup" "api/cmd/beer-menu-api/main.go" true false true "api" false
+check "api startup test" "api/cmd/beer-menu-api/startup_test.go" true false true "api" false
+check "api internal" "api/internal/store/store.go" true false false "api" false
 check "ci workflow" ".github/workflows/ci.yml" true true true "api web" true
 check "ci helper" ".github/ci/changed-sides.sh" true true true "api web" true
 check "trivy image" "ci/images/trivy/Dockerfile" true true false "api web" false
