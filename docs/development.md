@@ -154,9 +154,11 @@ The `secrets` workflow runs on its own on every pull request and every push to `
 - `secrets`: gitleaks scan of the full git history.
 
 The gitleaks and Trivy images are pinned by tag and digest in
-`.github/ci/images/gitleaks/Dockerfile` and `.github/ci/images/trivy/Dockerfile`, so Dependabot
-updates them. These Dockerfiles are never built: the workflows read the image from them with
-`.github/ci/image.sh` and run it. They count as `.github/ci/*`, so a bump runs every check.
+`ci/images/gitleaks/Dockerfile` and `ci/images/trivy/Dockerfile`, so Dependabot updates them. They
+live outside `.github/` because Dependabot cannot open pull requests that change files there (other
+than workflows). These Dockerfiles are never built: the workflows read the image from them with
+`.github/ci/image.sh` and run it. A bump runs the `api`, `web`, `openapi` and `images` checks, so
+the new Trivy image scans both images; `secrets` runs gitleaks on every pull request anyway.
 
 A check skipped by `changes` reports Skipped and counts as passing. Never merge a pull request while
 any of the seven checks (`changes`, `api`, `web`, `openapi`, `notices`, `images`, `secrets`) is

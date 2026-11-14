@@ -8,7 +8,9 @@ script="$(dirname "$0")/image.sh"
 failed=0
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-cp "$script" "$tmp/image.sh"
+# Same layout as the repo, so the copy finds $tmp/ci/images/NAME/Dockerfile.
+mkdir -p "$tmp/.github/ci"
+cp "$script" "$tmp/.github/ci/image.sh"
 digest=sha256:$(printf '%064d' 0)
 
 # ok NAME: the committed Dockerfile gives one IMAGE:TAG@sha256:DIGEST ref.
@@ -21,9 +23,9 @@ ok() {
 
 # bad CASE DOCKERFILE: image.sh must fail and print nothing on stdout.
 bad() {
-  mkdir -p "$tmp/images/$1"
-  printf '%s\n' "$2" >"$tmp/images/$1/Dockerfile"
-  if out=$(sh "$tmp/image.sh" "$1" 2>/dev/null) || [ -n "$out" ]; then
+  mkdir -p "$tmp/ci/images/$1"
+  printf '%s\n' "$2" >"$tmp/ci/images/$1/Dockerfile"
+  if out=$(sh "$tmp/.github/ci/image.sh" "$1" 2>/dev/null) || [ -n "$out" ]; then
     printf 'FAIL %s: expected failure, got %s\n' "$1" "$out"
     failed=1
   fi
@@ -38,7 +40,7 @@ FROM b:2@$digest"
 bad empty ""
 bad crlf "FROM a:1@$digest$(printf '\r')"
 bad dash "FROM -eX=1:y@$digest"
-if sh "$tmp/image.sh" missing >/dev/null 2>&1; then echo "FAIL missing file"; failed=1; fi
+if sh "$tmp/.github/ci/image.sh" missing >/dev/null 2>&1; then echo "FAIL missing file"; failed=1; fi
 if sh "$script" >/dev/null 2>&1; then echo "FAIL no argument"; failed=1; fi
 
 if [ "$failed" -ne 0 ]; then
