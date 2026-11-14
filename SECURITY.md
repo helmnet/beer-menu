@@ -2,7 +2,7 @@
 
 Beer Menu is a self-hosted tap list: a Go REST API with a SQLite database and a React admin
 app and TV display served by nginx. This policy covers the code in this repo and the images
-published from it.
+published from it. Test only against an instance you run yourself.
 
 ## Supported versions
 
@@ -14,7 +14,8 @@ ship in a new release, so upgrade to it (see [Upgrade](README.md#upgrade)).
 Report it privately through GitHub: open the repo's Security tab and choose "Report a
 vulnerability", or go straight to
 <https://github.com/helmnet/beer-menu/security/advisories/new>. Do not open a public issue,
-pull request or discussion about it.
+pull request or discussion about it, and keep the details private until a fixed release is
+out.
 
 Please include:
 
