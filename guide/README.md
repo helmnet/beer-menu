@@ -1,6 +1,6 @@
 # User guide (maintainer notes)
 
-The end-user guide for the admin app, published at <https://helmnet.github.io/beer-menu/> by
+The end-user guide for the admin app, published at <https://beermenu.helmnettech.org> by
 `.github/workflows/pages.yml` on every push to `main` that changes `guide/`,
 `web/src/pages/AdminPage.css` or `docker-compose.yaml`. This file is for maintainers and is not
 published.

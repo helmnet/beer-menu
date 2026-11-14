@@ -10,7 +10,7 @@ that owns a SQLite database, and nginx serving the React app and proxying `/api`
 
 More documentation:
 
-- [User guide](https://helmnet.github.io/beer-menu/): how to use the admin app, page by page,
+- [User guide](https://beermenu.helmnettech.org): how to use the admin app, page by page,
   with screenshots.
 - [API](docs/api.md): endpoints, tokens and access rules for scripts and Home Assistant.
 - [Development](docs/development.md): repo layout, local development, tests, CI and releases.
