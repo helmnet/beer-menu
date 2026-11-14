@@ -8,6 +8,7 @@ More documentation:
 
 - [API](docs/api.md): endpoints, tokens and access rules for scripts and Home Assistant.
 - [Development](docs/development.md): repo layout, local development, tests, CI and releases.
+- [Security](SECURITY.md): supported versions and how to report a vulnerability.
 
 ## Run with Docker Compose
 
