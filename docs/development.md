@@ -139,7 +139,8 @@ wins:
 A separate `notices` flag is set by `api/go.mod`, `api/go.sum`,
 `api/internal/httpapi/docs/swagger-ui/*`, `web/package.json`, `web/package-lock.json`,
 `LICENSE`, `scripts/third-party-notices.sh`, the four generated files, `.github/workflows/ci.yml`
-and `.github/ci/*` (Markdown never sets it). The pre-commit hook uses the same flag.
+and `.github/ci/*` (Markdown never sets it). The pre-commit hook uses the same flag but ignores
+`.github/`, since CI files cannot change the notices.
 
 A pull request runs the checks for every side its files touch:
 
