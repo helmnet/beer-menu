@@ -1,0 +1,62 @@
+<p>The Two-Factor Sign-In page adds a second step to your sign-in, so a stolen password alone is not enough. After your password, you either type a code from an authenticator app on your phone or use a passkey (your device's fingerprint, face or PIN check). Each admin sets up their own.</p>
+<figure>
+<img src="images/two-factor.png" alt="The Two-Factor Sign-In page with no second factor set up: the Status card says Two-factor sign-in is off, with an unticked Require two-factor sign-in for all admins box, and the Second factors card has Add authenticator app and Add passkey buttons.">
+<figcaption>The Two-Factor Sign-In page before any second factor is added.</figcaption>
+</figure>
+<p>The page has a <strong>Status</strong> card, a <strong>Second factors</strong> card that lists yours, and, once two-factor sign-in is on, a <strong>Recovery codes</strong> card. Most changes here may first open the <strong>Confirm it is you</strong> dialog if you have not signed in or confirmed in the last few minutes: type your <strong>Password</strong>, then your <strong>Authenticator code</strong> if you have one (or select <strong>Use a passkey</strong> or <strong>Use a recovery code</strong>), and select <strong>Confirm</strong>.</p>
+<h2>Add an authenticator app</h2>
+<p>You need an authenticator app on your phone. If the page says authenticator apps are not available, ask whoever runs your Beer Menu server to turn them on.</p>
+<ol>
+<li>In <strong>Second factors</strong>, select <strong>Add authenticator app</strong>.</li>
+<li>In the <strong>Add authenticator app</strong> dialog, scan the QR code with your authenticator app, or type the <strong>Key</strong> shown under it into the app.</li>
+<li>Type the 6-digit code the app now shows in <strong>Authenticator code</strong>.</li>
+<li>Select <strong>Verify</strong>.</li>
+<li>If this is your first second factor, save your recovery codes, as described below.</li>
+</ol>
+<figure>
+<img src="images/two-factor-setup.png" alt="The Add authenticator app dialog with a QR code, the key in groups of four characters, an empty Authenticator code field, and Verify and Cancel buttons.">
+<figcaption>Setting up an authenticator app. The QR code and key in this picture are from a throwaway test copy and work nowhere.</figcaption>
+</figure>
+<div class="warning"><p>The QR code and key are secret. Do not share them or take a photo of them: anyone with them can make your codes.</p></div>
+<h2>Add a passkey</h2>
+<p>Passkeys work only when you open the admin app at the web address the server was set up with. If the page says passkeys are not available, it tells you why, or which address to use.</p>
+<ol>
+<li>In <strong>Second factors</strong>, select <strong>Add passkey</strong>.</li>
+<li>Type a <strong>Passkey name</strong> that tells you which device it is, such as "Work laptop".</li>
+<li>Select <strong>Add</strong>, then approve the prompt on your device.</li>
+<li>If this is your first second factor, save your recovery codes, as described below.</li>
+</ol>
+<h2>Save your recovery codes</h2>
+<p>When you add your first second factor, the app shows 10 recovery codes. Each one signs you in once if you lose your phone or passkeys.</p>
+<div class="warning"><p>Recovery codes are shown only once. Save them somewhere safe before you select Done, away from your phone and computer. Without them, if you lose your second factors, only another admin can let you back in.</p></div>
+<ol>
+<li>Select <strong>Copy</strong> or <strong>Download</strong>, or write the codes down.</li>
+<li>Tick <strong>I saved these codes</strong>.</li>
+<li>Select <strong>Done</strong>.</li>
+</ol>
+<h2>Make new recovery codes</h2>
+<p>The <strong>Recovery codes</strong> card shows how many you have left, and warns you when only 2 or fewer remain.</p>
+<div class="warning"><p>New codes replace all your old ones, which stop working at once. The new codes are shown only once.</p></div>
+<ol>
+<li>In <strong>Recovery codes</strong>, select <strong>New recovery codes</strong>.</li>
+<li>Save the new codes as described above, tick <strong>I saved these codes</strong> and select <strong>Done</strong>.</li>
+</ol>
+<h2>Require two-factor sign-in for every admin</h2>
+<p>You can do this only after adding a second factor for yourself.</p>
+<ol>
+<li>In <strong>Status</strong>, tick <strong>Require two-factor sign-in for all admins</strong>.</li>
+<li>From then on, an admin without a second factor must add one the next time they sign in.</li>
+</ol>
+<h2>Rename or remove a second factor</h2>
+<div class="warning"><p>Removing a second factor cannot be undone, and signs you out on your other devices. While two-factor sign-in is required for all admins, you must keep at least one.</p></div>
+<ol>
+<li>In <strong>Second factors</strong>, find the authenticator app or passkey.</li>
+<li>To rename a passkey, select <strong>Rename</strong>, change the <strong>Passkey name</strong> and select <strong>Save</strong>.</li>
+<li>To remove one, select <strong>Remove</strong>, then <strong>Remove</strong> in the <strong>Remove second factor</strong> dialog.</li>
+</ol>
+<h2>Turn off two-factor sign-in</h2>
+<div class="warning"><p>Turning it off removes all your second factors and recovery codes. It cannot be undone: you must set everything up again to turn it back on.</p></div>
+<ol>
+<li>In <strong>Status</strong>, select <strong>Turn off 2FA</strong>.</li>
+<li>In the <strong>Turn off 2FA</strong> dialog, select <strong>Turn off</strong>.</li>
+</ol>

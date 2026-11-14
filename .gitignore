@@ -41,3 +41,6 @@ api/bin/
 *.db
 *.db-wal
 *.db-shm
+
+# user guide build output (node guide/build.mjs)
+guide/_site/

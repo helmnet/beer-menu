@@ -13,6 +13,8 @@ How to work on beer-menu. To run it, see the [README](../README.md); for the API
 - `specs/`: feature specifications and plans. Each one records the plan as it stood when that
   feature merged and is not kept up to date afterwards; where a spec and the code disagree, the
   code is current.
+- `guide/`: the end-user guide published to GitHub Pages; [guide/README.md](../guide/README.md)
+  says how to build it, add a page and retake screenshots.
 - `docs/`: this guide, the [API overview](api.md) and the [project brief](project-brief.md).
 
 ## Local development
@@ -126,9 +128,12 @@ wins:
 | Changed path | Side |
 |--------------|------|
 | `*.md` | neither (Markdown never adds checks) |
+| `guide/*`, `.github/workflows/pages.yml` | guide |
 | `api/*` | api |
+| `web/src/pages/AdminPage.css` | web and guide (the guide reads its colors from it) |
 | `web/*`, `.tool-versions` | web |
-| `.github/workflows/ci.yml`, `.github/ci/*`, `docker-compose.yaml` | both |
+| `.github/workflows/ci.yml`, `.github/ci/*` | api, web and guide |
+| `docker-compose.yaml` | both |
 | anything else (`specs/`, other workflows, dependabot config) | neither |
 
 A separate `notices` flag is set by `api/go.mod`, `api/go.sum`,
@@ -144,6 +149,7 @@ A pull request runs the checks for every side its files touch:
 | `api` | `go vet` and `go test` in `api/` | api side changed |
 | `openapi` | Redocly lint of `api/openapi.yaml` | api side changed |
 | `web` | `npm ci`, lint, tests and build in `web/` | web side changed |
+| `guide` | `node --test guide/`: builds the user guide and checks the built site | `guide/` (except Markdown), `web/src/pages/AdminPage.css`, `.github/workflows/pages.yml`, or the CI files changed |
 | `notices` | runs `scripts/third-party-notices.sh` on the pull request head (not the merge commit) and fails if its output differs from the committed files | `notices` flag set |
 | `images` | builds both images; checks the changed sides' images run as a non-root user and refuse to run as root, and scans them with Trivy for HIGH or CRITICAL vulnerabilities that have a fix; runs a smoke test of the stack as UID/GID `12345:12345` | either side changed |
 
@@ -163,13 +169,13 @@ than workflows). These Dockerfiles are never built: the workflows read the image
 the new Trivy image scans both images; `secrets` runs gitleaks on every pull request anyway.
 
 A check skipped by `changes` reports Skipped and counts as passing. Never merge a pull request while
-any of the seven checks (`changes`, `api`, `web`, `openapi`, `notices`, `images`, `secrets`) is
+any of the eight checks (`changes`, `api`, `web`, `guide`, `openapi`, `notices`, `images`, `secrets`) is
 failing or pending; `notices-push` is not required. `changes` must be one of them: if it fails,
 every check that depends on it is skipped and would look green. A pull request that changes
-`.github/workflows/ci.yml` or `.github/ci/` must show `api`, `web`, `openapi`, `notices` and
-`images` as run, not Skipped: it runs its own copy of the rules, so Skipped there means the rules were changed to skip checks. A change that adds a file the builds
+`.github/workflows/ci.yml` or `.github/ci/` must show `api`, `web`, `guide`, `openapi`, `notices`
+and `images` as run, not Skipped: it runs its own copy of the rules, so Skipped there means the rules were changed to skip checks. A change that adds a file the builds
 depend on outside `api/` and `web/` must add it to `.github/ci/changed-sides.sh` in the same change.
 
 The repo is private on a free GitHub org plan, which has no branch protection, so this rule is
-followed by hand. When the repo goes public, turn on branch protection for `main` requiring all seven
+followed by hand. When the repo goes public, turn on branch protection for `main` requiring all eight
 checks and up-to-date branches.

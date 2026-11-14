@@ -1,0 +1,32 @@
+<p>The API Tokens page makes tokens: long secret keys that let another program use Beer Menu without signing in, for example Home Assistant showing what is on tap, or a script on a keg scale updating how much is left. You only need a token if you set up something like that.</p>
+<figure>
+<img src="images/tokens.png" alt="The API Tokens page with a table listing one token named Kitchen tablet, with read scope, its created date, never used, and a Revoke button.">
+<figcaption>The API Tokens page with one token.</figcaption>
+</figure>
+<p>Each row shows the token's <strong>Name</strong>, its <strong>Scope</strong>, when it was <strong>Created</strong> and <strong>Last used</strong>, and its <strong>Status</strong>. A token's scope is one of:</p>
+<ul>
+<li><strong>read</strong>: the program can only look at your beers, taps and kegs.</li>
+<li><strong>write</strong>: the program can also change them, for example record pours.</li>
+</ul>
+<p>Give each program its own token with the smallest scope it needs, so you can revoke one without affecting the others.</p>
+<h2>Create a token</h2>
+<div class="warning"><p>The token is shown only once, when you create it. Copy it before you close the dialog: it cannot be shown again. If you lose it, revoke it and create a new one. Anyone who has the token can use it, so keep it as private as a password.</p></div>
+<ol>
+<li>Select <strong>New token</strong> at the top of the page.</li>
+<li>In the <strong>New API token</strong> dialog, type a <strong>Name</strong> that says what will use it, such as "Kitchen tablet".</li>
+<li>Choose the <strong>Scope</strong>: <strong>read</strong> or <strong>write</strong>.</li>
+<li>Select <strong>Create token</strong>. If the <strong>Confirm it is you</strong> dialog opens, type your <strong>Password</strong> (and your second factor, if you use one) and select <strong>Confirm</strong>.</li>
+<li>The dialog shows the token. Select <strong>Copy</strong>, or select the token and copy it by hand, and paste it into the program that will use it.</li>
+<li>Select <strong>Close</strong>.</li>
+</ol>
+<figure>
+<img src="images/tokens-new.png" alt="The New API token dialog saying Copy this token now. It will not be shown again, with the new token and Copy and Close buttons.">
+<figcaption>A new token, shown once. The token in this picture is from a throwaway test copy and works nowhere.</figcaption>
+</figure>
+<h2>Revoke a token</h2>
+<div class="warning"><p>Revoking a token cannot be undone. Any program using it stops working at once.</p></div>
+<ol>
+<li>In the token's row, select <strong>Revoke</strong>.</li>
+<li>In the <strong>Revoke token</strong> dialog, select <strong>Revoke</strong>. The token's status changes to "Revoked".</li>
+</ol>
+<p>Programmers can find how to use a token under <strong>See the API docs</strong>, at the top of the page.</p>

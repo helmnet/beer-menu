@@ -1,7 +1,7 @@
 # Pull request and main-branch checks; runs on every pull request and push to main. The changes job
 # decides which checks run (rules in .github/ci/changed-sides.sh); skipped checks report Skipped.
-# Never merge while any of changes, api, web, openapi, notices, images or secrets (the check from
-# secrets.yml) fails or is pending; see "Required checks" in docs/development.md.
+# Never merge while any of changes, api, web, guide, openapi, notices, images or secrets (the check
+# from secrets.yml) fails or is pending; see "Required checks" in docs/development.md.
 name: ci
 
 on:
@@ -18,6 +18,7 @@ jobs:
     outputs:
       api: ${{ steps.sides.outputs.api }}
       web: ${{ steps.sides.outputs.web }}
+      guide: ${{ steps.sides.outputs.guide }}
       services: ${{ steps.sides.outputs.services }}
       notices: ${{ steps.sides.outputs.notices }}
     steps:
@@ -82,6 +83,23 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+
+  # Builds the user guide and checks the built site (guide/build.test.mjs). Node standard library
+  # only, so there is nothing to install.
+  guide:
+    needs: changes
+    if: needs.changes.outputs.guide == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+      - run: node --test guide/
 
   openapi:
     needs: changes

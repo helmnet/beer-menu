@@ -1,0 +1,22 @@
+<p>This page starts Beer Menu for the first time on a computer that already has Docker with Compose installed. You type a few commands in a terminal; after that, everything is done in the browser.</p>
+<h2>Start Beer Menu for the first time</h2>
+<ol>
+<li>Get the Beer Menu files: either download them from the <a href="https://github.com/helmnet/beer-menu">Beer Menu project page</a> (Code, then Download ZIP) and unzip them, or copy them with git:
+<pre><code>git clone https://github.com/helmnet/beer-menu.git</code></pre>
+</li>
+<li>Open a terminal in the Beer Menu folder. If you downloaded the ZIP, the folder is named "beer-menu-main" instead.
+<pre><code>cd beer-menu</code></pre>
+</li>
+<li>Choose where Beer Menu keeps its data. It uses a folder named "data" inside the Beer Menu folder, and runs as your own user so it can write there. Create the folder and set the user:
+<pre><code>export PUID=$(id -u) PGID=$(id -g)
+mkdir -p data</code></pre>
+</li>
+<li>Download Beer Menu and start it:
+<pre><code>docker compose pull
+docker compose up -d</code></pre>
+</li>
+<li>For the admin app, open <strong>http://localhost:8080/</strong> in a browser on the same computer.</li>
+<li>For the TV display, open <strong>http://localhost:8080/display</strong>. It shows an empty tap until you put a keg on it.</li>
+</ol>
+<p>Beer Menu keeps running in the background and starts again after a restart. Keep the "data" folder safe: it holds all your beers, kegs and settings.</p>
+<p>Next, create your admin account: see <a href="getting-started.html">Getting started</a>.</p>
