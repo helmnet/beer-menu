@@ -4,6 +4,8 @@
 [![secrets](https://github.com/helmnet/beer-menu/actions/workflows/secrets.yml/badge.svg?branch=main)](https://github.com/helmnet/beer-menu/actions/workflows/secrets.yml?query=branch%3Amain)
 [![release](https://github.com/helmnet/beer-menu/actions/workflows/release.yml/badge.svg)](https://github.com/helmnet/beer-menu/actions/workflows/release.yml)
 
+![The TV display showing four taps: three beers at different keg levels and one empty tap](docs/images/tv-display.png)
+
 A self-hosted digital tap list for a home bar: a React admin app manages the beers, kegs and
 taps, and a TV shows the current menu in a browser. It runs as two containers: a Go REST API
 that owns a SQLite database, and nginx serving the React app and proxying `/api` to the API.
