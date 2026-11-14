@@ -261,8 +261,9 @@ Run `/speckit-constitution` once from this brief, then one `/speckit-specify` pe
 | 8 | Admin app restyle | 7 | The admin app matches the "Admin app" section under Functional scope: side panel navigation, light, dark and system themes, royal blue accent, modal forms, searchable beer pickers, and an On Deck page matching the TV. Checked by screenshots at laptop and phone widths |
 | 9 | API docs | 8 | The API serves Swagger UI at `/api/docs` and the OpenAPI spec at `/api/openapi.yaml`, both without authentication. Read-only: no "Try it out" or Authorize. Swagger UI assets are a pinned version bundled in the API image, so the page works offline and keeps a `'self'`-only CSP. The API Tokens page links to it |
 | 10 | TV display options | 9 | The admin app sets the TV layout (current, vertical list, or on tap and on deck side by side), title alignment (left, centered, right), title font, tap and on deck text font, which tap details show (style, ABV, IBU, SRM, description), and the title and text colors (color picker). A preview in Display Settings shows unsaved changes. Defaults match the TV before this feature. The TV picks up changes with no reload and no credential |
+| 17 | User guide | 16 | A static end-user guide for the admin app on GitHub Pages: one page per admin page with dark-mode screenshots from sample data, a short Install with Docker page and a Getting started page; published on merge to main |
 
-Features 5 and 6 are independent and can run in either order. Features 8, 9 and 10 follow the MVP (features 0 to 7) and run before roadmap phase 2. An OpenAPI spec is kept in the repo from feature 1 onward so later clients (APK, Home Assistant) have a contract.
+Features 5 and 6 are independent and can run in either order. Features 8, 9 and 10 follow the MVP (features 0 to 7) and run before roadmap phase 2. Feature 17 follows feature 16 and also runs before roadmap phase 2. An OpenAPI spec is kept in the repo from feature 1 onward so later clients (APK, Home Assistant) have a contract.
 
 ## Open questions
 

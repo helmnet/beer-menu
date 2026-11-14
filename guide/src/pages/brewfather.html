@@ -1,0 +1,32 @@
+<p>The Brewfather page connects Beer Menu to your Brewfather account, so you can bring your brewing batches into the <a href="beers.html">Beer Library</a> as beers instead of typing them in. Beer Menu only reads from Brewfather; it never changes anything there.</p>
+<figure>
+<img src="images/brewfather.png" alt="The Brewfather page, not connected: the Connection card says Not connected, with empty User ID and API key fields, a Connect button and a Sync interval list set to Off.">
+<figcaption>The Brewfather page before connecting.</figcaption>
+</figure>
+<p>If the page says Brewfather import is not set up on this server, ask whoever runs your Beer Menu server to turn it on.</p>
+<h2>Connect your Brewfather account</h2>
+<ol>
+<li>In Brewfather, open your settings and create an API key that can read batches. Brewfather shows your user ID and the new key.</li>
+<li>In Beer Menu, type the <strong>User ID</strong> and the <strong>API key</strong>.</li>
+<li>Select <strong>Connect</strong>. The page says "Connected" and lists your batches under <strong>Batches</strong>.</li>
+</ol>
+<p>Beer Menu stores the API key safely and never shows it again. If the page later says "Reconnect needed", type the user ID and API key again and select <strong>Connect</strong>.</p>
+<h2>Import batches as beers</h2>
+<ol>
+<li>In <strong>Batches</strong>, select <strong>Refresh</strong> to get the latest list from Brewfather.</li>
+<li>Tick the box in the <strong>Import</strong> column for each batch you want. Batches already imported say "Imported as" and the beer's name instead.</li>
+<li>Select <strong>Import selected</strong>. A line under the list says what happened to each batch.</li>
+</ol>
+<p>Imported beers show "Brewfather" in the Beer Library, and their status follows the batch: a fermenting or conditioning batch shows as coming soon on the On Deck page and the TV.</p>
+<h2>Keep imported beers up to date</h2>
+<ol>
+<li>To update every imported beer now, select <strong>Sync now</strong>. A sync also imports any new batch that is brewing, fermenting or conditioning. The result shows under it when it finishes.</li>
+<li>To update them on a schedule, choose a <strong>Sync interval</strong>, such as <strong>Every hour</strong>. Choose <strong>Off</strong> to stop.</li>
+<li>To update one beer, select <strong>Re-sync</strong> in its row on the <a href="beers.html">Beer Library</a> page.</li>
+</ol>
+<h2>Disconnect Brewfather</h2>
+<p>Imported beers stay in your Beer Library, and scheduled syncs stop.</p>
+<ol>
+<li>In <strong>Connection</strong>, select <strong>Disconnect</strong>.</li>
+<li>In the <strong>Disconnect Brewfather</strong> dialog, select <strong>Disconnect</strong>.</li>
+</ol>

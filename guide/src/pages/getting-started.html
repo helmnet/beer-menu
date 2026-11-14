@@ -1,0 +1,42 @@
+<p>This page covers your first visit to the admin app: creating the first admin account, signing in, and opening the TV display. If Beer Menu is not running yet, see <a href="install.html">Install with Docker</a> first.</p>
+<h2>Create the first admin</h2>
+<p>A new Beer Menu has no accounts and no default password. The first time you open the admin app, it asks you to create the first admin. You only see this once.</p>
+<figure>
+<img src="images/getting-started-setup.png" alt="The Create the first admin form with empty Username, Password and Confirm password fields and a Create admin button.">
+<figcaption>The first-run form, shown only on a new install.</figcaption>
+</figure>
+<ol>
+<li>Open the admin app in your browser.</li>
+<li>Type a <strong>Username</strong>.</li>
+<li>Type a <strong>Password</strong> of 12 to 256 characters, and type it again in <strong>Confirm password</strong>.</li>
+<li>Select <strong>Create admin</strong>. You are signed in and see the <a href="taps.html">Taps</a> page.</li>
+</ol>
+<h2>Sign in</h2>
+<figure>
+<img src="images/getting-started-sign-in.png" alt="The Sign in form with empty Username and Password fields and a Sign in button.">
+<figcaption>The sign-in form.</figcaption>
+</figure>
+<ol>
+<li>Open the admin app in your browser.</li>
+<li>Type your <strong>Username</strong> and <strong>Password</strong>.</li>
+<li>Select <strong>Sign in</strong>.</li>
+<li>If you have set up <a href="two-factor.html">two-factor sign-in</a>, the form asks for a second factor. Do one of these:
+<ul>
+<li>Type the 6-digit code from your authenticator app in <strong>Authenticator code</strong>, then select <strong>Verify</strong>.</li>
+<li>Select <strong>Use a passkey</strong> and approve the prompt on your device.</li>
+<li>If you have lost your authenticator and passkeys, select <strong>Use a recovery code</strong>, type one of your saved recovery codes in <strong>Recovery code</strong>, then select <strong>Verify</strong>. Each recovery code works only once.</li>
+</ul>
+</li>
+</ol>
+<p>If two-factor sign-in is required for every admin and you have not set one up yet, the app shows "Set up two-factor sign-in" after your password. Add an authenticator app or a passkey there, as on the <a href="two-factor.html">Two-Factor Sign-In</a> page, to finish signing in.</p>
+<p>To sign out, select <strong>Sign out</strong> at the bottom of the side panel. The buttons above it, <strong>Light</strong>, <strong>Dark</strong> and <strong>System</strong>, change how the admin app looks on this browser.</p>
+<h2>Open the TV display</h2>
+<figure>
+<img src="images/tv-display.png" alt="The TV display showing four taps: three pint glasses filled to their keg levels with the beer name, style, ABV and IBU under each, and one empty tap.">
+<figcaption>The TV display with three kegs on tap.</figcaption>
+</figure>
+<ol>
+<li>On the TV, open its web browser. A kiosk browser that starts by itself and fills the screen works best.</li>
+<li>Go to the same address as the admin app, with <strong>/display</strong> added at the end, for example <strong>http://localhost:8080/display</strong> on the computer running Beer Menu.</li>
+<li>Leave it open. The display needs no sign-in, updates by itself when you change something in the admin app, and turns pages on its own when there are more taps than fit.</li>
+</ol>

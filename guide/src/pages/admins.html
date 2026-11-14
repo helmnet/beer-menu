@@ -1,0 +1,26 @@
+<p>The Admin Users page lists everyone who can sign in to the admin app. Every admin can do everything in the app, including adding and removing other admins.</p>
+<figure>
+<img src="images/admins.png" alt="The Admin Users page listing two admins, brewer and cellar-helper, each with the date and time they were added and a Remove button, and an Add admin button at the top.">
+<figcaption>The Admin Users page with two admins.</figcaption>
+</figure>
+<p>Admins who use two-factor sign-in show a "2FA" badge. Adding or removing an admin, and clearing someone's two-factor sign-in, may first open the <strong>Confirm it is you</strong> dialog if you have not signed in or confirmed in the last few minutes: type your <strong>Password</strong> (and your second factor, if you use one) and select <strong>Confirm</strong>.</p>
+<h2>Add an admin</h2>
+<ol>
+<li>Select <strong>Add admin</strong> at the top of the page.</li>
+<li>Type their <strong>Username</strong> and a starting <strong>Password</strong> of at least 12 characters.</li>
+<li>Select <strong>Save</strong>. The new admin appears in the list.</li>
+<li>Give them the username and password in person, and ask them to change the password on the <a href="password.html">Change Password</a> page after they first sign in.</li>
+</ol>
+<h2>Remove an admin</h2>
+<div class="warning"><p>Removing an admin cannot be undone: they are signed out at once and can no longer sign in. You cannot remove the last admin. If you remove yourself, you are signed out.</p></div>
+<ol>
+<li>In the admin's row, select <strong>Remove</strong>.</li>
+<li>In the <strong>Remove admin</strong> dialog (or <strong>Remove yourself</strong>), select <strong>Remove</strong>.</li>
+</ol>
+<h2>Clear another admin's two-factor sign-in</h2>
+<p>Use this when another admin has lost their authenticator, passkeys and recovery codes. You cannot clear your own here; use the <a href="two-factor.html">Two-Factor Sign-In</a> page instead.</p>
+<div class="warning"><p>Clearing removes all of their second factors and recovery codes and signs them out everywhere. It cannot be undone: they must set up two-factor sign-in again.</p></div>
+<ol>
+<li>In their row, select <strong>Clear 2FA</strong>.</li>
+<li>In the <strong>Clear two-factor sign-in</strong> dialog, select <strong>Clear</strong>.</li>
+</ol>
