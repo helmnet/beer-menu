@@ -11,6 +11,8 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}"
 FROM scratch
 COPY --from=build /out/beer-menu-api /beer-menu-api
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+# GPL text and third-party notices; scripts/third-party-notices.sh writes both into this context.
+COPY LICENSE THIRD_PARTY_NOTICES /usr/share/doc/beer-menu/
 # Non-root default only; the deployer may run it as any non-root UID/GID.
 USER 65532:65532
 EXPOSE 8080

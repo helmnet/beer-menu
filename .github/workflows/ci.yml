@@ -1,7 +1,7 @@
 # Pull request and main-branch checks; runs on every pull request and push to main. The changes job
 # decides which checks run (rules in .github/ci/changed-sides.sh); skipped checks report Skipped.
-# Never merge while any of changes, api, web, openapi, images or secrets (the check from secrets.yml)
-# fails or is pending; see "Required checks" in docs/development.md.
+# Never merge while any of changes, api, web, openapi, notices, images or secrets (the check from
+# secrets.yml) fails or is pending; see "Required checks" in docs/development.md.
 name: ci
 
 on:
@@ -19,12 +19,14 @@ jobs:
       api: ${{ steps.sides.outputs.api }}
       web: ${{ steps.sides.outputs.web }}
       services: ${{ steps.sides.outputs.services }}
+      notices: ${{ steps.sides.outputs.notices }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
       - run: sh .github/ci/changed-sides.test.sh
+      - run: sh .github/ci/notices-patch.test.sh
       - id: sides
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -92,6 +94,95 @@ jobs:
         with:
           node-version: 26
       - run: npx --yes @redocly/cli@2.71.0 lint api/openapi.yaml
+
+  # Fails when the committed third-party notices differ from what scripts/third-party-notices.sh
+  # generates. Holds no write token: npm and Go only download and read the dependencies here.
+  notices:
+    needs: changes
+    if: needs.changes.outputs.notices == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      stale: ${{ steps.diff.outputs.stale }}
+    steps:
+      # The pull request head, not the merge commit: notices-push applies the patch to the head branch.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      # The script only reads node_modules, so no package install script needs to run.
+      - run: npm ci --ignore-scripts
+        working-directory: web
+      - run: sh scripts/third-party-notices.sh
+      # git add first, so a deleted output that the script recreated counts as a change too.
+      - id: diff
+        run: |
+          # shellcheck disable=SC2046 # one path per line, no spaces
+          git add -- $(sh scripts/third-party-notices.sh --outputs)
+          if ! git diff --cached --quiet; then
+            git diff --cached --binary >"$RUNNER_TEMP/notices.patch"
+            echo stale=true >>"$GITHUB_OUTPUT"
+          fi
+      # For notices-push below, and for anyone who wants to apply it by hand.
+      - if: steps.diff.outputs.stale == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: notices-patch
+          path: ${{ runner.temp }}/notices.patch
+          retention-days: 1
+      - if: steps.diff.outputs.stale == 'true'
+        run: |
+          git diff --cached --stat
+          echo "::error::Third-party notices are out of date. Run sh scripts/third-party-notices.sh and commit the result, or turn on the pre-commit hook (docs/development.md)."
+          exit 1
+
+  # On a Dependabot pull request with stale notices, commits the patch from notices to the pull
+  # request branch. Pushes with a GitHub App token, because a push with GITHUB_TOKEN would not start
+  # CI on the new commit. That commit's actor is the app, so this job never runs on it again.
+  # Dependabot-triggered runs get only Dependabot secrets; see "Dependabot and third-party
+  # notices" in docs/development.md for the one-time setup.
+  notices-push:
+    needs: notices
+    if: >-
+      failure() && needs.notices.outputs.stale == 'true' && github.event_name == 'pull_request'
+      && github.actor == 'dependabot[bot]' && github.event.pull_request.user.login == 'dependabot[bot]'
+      && startsWith(github.head_ref, 'dependabot/')
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.NOTICES_APP_CLIENT_ID }}
+          private-key: ${{ secrets.NOTICES_APP_PRIVATE_KEY }}
+          permission-contents: write
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          token: ${{ steps.app.outputs.token }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: notices-patch
+          # Own directory: the artifact is unpacked here and must not overwrite other runner files.
+          path: ${{ runner.temp }}/notices
+      # No dependency code runs in this job. The patch comes from the notices job, so it may only
+      # touch the generated files. A plain push fails if the branch moved; the newer run handles it.
+      - env:
+          HEAD_REF: ${{ github.head_ref }}
+          BOT: ${{ steps.app.outputs.app-slug }}[bot]
+        run: |
+          sh .github/ci/notices-patch.sh "$RUNNER_TEMP/notices/notices.patch"
+          git -c user.name="$BOT" -c user.email="$BOT@users.noreply.github.com" \
+            commit -m "chore(deps): regenerate third-party notices"
+          git push origin "HEAD:refs/heads/$HEAD_REF"
 
   images:
     needs: changes
