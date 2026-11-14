@@ -10,7 +10,7 @@ if [ "$#" -ne 1 ]; then
   exit 2
 fi
 # From the repo root, so the error names a clean repo-relative path from any working directory.
-cd "$(dirname "$0")/../.."
+CDPATH= cd -- "$(dirname "$0")/../.."
 file="ci/images/$1/Dockerfile"
 # grep -c: a second FROM line must fail, not pass as a second ref. No trailing whitespace allowed, so a
 # CRLF line fails here instead of passing the \r on to docker run. The ref must start [a-z0-9] (as every
