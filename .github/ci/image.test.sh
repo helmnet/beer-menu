@@ -31,6 +31,7 @@ bad() {
   fi
 }
 
+ok actionlint
 ok gitleaks
 ok trivy
 bad no-digest "FROM alpine:3"

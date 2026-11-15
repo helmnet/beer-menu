@@ -1,7 +1,7 @@
 # Pull request and main-branch checks; runs on every pull request and push to main. The changes job
 # decides which checks run (rules in .github/ci/changed-sides.sh); skipped checks report Skipped.
-# Never merge while any of changes, api, web, guide, openapi, notices, images or secrets (the check
-# from secrets.yml) fails or is pending; see "Required checks" in docs/development.md.
+# Never merge while any of changes, api, web, guide, openapi, notices, images, actionlint or secrets
+# (the check from secrets.yml) fails or is pending; see "Required checks" in docs/development.md.
 name: ci
 
 on:
@@ -21,6 +21,7 @@ jobs:
       guide: ${{ steps.sides.outputs.guide }}
       services: ${{ steps.sides.outputs.services }}
       notices: ${{ steps.sides.outputs.notices }}
+      workflows: ${{ steps.sides.outputs.workflows }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -114,6 +115,20 @@ jobs:
         with:
           node-version: 26
       - run: npx --yes @redocly/cli@2.71.0 lint api/openapi.yaml
+
+  # Lints the workflow files. The image bundles shellcheck, so run: scripts are checked too.
+  # The image ref lives in ci/images/actionlint/Dockerfile, so Dependabot updates it.
+  actionlint:
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: |
+          actionlint=$(sh .github/ci/image.sh actionlint)
+          docker run --rm -v "$PWD:/repo:ro" -w /repo "$actionlint"
 
   # Fails when the committed third-party notices differ from what scripts/third-party-notices.sh
   # generates. Holds no write token: npm and Go only download and read the dependencies here.
