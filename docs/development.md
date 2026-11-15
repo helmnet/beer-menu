@@ -38,6 +38,11 @@ npm run dev
 
 Tests: `go test ./...` in `api/`; `npm test` in `web/`.
 
+CI does not lint the workflow files, so run `actionlint` from the repo root before pushing changes
+under `.github/workflows/`. It also runs `shellcheck` on `run:` scripts when shellcheck is on the
+`PATH`. Install both with `pacman -S actionlint shellcheck` or `brew install actionlint shellcheck`,
+or run `docker run --rm -v "$PWD":/repo -w /repo rhysd/actionlint:latest` instead.
+
 ## API contract
 
 `api/openapi.yaml` is the API contract. Every change to an endpoint updates it in the same
