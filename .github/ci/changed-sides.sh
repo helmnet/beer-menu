@@ -1,10 +1,11 @@
 #!/bin/sh
 # Decides which CI checks a change needs. Reads repo-relative paths on stdin, one per line, or the
-# single word ALL to force every check. Prints api=, web=, guide=, services= and notices= lines
-# for $GITHUB_OUTPUT. guide=true means the user guide (guide/) or a file it reads may have
+# single word ALL to force every check. Prints api=, web=, guide=, services=, notices= and workflows=
+# lines for $GITHUB_OUTPUT. guide=true means the user guide (guide/) or a file it reads may have
 # changed: its color source, the compose file or the API startup code. notices=true means
 # scripts/third-party-notices.sh may change its output; the pre-commit hook
-# (.githooks/pre-commit) reuses that answer for staged files.
+# (.githooks/pre-commit) reuses that answer for staged files. workflows=true means actionlint must
+# lint the workflow files.
 # Always exits 0: what changed must never fail the run. The case below is the single source for
 # which files trigger which checks; a new file the builds depend on must be added here in the same
 # change. Self-check: changed-sides.test.sh.
@@ -12,6 +13,7 @@ api=false
 web=false
 guide=false
 notices=false
+workflows=false
 while IFS= read -r path || [ -n "$path" ]; do
   case $path in
     *.md) ;;
@@ -27,14 +29,18 @@ while IFS= read -r path || [ -n "$path" ]; do
     web/src/pages/AdminPage.css) web=true guide=true ;;
     web/* | .tool-versions) web=true ;;
     LICENSE | scripts/third-party-notices.sh) notices=true ;;
-    .github/workflows/ci.yml | .github/ci/*) api=true web=true guide=true notices=true ;;
-    .github/workflows/pages.yml) guide=true ;;
+    .github/workflows/ci.yml | .github/ci/*) api=true web=true guide=true notices=true workflows=true ;;
+    .github/workflows/pages.yml) guide=true workflows=true ;;
+    # Before ci/images/*: an actionlint bump runs only actionlint. The actionlint config can
+    # silence every finding, so a change to it must run actionlint too.
+    .github/workflows/* | ci/images/actionlint/* | .github/actionlint.yaml | .github/actionlint.yml)
+      workflows=true ;;
     # ci/images/*: scanner image pins; a Trivy bump must run the images job.
     ci/images/*) api=true web=true ;;
     # The guide derives its Install page compose file from it.
     docker-compose.yaml) api=true web=true guide=true ;;
     # A root file literally named ALL also forces every check; harmless.
-    ALL) api=true web=true guide=true notices=true ;;
+    ALL) api=true web=true guide=true notices=true workflows=true ;;
     *) ;;
   esac
 done
@@ -42,5 +48,6 @@ done
 services=
 if [ "$api" = true ]; then services=api; fi
 if [ "$web" = true ]; then services="${services:+$services }web"; fi
-printf 'api=%s\nweb=%s\nguide=%s\nservices=%s\nnotices=%s\n' "$api" "$web" "$guide" "$services" "$notices"
+printf 'api=%s\nweb=%s\nguide=%s\nservices=%s\nnotices=%s\nworkflows=%s\n' \
+  "$api" "$web" "$guide" "$services" "$notices" "$workflows"
 exit 0

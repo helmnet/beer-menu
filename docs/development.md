@@ -38,10 +38,11 @@ npm run dev
 
 Tests: `go test ./...` in `api/`; `npm test` in `web/`.
 
-CI does not lint the workflow files, so run `actionlint` from the repo root before pushing changes
-under `.github/workflows/`. It also runs `shellcheck` on `run:` scripts when shellcheck is on the
-`PATH`. Install both with `pacman -S actionlint shellcheck` or `brew install actionlint shellcheck`,
-or run `docker run --rm -v "$PWD":/repo -w /repo rhysd/actionlint:latest` instead.
+CI runs `actionlint` (with `shellcheck` on `run:` scripts) when the `workflows` flag is set; see
+"Required checks" below. To catch problems before pushing, run `actionlint` from the repo root. It
+runs `shellcheck` on `run:` scripts only when shellcheck is on the `PATH`. Install both with
+`pacman -S actionlint shellcheck` or `brew install actionlint shellcheck`, or run the CI image
+instead: `docker run --rm -v "$PWD:/repo:ro" -w /repo "$(sh .github/ci/image.sh actionlint)"`.
 
 ## API contract
 
@@ -143,6 +144,10 @@ wins:
 | `docker-compose.yaml` | both |
 | anything else (`specs/`, other workflows, dependabot config) | neither |
 
+A separate `workflows` flag is set by every file under `.github/workflows/` (except Markdown),
+`.github/ci/*`, `ci/images/actionlint/*` and the actionlint config (`.github/actionlint.yaml` or
+`.github/actionlint.yml`).
+
 A separate `notices` flag is set by `api/go.mod`, `api/go.sum`,
 `api/internal/httpapi/docs/swagger-ui/*`, `web/package.json`, `web/package-lock.json`,
 `LICENSE`, `scripts/third-party-notices.sh`, the four generated files, `.github/workflows/ci.yml`
@@ -159,6 +164,7 @@ A pull request runs the checks for every side its files touch:
 | `web` | `npm ci`, lint, tests and build in `web/` | web side changed |
 | `guide` | `node --test guide/`: builds the user guide and checks the built site | `guide/` (except Markdown), `web/src/pages/AdminPage.css`, `.github/workflows/pages.yml`, or the CI files changed |
 | `notices` | runs `scripts/third-party-notices.sh` on the pull request head (not the merge commit) and fails if its output differs from the committed files | `notices` flag set |
+| `actionlint` | `actionlint` (with `shellcheck`) on the workflow files | `workflows` flag set |
 | `images` | builds both images; checks the changed sides' images run as a non-root user and refuse to run as root, and scans them with Trivy for HIGH or CRITICAL vulnerabilities that have a fix; runs a smoke test of the stack as UID/GID `12345:12345` | either side changed |
 
 `images` always builds both images, because the smoke test starts the whole stack, but checks and
@@ -169,21 +175,23 @@ The `secrets` workflow runs on its own on every pull request and every push to `
 
 - `secrets`: gitleaks scan of the full git history.
 
-The gitleaks and Trivy images are pinned by tag and digest in
-`ci/images/gitleaks/Dockerfile` and `ci/images/trivy/Dockerfile`, so Dependabot updates them. They
+The actionlint, gitleaks and Trivy images are pinned by tag and digest in
+`ci/images/actionlint/Dockerfile`, `ci/images/gitleaks/Dockerfile` and
+`ci/images/trivy/Dockerfile`, so Dependabot updates them. They
 live outside `.github/` because Dependabot cannot open pull requests that change files there (other
 than workflows). These Dockerfiles are never built: the workflows read the image from them with
-`.github/ci/image.sh` and run it. A bump runs the `api`, `web`, `openapi` and `images` checks, so
-the new Trivy image scans both images; `secrets` runs gitleaks on every pull request anyway.
+`.github/ci/image.sh` and run it. A Trivy or gitleaks bump runs the `api`, `web`, `openapi` and
+`images` checks, so the new Trivy image scans both images; `secrets` runs gitleaks on every pull
+request anyway. An actionlint bump runs only `actionlint`.
 
 A check skipped by `changes` reports Skipped and counts as passing. Never merge a pull request while
-any of the eight checks (`changes`, `api`, `web`, `guide`, `openapi`, `notices`, `images`, `secrets`) is
-failing or pending; `notices-push` is not required. `changes` must be one of them: if it fails,
+any of the nine checks (`changes`, `api`, `web`, `guide`, `openapi`, `notices`, `images`, `actionlint`,
+`secrets`) is failing or pending; `notices-push` is not required. `changes` must be one of them: if it fails,
 every check that depends on it is skipped and would look green. A pull request that changes
-`.github/workflows/ci.yml` or `.github/ci/` must show `api`, `web`, `guide`, `openapi`, `notices`
-and `images` as run, not Skipped: it runs its own copy of the rules, so Skipped there means the rules were changed to skip checks. A change that adds a file the builds
+`.github/workflows/ci.yml` or `.github/ci/` must show `api`, `web`, `guide`, `openapi`, `notices`,
+`images` and `actionlint` as run, not Skipped: it runs its own copy of the rules, so Skipped there means the rules were changed to skip checks. A change that adds a file the builds
 depend on outside `api/` and `web/` must add it to `.github/ci/changed-sides.sh` in the same change.
 
 The repo is private on a free GitHub org plan, which has no branch protection, so this rule is
-followed by hand. When the repo goes public, turn on branch protection for `main` requiring all eight
+followed by hand. When the repo goes public, turn on branch protection for `main` requiring all nine
 checks and up-to-date branches.
