@@ -3,6 +3,7 @@
 [![ci](https://github.com/helmnet/beer-menu/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/helmnet/beer-menu/actions/workflows/ci.yml?query=branch%3Amain)
 [![secrets](https://github.com/helmnet/beer-menu/actions/workflows/secrets.yml/badge.svg?branch=main)](https://github.com/helmnet/beer-menu/actions/workflows/secrets.yml?query=branch%3Amain)
 [![release](https://github.com/helmnet/beer-menu/actions/workflows/release.yml/badge.svg)](https://github.com/helmnet/beer-menu/actions/workflows/release.yml)
+[![pages](https://github.com/helmnet/beer-menu/actions/workflows/pages.yml/badge.svg?branch=main)](https://github.com/helmnet/beer-menu/actions/workflows/pages.yml?query=branch%3Amain)
 
 ![The TV display showing four taps: three beers at different keg levels and one empty tap](docs/images/tv-display.png)
 
