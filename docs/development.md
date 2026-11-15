@@ -113,8 +113,10 @@ Each image is published on its own: if one image fails its scan, the other is st
 Re-run the failed job once a fix is available, or release the next `X.Y.Z`.
 The image reports `X.Y.Z` as `version` in `/api/health`.
 Once both images are published, the workflow creates a GitHub Release for the tag with notes
-generated from the changes since the previous tag. If only that job fails, re-run it, or
-create the release by hand: `gh release create vX.Y.Z --verify-tag --generate-notes`.
+generated from the changes since the previous tag, headed by a "Docker images" section with
+the `docker pull` command for each image. If only that job fails, re-run it, or create the
+release by hand: `gh release create vX.Y.Z --verify-tag --generate-notes` (the notes then
+lack the "Docker images" section; add it by editing the release).
 
 Production pins an exact `X.Y.Z` in the `truenas_apps` repo and never uses `latest`.
 
