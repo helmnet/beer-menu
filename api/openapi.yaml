@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Beer Menu API
-  version: 0.10.0
+  version: 1.0.0
   description: >
     REST API for the Beer Menu self-hosted tap list. Served under /api on the same
     origin as the admin app.
@@ -71,7 +71,7 @@ paths:
                 $ref: "#/components/schemas/Health"
               example:
                 status: ok
-                version: 0.2.0
+                version: 1.0.0
                 database: ok
         "503":
           description: Database unreachable
@@ -81,7 +81,7 @@ paths:
                 $ref: "#/components/schemas/Health"
               example:
                 status: error
-                version: 0.2.0
+                version: 1.0.0
                 database: unreachable
 
   /api/setup:
@@ -2156,7 +2156,7 @@ components:
         version:
           type: string
           description: Release version X.Y.Z, or "dev" for local builds.
-          examples: ["0.2.0", "dev"]
+          examples: ["1.0.0", "dev"]
         database:
           type: string
           enum: [ok, unreachable]
