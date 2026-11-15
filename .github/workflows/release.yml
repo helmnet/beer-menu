@@ -90,6 +90,7 @@ jobs:
           version=${GITHUB_REF_NAME#v}
           notes='## Docker images'
           for image in api web; do
+            # shellcheck disable=SC2016 # backticks are Markdown code spans, not command substitution
             notes+=$(printf '\n- [beer-menu-%s](https://github.com/%s/pkgs/container/beer-menu-%s): `docker pull ghcr.io/helmnet/beer-menu-%s:%s`' \
               "$image" "$GITHUB_REPOSITORY" "$image" "$image" "$version")
           done
