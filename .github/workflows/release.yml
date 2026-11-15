@@ -1,6 +1,6 @@
 # Publishes both images to GHCR when a vX.Y.Z tag is pushed, tagged X.Y.Z, X.Y and latest.
 # Each image is scanned with Trivy before it is pushed.
-# Once both images are published, creates a GitHub Release with notes generated since the previous tag.
+# Once both images are published, creates a GitHub Release with each image's pull command and notes generated since the previous tag.
 name: release
 
 on:
@@ -85,4 +85,12 @@ jobs:
       - name: Create the GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes
+        # --notes is prepended to the generated notes, so readers see how to pull this version first.
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          notes='## Docker images'
+          for image in api web; do
+            notes+=$(printf '\n- [beer-menu-%s](https://github.com/%s/pkgs/container/beer-menu-%s): `docker pull ghcr.io/helmnet/beer-menu-%s:%s`' \
+              "$image" "$GITHUB_REPOSITORY" "$image" "$image" "$version")
+          done
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --notes "$notes"
