@@ -4,7 +4,7 @@ updates:
   - package-ecosystem: gomod
     directory: /api
     schedule:
-      interval: weekly
+      interval: daily
     cooldown:
       default-days: 7
     groups:
@@ -14,7 +14,7 @@ updates:
   - package-ecosystem: npm
     directory: /web
     schedule:
-      interval: weekly
+      interval: daily
     cooldown:
       default-days: 7
     groups:
@@ -29,7 +29,7 @@ updates:
     # Outside .github/: Dependabot cannot open pull requests that change files there (other than workflows).
     directories: [/api, /web, /ci/images/actionlint, /ci/images/gitleaks, /ci/images/trivy]
     schedule:
-      interval: weekly
+      interval: daily
     cooldown:
       default-days: 7
     groups:
@@ -39,7 +39,7 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: daily
     cooldown:
       default-days: 7
     groups:
